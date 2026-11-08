@@ -7012,10 +7012,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       $('tsu').click();
     }
   };
-  /* 震度速報と津波情報の切替（津波を伴う地震）。v: null＝従来どおり両方（震度は短縮）、'tsu'＝津波情報だけ（一覧を開く）、'int'＝震度速報だけ（一覧を全部） */
+  /* 震度速報と津波情報の切替（津波を伴う地震）。v: null＝従来どおり両方（震度は短縮）、'tsu'＝津波情報だけ、'int'＝震度速報だけ（どちらも切替時は畳み、タップで詳細を開く） */
   function ivView(v) {
     const s = sim;
     if (!s) return;
+    /* 切替時の詳細は畳んだ状態（タップで開く）。同じ表示のままの更新では開閉状態を保つ（Version 102） */
+    const chg = s.ivView !== v;
     s.ivView = v;
     $('ivSw').hidden = !v;
     $('tv').classList.toggle('ivs', !!v);
@@ -7026,10 +7028,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (v === 'tsu') {
       $('info').hidden = true;
       $('tsu').hidden = false;
-      tsuOpen(true);
+      if (chg) tsuOpen(false);
     } else {
       clearTimeout(infoFoldT);
-      $('info').classList.remove('short', 'fold');
+      $('info').classList.remove('short');
+      if (chg) $('info').classList.add('fold');
       $('info').hidden = false;
       $('tsu').hidden = true;
     }
