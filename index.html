@@ -8083,7 +8083,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (!sim.tsuShown || sim.tsunami.regs[0].cat < 2) setStatus('idle', '終了・結果を表示中');
     }
     setClock(clockStr(t));
-    dirty = true;
+    simDirty = true;
     return true;
   }
   /* ===== 時刻の移動（巻き戻し・先へワープ） ===== */
@@ -8177,6 +8177,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const n = nextQuakeT();
     if (n != null) seekTo(n - SKIP_LEAD);
   };
+  const MAP_LOWP =
+    (window.devicePixelRatio || 1) >= 2.5 || Math.min(screen.width, screen.height) < 500 || matchMedia('(pointer: coarse)').matches;
+  let simDirty = false,
+    lastMapDraw = 0;
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     {
@@ -8191,7 +8195,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       sim.rt += dt;
       if (!simBody(now)) return requestAnimationFrame(frame);
       setClock(clockStr(sim.t));
-      dirty = true;
+      simDirty = true;
     } else if (!sim) {
       const d = new Date();
       setClock(d.getHours() + '時' + String(d.getMinutes()).padStart(2, '0') + '分');
@@ -8217,9 +8221,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     syncSeek();
     roomFrame(dt);
+    /* スマホ等は、シミュレーションの進行だけによる地図の描き直しを毎秒約30回に抑える（操作中の描き直しは間引かない。Version 103） */
+    if (simDirty && !dirty && (!MAP_LOWP || now - lastMapDraw >= 31 || now < lastMapDraw)) dirty = true;
     if (dirty) {
       draw();
-      dirty = false;
+      dirty = simDirty = false;
+      lastMapDraw = now;
     }
     requestAnimationFrame(frame);
   }
@@ -9239,6 +9246,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const R = RM.R3;
     if (!R) return;
     tvSet(false);
+    RM.waveT = null;
     RM.need = RM.shDirty = true;
     RM.active = false;
     for (const p of R.parts) {
@@ -10142,6 +10150,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* ---------- 再生・同期 ---------- */
   function prepareMotion() {
     RM.motion = buildMotion();
+    RM.waveT = null;
     applyBuilding(RM.motion);
     RM.siteArea = AREAS.indexOf(nearestArea(SITE.lon, SITE.lat).area);
     drawWave();
@@ -10180,6 +10189,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         h = back <= 0.25 ? 1 / 400 : Math.min(1 / 150, back / 160);
       let act = false,
         aPk = 0;
+      /* 一時停止中など時間が進まないコマは描き直さない（Version 103：電池・発熱対策） */
+      if (T !== RM.lastT) RM.need = true;
       while (t < T) {
         const dt = Math.min(h, T - t);
         t += dt;
@@ -10216,7 +10227,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     /* 画面に見えていて、動きがあるときだけ描画（止まっている間は描かない） */
     if (R.controls && R.controls.enableDamping && RM.visible) R.controls.update();
-    if (RM.visible && (RM.playing || RM.need)) {
+    if (RM.visible && RM.need) {
       /* スマホ等は描画を毎秒約30回に間引く（揺れの計算は間引かない） */
       const now = performance.now();
       if (!RM.lowP || !RM.lastDraw || now - RM.lastDraw >= 31 || now < RM.lastDraw || !RM.playing) renderRoom();
@@ -10264,17 +10275,22 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     '立っているのが難しい。キャスター付きの物が大きく動き、固定していない家具は動いたり倒れたりする。',
     '立っていられず、はわないと動けない。固定していない家具の多くが動き、倒れるものも出る。'
   ];
+  /* 文字が変わったときだけ書き換える（毎コマ書き換えると再計算が走って重い。Version 103） */
+  function setTx(id, v) {
+    const el = $(id);
+    if (el && el.textContent !== v) el.textContent = v;
+  }
   function updateHud(t, a) {
     const mo = RM.motion;
     /* 瞬間値は細かく振れて読めないので、0.4秒ごとにその間の最大値を表示する */
     const now = performance.now();
     RM.hudPk = Math.max(RM.hudPk || 0, Math.abs(a));
     if (!RM.hudT || now - RM.hudT >= 400 || now < RM.hudT) {
-      $('hudA').textContent = Math.round(RM.hudPk) + ' gal';
+      setTx('hudA', Math.round(RM.hudPk) + ' gal');
       RM.hudPk = 0;
       RM.hudT = now;
     }
-    $('hudMax').textContent = Math.round(RM.maxA) + ' gal';
+    setTx('hudMax', Math.round(RM.maxA) + ' gal');
     let ph;
     /* 複数の地震：この地点で揺れを感じる地震（震度1.5以上か最も強い地震）のS波を順に案内する */
     const ar = (mo.arr || []).filter(q => q.I >= 1.5 || q.I >= mo.I - 0.01),
@@ -10286,19 +10302,20 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     else if (nx) ph = '主要動（S波）　次は' + qn(nx) + 'S波まで ' + (nx.tS - t).toFixed(1) + '秒';
     else if (t < mo.tS) ph = '初期微動（P波）　S波まで ' + (mo.tS - t).toFixed(1) + '秒';
     else ph = '主要動（S波）';
-    $('hudPhase').textContent = ph;
+    setTx('hudPhase', ph);
     const ban = $('roomEew');
     if (RM.mode === 'sync' && sim && sim.warn && sim.warnAt && sim.warnAt.has(RM.siteArea)) {
       const tw = sim.warnAt.get(RM.siteArea),
         lead = mo.tS - tw;
-      ban.hidden = t > mo.tS + 10;
-      $('roomEewMsg').textContent =
+      const bh = t > mo.tS + 10;
+      if (ban.hidden !== bh) ban.hidden = bh;
+      setTx('roomEewMsg',
         t < mo.tS
           ? '強い揺れまで　あと ' + Math.ceil(mo.tS - t) + ' 秒'
           : lead > 0
             ? '強い揺れに警戒（猶予 ' + lead.toFixed(1) + ' 秒）'
-            : '警報より先に強い揺れが到達';
-    } else ban.hidden = true;
+            : '警報より先に強い揺れが到達');
+    } else if (!ban.hidden) ban.hidden = true;
     /* テレビ：この地点が警報の対象になったら点灯（リセットまで点けたまま）。描画は0.5秒ごと */
     if (RM.mode === 'sync' && sim && sim.warn && sim.warnAt && sim.warnAt.has(RM.siteArea)) tvSet(true);
     if (RM.tvOn) {
@@ -10308,11 +10325,15 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         tvDraw();
       }
     }
-    drawWave(t);
+    /* 時刻が進んでいないとき（一時停止中など）は波形を描き直さない（Version 103） */
+    if (t !== RM.waveT) {
+      RM.waveT = t;
+      drawWave(t);
+    }
   }
   /* 波形の大きさはサイズが変わった時だけ測り直す（毎フレーム測ると強制レイアウトで重い） */
   let waveRect = null;
-  if ($('wave')) new ResizeObserver(() => (waveRect = null)).observe($('wave'));
+  if ($('wave')) new ResizeObserver(() => ((waveRect = null), (RM.waveT = null))).observe($('wave'));
   function drawWave(t) {
     const cvw = $('wave');
     if (!cvw) return;
