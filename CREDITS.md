@@ -12,7 +12,3 @@
 ## ライブラリ
 
 - **three.js r128**（OrbitControls を含む、必要な部品だけを束ねて同梱）: MIT License, Copyright © 2010-2021 three.js authors. https://github.com/mrdoob/three.js
-
-## 音声
-
-- 緊急地震速報・津波警報の音: 出典確認中。
