@@ -4277,6 +4277,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   /* 近くに市区町村が無い島（北方領土・硫黄島・南鳥島・沖ノ鳥島・鳥島・沖大東島）の最寄りの市区町村（全国から探す）。
      以前は先頭の地域（石狩地方北部）になっていた。沖ノ鳥島・南鳥島・硫黄島は東京都（小笠原村）なので東京都の中から探す（Version 122） */
+  /* 北方領土（歯舞群島・色丹島・国後島・択捉島）。根室半島の先端（納沙布岬）は東経145.82度、野付半島・知床半島は北緯43.6度以北で東経145.37度より西 */
+  function isNorthernTerr(lon, lat) {
+    return lon > 145.84 || (lat > 43.6 && lon > 145.38);
+  }
   function farCityIdx(lon, lat) {
     const tokyo = lat < 28 && lon > 135.5;
     let best = -1,
@@ -5771,7 +5775,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* pointer: pan / pinch / tap */
   const ptr = new Map();
   let gesture = null;
-  const onOv = e => e.target.closest && e.target.closest('#room3d,#info,#tsu,.esw');
+  /* 地図の上のボタン類は地図の操作（ドラッグ・タップ）に取り込まない。「震度｜津波」の切替（.isw）と縦テロップの閉じるボタン（.vx）が抜けていて押せなかった（Version 124） */
+  const onOv = e => e.target.closest && e.target.closest('#room3d,#info,#tsu,.esw,.isw,.vx');
   tv.addEventListener('pointerdown', e => {
     if (onOv(e)) return;
     tv.setPointerCapture(e.pointerId);
@@ -12781,9 +12786,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         let best = pf ? nearestCityIdx(cellLon[i], cellLat[i], pf) : -1;
         if (best < 0) best = nearestCityIdx(cellLon[i], cellLat[i]);
         if (best < 0) best = farCityIdx(cellLon[i], cellLat[i]);
+        /* 北方領土は気象庁の発表と同じく震度の地域に含めない（地図の震度の色は付ける。緊急地震速報の対象地域の塗りには入れない。Version 123） */
+        if (isNorthernTerr(cellLon[i], cellLat[i])) best = -1;
         cellCity[i] = best;
-        cellArea[i] = best < 0 ? 0 : CITIES[best].area;
-        const cp = AREAS[cellArea[i]].pref;
+        cellArea[i] = best < 0 ? -1 : CITIES[best].area;
+        const cp = best < 0 ? 1 : AREAS[cellArea[i]].pref;
         cellPref[i] = cp;
         if (!prefCellList.has(cp)) prefCellList.set(cp, []);
         prefCellList.get(cp).push(i);
