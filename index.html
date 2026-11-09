@@ -247,20 +247,20 @@ header.top h1 {
   color: #fff;
 }
 .clock {
-  top: 2cqw;
-  right: 2.2cqw;
+  top: calc(2 * var(--u));
+  right: calc(2.2 * var(--u));
   font-weight: 700;
-  font-size: max(12px, 2cqw);
+  font-size: max(12px, calc(2 * var(--u)));
   text-shadow:
     0 0 0.3em #000,
     0 0 0.1em #000;
   font-variant-numeric: tabular-nums;
 }
 .eew {
-  top: 2cqw;
-  left: 2.2cqw;
+  top: calc(2 * var(--u));
+  left: calc(2.2 * var(--u));
   display: grid;
-  gap: 0.6cqw;
+  gap: calc(0.6 * var(--u));
   max-width: 70cqw;
 }
 .eew .row1 {
@@ -273,14 +273,14 @@ header.top h1 {
   font-family: var(--eewf);
   font-kerning: none;
   font-weight: 700;
-  font-size: max(14px, 3.6cqw);
+  font-size: max(14px, calc(3.6 * var(--u)));
   padding: 0.12em 0.55em;
   letter-spacing: 0.12em;
 }
 .eew .src {
   background: rgba(0, 0, 0, 0.82);
   font-weight: 900;
-  font-size: max(13px, 3.2cqw);
+  font-size: max(13px, calc(3.2 * var(--u)));
   padding: 0.22em 0.6em;
   white-space: nowrap;
 }
@@ -293,14 +293,14 @@ header.top h1 {
   background: var(--warn);
   color: #111;
   font-weight: 900;
-  font-size: max(13px, 3.2cqw);
+  font-size: max(13px, calc(3.2 * var(--u)));
   padding: 0.15em 0.55em;
   letter-spacing: 0.05em;
 }
 .eew .no {
   font-family: var(--ui);
   font-weight: 700;
-  font-size: max(11px, 1.4cqw);
+  font-size: max(11px, calc(1.4 * var(--u)));
   background: rgba(0, 0, 0, 0.7);
   padding: 0.25em 0.6em;
 }
@@ -341,15 +341,15 @@ header.top h1 {
   }
 }
 .info {
-  top: 2cqw;
-  left: 2.2cqw;
+  top: calc(2 * var(--u));
+  left: calc(2.2 * var(--u));
   /* 縦並びflex：画面（凡例の上）に収まらない分は震度一覧をスクロールして見る */
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.6cqw;
+  gap: calc(0.6 * var(--u));
   max-width: 56cqw;
-  max-height: calc(100% - 4cqw - max(10px, 1.15cqw) * 2.4);
+  max-height: calc(100% - 2 * var(--u) - 2cqw - max(10px, 1.15cqw) * 2.4);
   pointer-events: auto;
   cursor: pointer;
 }
@@ -375,7 +375,7 @@ header.top h1 {
 .info .tag {
   background: #123b8a;
   font-weight: 900;
-  font-size: max(14px, 3cqw);
+  font-size: max(14px, calc(3 * var(--u)));
   padding: 0.18em 0.6em;
   letter-spacing: 0.06em;
   align-self: flex-start;
@@ -385,7 +385,7 @@ header.top h1 {
   flex: none;
   background: rgba(0, 0, 0, 0.78);
   font-weight: 700;
-  font-size: max(11px, 1.7cqw);
+  font-size: max(11px, calc(1.7 * var(--u)));
   padding: 0.35em 0.7em;
   line-height: 1.5;
 }
@@ -418,7 +418,7 @@ header.top h1 {
 }
 .info .names {
   font-weight: 700;
-  font-size: max(11px, 1.5cqw);
+  font-size: max(11px, calc(1.5 * var(--u)));
   line-height: 1.4;
 }
 .legend {
@@ -440,10 +440,10 @@ header.top h1 {
   text-shadow: 0 0 0.3em #000;
 }
 .yohou {
-  top: 6cqw;
-  right: 2.2cqw;
+  top: calc(6 * var(--u));
+  right: calc(2.2 * var(--u));
   font-family: var(--ui);
-  font-size: max(11px, 1.35cqw);
+  font-size: max(11px, calc(1.35 * var(--u)));
   background: rgba(0, 0, 0, 0.72);
   padding: 0.4em 0.7em;
   border-left: 3px solid var(--warn);
@@ -453,10 +453,10 @@ header.top h1 {
   gap: 0.5em;
 }
 .eew.nhk .src {
-  font-size: max(15px, 3.6cqw);
+  font-size: max(15px, calc(3.6 * var(--u)));
 }
 .eew.nhk .call {
-  font-size: max(15px, 3.4cqw);
+  font-size: max(15px, calc(3.4 * var(--u)));
 }
 .telop {
   /* NHKの実際の画面（16:9）から測った比率：幅は画面の約63%で左右中央、下から画面幅の約5.9%、縦横比3:1、小地図は約27%。
@@ -634,9 +634,9 @@ header.top h1 {
   animation: flash 1s ease-out 3;
 }
 .tsu {
-  left: 2.2cqw;
+  left: calc(2.2 * var(--u));
   bottom: 2cqw;
-  gap: 0.4cqw;
+  gap: calc(0.4 * var(--u));
   max-width: 62cqw;
   font-family: var(--tv);
   pointer-events: auto;
@@ -651,7 +651,7 @@ header.top h1 {
 .tsu .th {
   flex: none;
   font-weight: 900;
-  font-size: max(13px, 2.8cqw);
+  font-size: max(13px, calc(2.8 * var(--u)));
   padding: 0.15em 0.6em;
   letter-spacing: 0.06em;
 }
@@ -660,7 +660,7 @@ header.top h1 {
   padding: 0.45em 0.7em;
   display: grid;
   gap: 0.3em;
-  font-size: max(11px, 1.6cqw);
+  font-size: max(11px, calc(1.6 * var(--u)));
   font-weight: 700;
   line-height: 1.4;
   max-height: 46cqw;
@@ -685,7 +685,7 @@ header.top h1 {
   flex: none;
   background: rgba(0, 0, 0, 0.8);
   font-weight: 700;
-  font-size: max(11px, 1.5cqw);
+  font-size: max(11px, calc(1.5 * var(--u)));
   padding: 0.3em 0.7em;
   line-height: 1.4;
 }
@@ -807,7 +807,7 @@ header.top h1 {
 /* 縦テロップの表示中は、震度速報・津波の表示をその右へずらす */
 .tv.vtl .info,
 .tv.vtl .tsu {
-  left: calc(var(--vtw, 0px) + 2.8cqw);
+  left: calc(var(--vtw, 0px) + calc(2.8 * var(--u)));
 }
 .info.short .list {
   display: none;
@@ -1868,7 +1868,7 @@ details.grp .grpb h2 { margin-top: 4px; }
   flex: none;
   background: rgba(0, 0, 0, 0.8);
   font-weight: 700;
-  font-size: max(11px, 1.5cqw);
+  font-size: max(11px, calc(1.5 * var(--u)));
   padding: 0.3em 0.7em;
   line-height: 1.4;
   border-top: 1px solid rgba(255, 255, 255, 0.15);
@@ -1887,7 +1887,7 @@ details.grp .grpb h2 { margin-top: 4px; }
 }
 .tsu .tseg button {
   font-family: var(--ui);
-  font-size: max(11px, 1.35cqw);
+  font-size: max(11px, calc(1.35 * var(--u)));
   font-weight: 700;
   padding: 0.2em 0.6em;
   min-height: 0;
@@ -1906,7 +1906,7 @@ details.grp .grpb h2 { margin-top: 4px; }
   background: rgba(0, 0, 0, 0.8);
   padding: 0.45em 0.7em;
   gap: 0.3em;
-  font-size: max(11px, 1.5cqw);
+  font-size: max(11px, calc(1.5 * var(--u)));
   font-weight: 700;
   line-height: 1.4;
   max-height: 46cqw;
@@ -1968,11 +1968,11 @@ details.grp .grpb h2 { margin-top: 4px; }
 }
 /* ===== Version 100：津波を伴う地震で震度速報→津波情報へ切り替え。左上に「震度／津波」の切替ボタン ===== */
 .tv {
-  --isw: calc(max(26px, 3.2cqw) + 1cqw);
+  --isw: calc(max(26px, calc(3.2 * var(--u))) + calc(1 * var(--u)));
 }
 .isw {
-  top: 2cqw;
-  left: 2.2cqw;
+  top: calc(2 * var(--u));
+  left: calc(2.2 * var(--u));
   display: inline-flex;
   gap: 0;
   pointer-events: auto;
@@ -1984,9 +1984,9 @@ details.grp .grpb h2 { margin-top: 4px; }
   z-index: 3;
 }
 .isw button {
-  min-height: max(26px, 3.2cqw);
-  padding: 0 max(12px, 1.4cqw);
-  font-size: max(12px, 1.5cqw);
+  min-height: max(26px, calc(3.2 * var(--u)));
+  padding: 0 max(12px, calc(1.4 * var(--u)));
+  font-size: max(12px, calc(1.5 * var(--u)));
   font-weight: 700;
   line-height: 1;
   border: 0;
@@ -2002,17 +2002,17 @@ details.grp .grpb h2 { margin-top: 4px; }
   color: #111;
 }
 .tv.ivs .info {
-  top: calc(2cqw + var(--isw));
-  max-height: calc(100% - 4cqw - max(10px, 1.15cqw) * 2.4 - var(--isw));
+  top: calc(calc(2 * var(--u)) + var(--isw));
+  max-height: calc(100% - 2 * var(--u) - 2cqw - max(10px, 1.15cqw) * 2.4 - var(--isw));
 }
 .tv.ivs .tsu {
   /* 切替ボタンの表示中は、震度速報と同じく左上（ボタンの下）に置く（Version 101） */
-  top: calc(2cqw + var(--isw));
+  top: calc(calc(2 * var(--u)) + var(--isw));
   bottom: auto;
-  max-height: calc(100% - 4cqw - max(10px, 1.15cqw) * 2.4 - var(--isw));
+  max-height: calc(100% - 2 * var(--u) - 2cqw - max(10px, 1.15cqw) * 2.4 - var(--isw));
 }
 .tv.vtl .isw {
-  left: calc(var(--vtw, 0px) + 2.8cqw);
+  left: calc(var(--vtw, 0px) + calc(2.8 * var(--u)));
 }
 /* 津波を選んでいる間の凡例は津波の4区分（showLegend('tsu')。Version 105） */
 /* ===== Version 98：速度の一覧（速度ボタンの長押し・右クリック・↓キー） ===== */
@@ -2056,6 +2056,17 @@ details.grp .grpb h2 { margin-top: 4px; }
 details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
 .sublab { font-size: 0.82rem; font-weight: 700; color: var(--fg); display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 2px; }
 .sublab small { font-size: 0.74rem; font-weight: 400; color: var(--muted); }
+/* ===== Version 120：PC（1100px以上）は地図を縦に大きく（16:9→4:3）。縦に余裕がある画面だけ広がり、横長で縦が足りない画面は従来の高さのまま（操作ボタンまで画面に収まる範囲）。1000〜1099pxは操作ボタンが折り返して縦が足りなくなるので従来のまま ===== */
+@media (min-width: 1100px) {
+  .tv {
+    aspect-ratio: 4 / 3;
+    max-height: min(calc(100vh - 140px), max(calc(100vh - 280px), calc((100vw - clamp(400px, 24vw, 600px) - 32px) * 0.5625)));
+    max-height: min(calc(100dvh - 140px), max(calc(100dvh - 280px), calc((100vw - clamp(400px, 24vw, 600px) - 32px) * 0.5625)));
+  }
+}
+/* ===== Version 121：地図の左上・右上の表示（時計・震度速報・津波・切替ボタン）の大きさに上限を付ける。1cqw が9pxを超える大きな地図（約900px幅以上）では文字・余白を増やさない ===== */
+.tv { --u: min(1cqw, 9px); }
+.info .chip { font-size: max(11px, calc(1.7 * var(--u))); }
 </style>
 
 <div class="app">
@@ -4257,6 +4268,29 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     return null;
   }
+  /* 海岸の点が属する地域。近くの格子に市区町村が無い離島（硫黄島など）は、全国から最も近い市区町村で決める。
+     以前は見つからないと先頭の地域（北海道）になり、硫黄島が「北海道太平洋沿岸西部」として計算されていた（Version 122で修正） */
+  function coastArea(nearestCityIdx, lon, lat) {
+    let ci = nearestCityIdx(lon, lat);
+    if (ci < 0) ci = farCityIdx(lon, lat);
+    return AREAS[ci < 0 ? 0 : CITIES[ci].area];
+  }
+  /* 近くに市区町村が無い島（北方領土・硫黄島・南鳥島・沖ノ鳥島・鳥島・沖大東島）の最寄りの市区町村（全国から探す）。
+     以前は先頭の地域（石狩地方北部）になっていた。沖ノ鳥島・南鳥島・硫黄島は東京都（小笠原村）なので東京都の中から探す（Version 122） */
+  function farCityIdx(lon, lat) {
+    const tokyo = lat < 28 && lon > 135.5;
+    let best = -1,
+      bd = 1e18;
+    CITIES.forEach((c, i) => {
+      if (tokyo && AREAS[c.area].pref !== 13) return;
+      const d = kmDist(lon, lat, c.lon, c.lat);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    });
+    return best;
+  }
   function tsuRegion(lon, lat, area) {
     if (area.pref !== 1) {
       const r = area.reg;
@@ -4313,9 +4347,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           ring.forEach((p, pi) => {
             const [lon, lat] = p;
             if (fl[pi] === 1) {
-              const ci = nearestCityIdx(lon, lat);
-              const area = AREAS[ci < 0 ? 0 : CITIES[ci].area];
-              const v = { lon, lat, reg: tsuRegion(lon, lat, area) };
+              const v = { lon, lat, reg: tsuRegion(lon, lat, coastArea(nearestCityIdx, lon, lat)) };
               const idx = COAST.push(v) - 1;
               if (cur && COAST[cur[cur.length - 1]].reg === v.reg) cur.push(idx);
               else {
@@ -4355,10 +4387,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           const vid = [];
           const pt = i => {
             if (vid[i] === undefined) {
-              const [lon, lat] = ring[i],
-                ci = nearestCityIdx(lon, lat),
-                area = AREAS[ci < 0 ? 0 : CITIES[ci].area];
-              vid[i] = DP.push({ lon, lat, reg: tsuRegion(lon, lat, area) }) - 1;
+              const [lon, lat] = ring[i];
+              vid[i] = DP.push({ lon, lat, reg: tsuRegion(lon, lat, coastArea(nearestCityIdx, lon, lat)) }) - 1;
             }
             return vid[i];
           };
@@ -10419,6 +10449,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const R = RM.R3;
     if (!R) return;
     RM.tvDead = false;
+    RM.catchUp = false;
     RM.tvFxT = 0;
     tvSet(false);
     RM.tvKey = null;
@@ -11823,6 +11854,34 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     RM.hudPk = 0;
     $('hudA').textContent = '0 gal'; /* 止まったとき最後の値（例：6 gal）が残らないように */
   }
+  const CATCH_MS = 12;
+  /* t から T まで揺れを入れて計算する。budget(ms) が0でなければ、その時間を超えたら途中で切り上げる。刻みは通常1/240秒、遅れが大きいときは粗く（最大1/120秒） */
+  function stepSpan(mo, t, T, budget) {
+    const back = T - t,
+      h = back <= 0.25 ? 1 / 240 : Math.min(1 / 120, back / 100),
+      t0 = performance.now();
+    let act = false,
+      aPk = 0;
+    while (t < T) {
+      const dt = Math.min(h, T - t);
+      t += dt;
+      const fx = sampleMo(mo.fx, t),
+        fy = sampleMo(mo.fy, t);
+      act = stepRoom(dt, fx / 100, -fy / 100, sampleMo(mo.fz, t) / 100);
+      const v = Math.hypot(fx, fy);
+      if (v > aPk) aPk = v;
+      if (budget && performance.now() - t0 > budget) break;
+    }
+    return { t, act, aPk };
+  }
+  /* 建物全体の揺れ（部屋の位置） */
+  function roomSway(mo, T) {
+    RM.R3.room.position.set(
+      Math.max(-1, Math.min(1, sampleMo(mo.fdx, T))),
+      0,
+      Math.max(-1, Math.min(1, -sampleMo(mo.fdy, T)))
+    );
+  }
   function roomFrame(dtReal) {
     const R = RM.R3;
     if (!R) return;
@@ -11832,41 +11891,48 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const mo = RM.motion;
       let t = RM.lastT;
       const T = Math.min(RM.t, mo.tEnd);
-      /* 処理が追いつかないとき（速度×n・複数の地震で重いとき）も揺れを飛ばさず計算する。刻みは通常1/240秒、遅れが大きいときは粗くして（最大1/120秒）1コマの計算量を抑える。1秒を超える遅れ（タブ切替など）だけ古い分を飛ばす */
-      if (T - t > 1) t = T - 1;
-      const back = T - t,
-        h = back <= 0.25 ? 1 / 240 : Math.min(1 / 120, back / 100);
-      let act = false,
-        aPk = 0;
-      /* 一時停止中など時間が進まないコマは描き直さない（Version 103：電池・発熱対策） */
-      if (T !== RM.lastT) RM.need = true;
-      while (t < T) {
-        const dt = Math.min(h, T - t);
-        t += dt;
-        const fx = sampleMo(mo.fx, t),
-          fy = sampleMo(mo.fy, t);
-        act = stepRoom(dt, fx / 100, -fy / 100, sampleMo(mo.fz, t) / 100);
-        const v = Math.hypot(fx, fy);
-        if (v > aPk) aPk = v;
+      /* 室内が画面に見えていない間（地図タブなど）は剛体の計算を止め、見えたら遅れた分を追いつく（Version 120）。追いつきは1コマ約12msずつ */
+      const hid = !RM.visible;
+      if (hid && T - t > 0.05) RM.catchUp = true;
+      let aPk = 0;
+      if (!hid) {
+        /* 処理が追いつかないとき（速度×n・複数の地震で重いとき）も揺れを飛ばさず計算する。1秒を超える遅れ（タブ切替など）だけ古い分を飛ばす。見えない間に溜まった分は飛ばさず追いつく */
+        if (T - t > 1 && !RM.catchUp) t = T - 1;
+        /* 一時停止中など時間が進まないコマは描き直さない（Version 103：電池・発熱対策） */
+        if (T !== RM.lastT) RM.need = true;
+        const r = stepSpan(mo, t, T, RM.catchUp ? CATCH_MS : 0);
+        t = r.t;
+        aPk = r.aPk;
+        RM.active = r.act;
+        RM.lastT = t;
+        if (RM.catchUp && t >= T - 1e-9) RM.catchUp = false;
+        /* 最大値はコマの間も含めて記録（コマの瞬間だけだと重いときにピークを取りこぼす） */
+        if (aPk > RM.maxA) RM.maxA = aPk;
       }
-      RM.active = act;
-      RM.lastT = T;
-      /* 最大値はコマの間も含めて記録（コマの瞬間だけだと重いときにピークを取りこぼす） */
-      if (aPk > RM.maxA) RM.maxA = aPk;
       const a = Math.max(Math.hypot(sampleMo(mo.fx, T), sampleMo(mo.fy, T)), aPk);
-      const s = 1;
-      R.room.position.set(
-        Math.max(-1, Math.min(1, sampleMo(mo.fdx, T))) * s,
-        0,
-        Math.max(-1, Math.min(1, -sampleMo(mo.fdy, T))) * s
-      );
+      roomSway(mo, RM.catchUp ? RM.lastT : T);
       updateHud(T, a);
       if (RM.t >= mo.tEnd) {
+        /* 追いつき中なら、続きは再生を止めた後も追いつく（RM.catchTo まで） */
+        if (RM.catchUp) RM.catchTo = mo.tEnd;
         roomStop();
         $('hudPhase').textContent = '揺れは収まりました';
       }
-    } else if (RM.active) {
-      /* 揺れが終わっても、倒れかけ・転がる物が止まるまで計算を続ける */
+    } else if (RM.catchUp && RM.motion && RM.visible) {
+      /* 再生は終わったが、見えない間の揺れが残っている：見えたので追いつく */
+      const r = stepSpan(RM.motion, RM.lastT, RM.catchTo, CATCH_MS);
+      RM.lastT = r.t;
+      RM.active = r.act;
+      if (r.aPk > RM.maxA) RM.maxA = r.aPk;
+      setTx('hudMax', Math.round(RM.maxA) + ' gal');
+      roomSway(RM.motion, r.t);
+      RM.need = RM.shDirty = true;
+      if (r.t >= RM.catchTo - 1e-9) {
+        RM.catchUp = false;
+        RM.active = true; /* 倒れかけ・転がる物が止まるまで続ける */
+      }
+    } else if (RM.active && RM.visible) {
+      /* 揺れが終わっても、倒れかけ・転がる物が止まるまで計算を続ける（見えない間は止める） */
       const h = 1 / 240,
         n = Math.min(100, Math.ceil(Math.min(dtReal, 0.25) / h));
       let act = false;
@@ -12120,6 +12186,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   };
   function siteChanged() {
     if (RM.playing) return;
+    if (RM.catchUp) {
+      RM.catchUp = false;
+      resetRoom();
+    }
     RM.motion = null;
     updateSiteInfo();
     drawWave();
@@ -12710,6 +12780,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         const pf = pixPref[cellPix[i]];
         let best = pf ? nearestCityIdx(cellLon[i], cellLat[i], pf) : -1;
         if (best < 0) best = nearestCityIdx(cellLon[i], cellLat[i]);
+        if (best < 0) best = farCityIdx(cellLon[i], cellLat[i]);
         cellCity[i] = best;
         cellArea[i] = best < 0 ? 0 : CITIES[best].area;
         const cp = AREAS[cellArea[i]].pref;
