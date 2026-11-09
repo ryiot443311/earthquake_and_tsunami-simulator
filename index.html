@@ -2257,7 +2257,6 @@ details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
         <details class="grp"><summary>緊急地震速報<small>観測網・発表の基準</small></summary><div class="grpb">
           <div class="opt"><div class="ctl"><span>使う観測網</span><div class="nets" id="cNets"></div></div></div>
           <div class="opt"><div class="ctl"><label for="cDelay">第1報までの解析</label><input id="cDelay" type="range" min="1" max="8" step="0.5"><output id="cDelayo"></output></div></div>
-          <div class="opt"><div class="ctl"><label for="cMsat">推定Mの上限</label><input id="cMsat" type="range" min="7" max="10" step="0.1"><output id="cMsato"></output></div></div>
           <div class="opt"><div class="ctl"><label for="cGrow">推定Mの立ち上がり</label><select id="cGrow"><option value="1">遅い</option><option value="2">標準</option><option value="4">速い</option></select></div></div>
           <div class="opt"><div class="ctl"><label for="cErr">震源の初期誤差</label><input id="cErr" type="range" min="0" max="40" step="1"><output id="cErro"></output></div></div>
           <div class="opt"><div class="ctl"><label for="cPlum">PLUM法</label><select id="cPlum"><option value="1">使う</option><option value="0">使わない</option></select></div></div>
@@ -2948,7 +2947,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     nl: true,
     net: [true, true, true, true, true, true],
     delay: 3,
-    msat: 8.1,
     grow: 2,
     err: 15,
     plum: true,
@@ -4582,7 +4580,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     lockRun();
   }
   /* 地震発生中は、実行中のシミュレーションに反映されない設定（震源・計算・速報の設定）を動かせないようにする。表示の設定は変更可 */
-  const RUN_LOCK = ['m', 'd', 's', 'ty', 'cDip', 'cRup', 'cSig', 'cBias', 'cArc', 'cDelay', 'cMsat', 'cGrow', 'cErr', 'cPlum', 'cWarn', 'cLpw', 'cArea', 'cDeep', 'cMis', 'cTsu', 'cExtra', 'cSeed', 'cfgReset'];
+  const RUN_LOCK = ['m', 'd', 's', 'ty', 'cDip', 'cRup', 'cSig', 'cBias', 'cArc', 'cDelay', 'cGrow', 'cErr', 'cPlum', 'cWarn', 'cLpw', 'cArea', 'cDeep', 'cMis', 'cTsu', 'cExtra', 'cSeed', 'cfgReset'];
   function lockRun() {
     const run = !!(sim && sim.running),
       tip = run ? '地震発生中は変更できません' : '';
@@ -6214,29 +6212,28 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.tobs = !fake && e.tsunami && e.tsunami.gen ? tobsBuild(e) : null;
       if (e.tobs && e.tsunami.regs[0].cat >= 2 && e.tobs.end > 0)
         e.endT = Math.max(e.endT, Math.min(e.t0 + TOBS_MAX, e.tobs.end + TOBS_DELAY + 60));
-      const rj = rng(
-        ((q.lon * 1e3) | 0) * 31 + ((q.lat * 1e3) | 0) * 17 + ((q.M * 10) | 0) + cfg.seed * 101 + e.k * 7919
-      );
-      const Mt = Math.min(q.M, cfg.msat);
-      e.mJit = (rj() - 0.5) * 0.6;
-      e.mErr = Math.round((rj() + rj() - 1) * 3.5) / 10;
+      /* 推定Mの誤差（mBias・mJit・mErr）は「地震発生」のたびに変わる（runSeed。時刻を戻したときは同じ値を再現）。最初の数個は捨てる */
+      const rj = rng(runSeed + e.k * 7919 + 31337);
+      rj();
+      rj();
+      rj();
+      /* 巨大地震（M7.5超）は、緊急地震速報の間は規模を小さめに推定する（破壊が長く続き、P波の初めの数秒ではMが決まりきらないため）。
+         上限は設けない。M9.0で約0.3〜0.6小さい（最終報はM8.4〜8.7程度）。実際のMには、後の情報の速報値の更新で近づける（e.mwSteps） */
+      e.mBias = q.M > 7.5 ? (0.2 + 0.2 * rj()) * (q.M - 7.5) : 0;
+      const Mt = q.M - e.mBias;
+      /* 初期段階の誤差（±0.5、観測点が増え時間がたつと小さくなる）と、最後まで残る誤差（±0.35、巨大地震は±0.17） */
+      e.mJit = (rj() - 0.5) * 1.0;
+      e.mErr = (Math.round((rj() + rj() - 1) * 3.5) / 10) * (q.M >= 8 ? 0.5 : 1);
       e.errF = errFactor(q);
-      /* 巨大地震は、情報で出すMを段階的に更新する（認知から約7分・20分・40分で速報値を更新、約60分で実際のM） */
+      /* 巨大地震は、情報で出すMを段階的に更新する（認知から約7分・20分・40分で速報値を更新、約60分で実際のM）。
+         各段階のMは、緊急地震速報の最後のMと実際のMの差を詰めた値（mwM。最後の報のMが決まってから求める） */
       e.mwSteps = [];
       e.mwIdx = 0;
       e.mwShown = null;
-      if (!fake && q.M > cfg.msat + 0.05) {
-        const k = Math.min(1, (q.M - cfg.msat) / 0.9),
-          t0 = e.det.length ? e.det[0] + cfg.delay : e.t0;
-        let pm = -1;
-        MW_STEPS.forEach(([dt, d]) => {
-          const m = Math.round((q.M - d * k) * 10) / 10;
-          if (m > pm && m < q.M) {
-            e.mwSteps.push({ t: t0 + dt, M: m });
-            pm = m;
-          }
-        });
-        e.mwSteps.push({ t: t0 + MW_FINAL, M: q.M, fin: true });
+      if (!fake && e.mBias >= 0.15) {
+        const t0 = e.det.length ? e.det[0] + cfg.delay : e.t0;
+        MW_STEPS.forEach(([dt, f]) => e.mwSteps.push({ t: t0 + dt, f }));
+        e.mwSteps.push({ t: t0 + MW_FINAL, f: 1, fin: true });
         e.endT = Math.max(e.endT, t0 + MW_FINAL + 20);
       }
       e.tauConv = Math.max(
@@ -6341,7 +6338,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     preview();
   }
 
-  /* 推定M：破壊が広がるにつれて大きくなり（観測データの時間長に依存）、上限で頭打ち */
+  /* 推定M：破壊が広がるにつれて大きくなる（観測データの時間長に依存）。上限はない */
   function mRup(tau) {
     return (
       2 * Math.log10(Math.max(0.5, cfg.grow * VR * Math.max(0.1, tau))) + 3.7 - 2.2 * Math.exp(-tau / 3.5)
@@ -6365,16 +6362,31 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* 緊急地震速報の後の情報（震度速報・震源・震度に関する情報）で出すM。M8を超える巨大地震は、正確なM（モーメントマグニチュード）が求まるまで時間がかかるため、
      直前の緊急地震速報のMから始め、数段階で更新して最後に実際のMになる（e.mwSteps）。2011年の東北沖は M7.9→8.4→8.8→（後日）9.0 */
   const MW_STEPS = [
-    [420, 1.1],
-    [1200, 0.6],
-    [2400, 0.2]
+    [420, 0.4],
+    [1200, 0.75],
+    [2400, 0.92]
   ],
-    MW_FINAL = 3600; /* 地震を認知してからの秒数と、実際のMとの差（M9.0のとき。頭打ちとの差が小さいほど差も小さい） */
+    MW_FINAL = 3600; /* 地震を認知してからの秒数と、緊急地震速報の最後のMから実際のMまでの差を詰める割合 */
+  function eewLastM(e) {
+    return e.reports.length ? e.reports[e.reports.length - 1].M : e.q.M;
+  }
+  /* 段階 i で出すM：最後の報のMから実際のMへ割合 f だけ近づける（f は段階ごとに増えるので、値は実際のMへ向かって単調に動く）。
+     途中の段階は実際のMの0.1手前で止め、実際のMは最後（モーメントマグニチュード）に出す */
+  function mwM(e, i) {
+    const st = e.mwSteps[i],
+      b = eewLastM(e),
+      Q = e.q.M;
+    if (st.fin || Math.abs(b - Q) < 0.05) return Q;
+    const m = Math.round((b + (Q - b) * st.f) * 10) / 10;
+    return b < Q ? Math.min(m, Math.round((Q - 0.1) * 10) / 10) : Math.max(m, Math.round((Q + 0.1) * 10) / 10);
+  }
   function infoM(e, t) {
     const q = e.q;
     if (!e.mwSteps || !e.mwSteps.length) return q.M;
-    let m = e.reports.length ? e.reports[e.reports.length - 1].M : Math.min(q.M, cfg.msat);
-    for (const st of e.mwSteps) if (t >= st.t) m = st.M;
+    let m = eewLastM(e);
+    e.mwSteps.forEach((st, i) => {
+      if (t >= st.t) m = mwM(e, i);
+    });
     return m;
   }
   /* 2つの地震の誤認：P波の検知が近い時刻に重なった離れた2つの地震を、1つの地震として処理する（2018年1月5日の茨城県沖と富山県西部の例。
@@ -6417,7 +6429,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         }
         if (!cnt) continue;
         /* 観測点ごとの推定には地震ごとにばらつきがある（±0.4程度）。後の地震が小さく先の地震の震源に近いときは、Mを小さく推定する（過小）こともある */
-        const Mm = Math.min(cfg.msat, Math.max(3, Math.round((sum / cnt + (rj() + rj() - 1) * 0.4) * 10) / 10));
+        const Mm = Math.min(9.5, Math.max(3, Math.round((sum / cnt + (rj() + rj() - 1) * 0.4) * 10) / 10));
         if (Math.abs(Mm - A.q.M) < 0.3) continue;
         A.misWith = B;
         A.misM = Mm;
@@ -6443,9 +6455,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const st = ST[s.fakeSt];
       return { M: 7.8, lon: st.lon, lat: st.lat, depth: 10, nDet, tau, off: 0 };
     }
-    const Mt = Math.min(q.M, cfg.msat),
+    const Mt = q.M - (e.mBias || 0),
       qq = Math.min(1.4, 1.6 / Math.sqrt(Math.max(1, nDet)));
-    /* 推定Mには、最後まで残る誤差（e.mErr、±0.35程度）がある。頭打ちの高さ（設定）は超えない */
+    /* 推定Mには、最後まで残る誤差（e.mErr、±0.35程度）がある。巨大地震は実際より小さめ（e.mBias）。上限はない */
     let M =
       Math.min(Mt, Math.max(mRup(tau), mFloor(q.M))) +
       e.mJit * Math.exp(-tau / 6) * Math.min(1, 1.5 / Math.sqrt(Math.max(1, nDet))) +
@@ -6454,7 +6466,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       M += e.misW * (e.misM - M);
       for (const d of e.misWith.det) if (d <= t - 0.3) nDet++;
     }
-    M = Math.max(3, Math.round(Math.min(M, cfg.msat, 10) * 10) / 10);
+    M = Math.max(3, Math.round(Math.min(M, 10) * 10) / 10);
     const off = cfg.err * qq * Math.exp(-tau / 6) * (e.errF || 1),
       kx = 111.32 * Math.cos(q.lat * D2R);
     const depth =
@@ -8210,8 +8222,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       for (const e of sim.evs) {
         /* Mの更新：震度速報などの情報が出たあとに、段階ごとに表示を更新して記録に残す（出る前に過ぎた段階は表示せずに進める） */
         while (e.mwIdx < e.mwSteps.length && t >= e.mwSteps[e.mwIdx].t) {
-          const st = e.mwSteps[e.mwIdx++],
-            prev = e.mwShown != null ? e.mwShown : e.reports.length ? e.reports[e.reports.length - 1].M : Math.min(e.q.M, cfg.msat);
+          const si = e.mwIdx++,
+            st = { M: mwM(e, si), fin: e.mwSteps[si].fin },
+            prev = e.mwShown != null ? e.mwShown : eewLastM(e);
           e.mwShown = st.M;
           if (!sim.infoShown || st.M === prev) continue;
           const nm = epiName(e.q.lon, e.q.lat),
@@ -12496,8 +12509,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     NETS.forEach((n, i) => $('cNet' + i).setAttribute('aria-pressed', cfg.net[i]));
     $('cDelay').value = cfg.delay;
     $('cDelayo').textContent = cfg.delay.toFixed(1) + '秒';
-    $('cMsat').value = cfg.msat;
-    $('cMsato').textContent = 'M' + cfg.msat.toFixed(1);
     $('cGrow').value = String(cfg.grow);
     $('cErr').value = cfg.err;
     $('cErro').textContent = cfg.err + 'km';
@@ -12535,7 +12546,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   onCfg('cSig', 'onchange', v => (cfg.sigma = +v), true);
   onCfg('cBias', 'oninput', v => (cfg.bias = +v), true);
   onCfg('cDelay', 'oninput', v => (cfg.delay = +v));
-  onCfg('cMsat', 'oninput', v => (cfg.msat = +v));
   onCfg('cGrow', 'onchange', v => (cfg.grow = +v));
   onCfg('cErr', 'oninput', v => (cfg.err = +v));
   onCfg('cPlum', 'onchange', v => (cfg.plum = v === '1'));
@@ -12672,7 +12682,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const nc = JSON.parse(JSON.stringify(CFG0)),
       c = o.c && typeof o.c === 'object' ? o.c : {};
     const SEL = { sigma: 'cSig', grow: 'cGrow', warnTh: 'cWarn', areaTh: 'cArea', rt: 'cRt', style: 'cStyle', mis: 'cMis' },
-      RNG = { bias: 'cBias', delay: 'cDelay', msat: 'cMsat', err: 'cErr', extra: 'cExtra' };
+      RNG = { bias: 'cBias', delay: 'cDelay', err: 'cErr', extra: 'cExtra' };
     for (const k in CFG0) {
       if (!(k in c)) continue;
       const v = c[k];
