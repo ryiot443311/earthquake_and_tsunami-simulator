@@ -4306,7 +4306,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     /* 知床半島の根室海峡側（羅臼）は太平洋沿岸東部 */
     if (lat >= 43.75 && lat < 44.45 && lon > 144.95 + (lat - 43.95) * 0.95) return '北海道太平洋沿岸東部';
     if (lat >= 43.75 && lon >= 141.9) return 'オホーツク海沿岸';
-    if (lon < 141.4 && lat >= 42.6) return lat > 43.2 ? '北海道日本海沿岸北部' : '北海道日本海沿岸南部';
+    /* 石狩湾の東側〜留萌（東経141.4〜142度、北緯43度以北）も日本海側。以前は太平洋沿岸中部・西部になり、北海道の太平洋側に孤立した大津波警報が出ていた（Version 125） */
+    if ((lon < 141.4 && lat >= 42.6) || (lat >= 43.0 && lon < 142.2)) return lat > 43.2 ? '北海道日本海沿岸北部' : '北海道日本海沿岸南部';
     if (lon < 140.9 && lat < 42.6) return lon < 140.3 ? '北海道日本海沿岸南部' : '北海道太平洋沿岸西部';
     return lon >= 143.3
       ? '北海道太平洋沿岸東部'
@@ -4351,7 +4352,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           ring.forEach((p, pi) => {
             const [lon, lat] = p;
             if (fl[pi] === 1) {
-              const v = { lon, lat, reg: tsuRegion(lon, lat, coastArea(nearestCityIdx, lon, lat)) };
+              const ar = coastArea(nearestCityIdx, lon, lat),
+                v = { lon, lat, reg: tsuRegion(lon, lat, ar), pf: ar.pref };
               const idx = COAST.push(v) - 1;
               if (cur && COAST[cur[cur.length - 1]].reg === v.reg) cur.push(idx);
               else {
@@ -4436,6 +4438,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       });
     }
     COAST.regPath = byReg;
+    /* 予報区ごとの県（テレビの津波地図で、見ている地点の県に発表があるかを調べる。Version 127） */
+    const rp = new Map();
+    for (const c of COAST) {
+      if (!rp.has(c.reg)) rp.set(c.reg, new Set());
+      rp.get(c.reg).add(c.pf);
+    }
+    COAST.regPref = rp;
   }
 
   /* ---------- names ---------- */
@@ -5331,7 +5340,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const n = pop(),
         d = pd;
       if (d > dist[n]) continue;
-      if (d > 1600) break;
+      /* 以前は1600kmで打ち切っていた。打ち切りの外の海岸は計算されず、境目のすぐ内側の予報区だけに大津波警報が出て、隣は発表なしになっていた（Version 125で廃止） */
       const r = (n / SG.w) | 0,
         c = n - r * SG.w,
         kx = SK[r],
@@ -5605,7 +5614,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           fsrc = q;
         }
       }
-      if (Dp > 1500) return;
+      /* 遠い海岸も打ち切らない（以前は経路1500kmで打ち切り。M9〜10では境目で大津波警報と発表なしが隣り合っていた。Version 125） */
       const dif = Math.exp(-ex / 150);
       const HA0 = Math.min(Hcap, Math.pow(10, Mw - Math.log10(Math.max(Dp, 20)) - 5.8 + tA)) * dF * amp * dif;
       if (HA0 < 0.02) return;
@@ -6941,13 +6950,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     renderSw();
   }
-  /* 緊急地震速報の表示の終わり（地震ごと）= 「最終報から30秒後」と「対象地域のすべての市町村へのS波到達」のうち遅い方 */
+  /* 緊急地震速報の表示の終わり（地震ごと）= 「最終報から30秒後」と「対象地域のすべての市町村へのS波到達から30秒後」のうち遅い方（Version 126） */
   function eewEndOf(e, t) {
     let tS = t + EEW_AFTER_FINAL;
     for (const i of e.warnAreas.keys()) {
       for (const ci of AREAS[i].cities) {
         const a = CITIES[ci].tSq[e.k];
-        if (a < 1e8) tS = Math.max(tS, a);
+        if (a < 1e8) tS = Math.max(tS, a + EEW_AFTER_S);
       }
     }
     return tS;
@@ -7215,7 +7224,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (b && sim) ivView(b.dataset.v);
   });
   /* 震度速報・震源に関する情報。phase＝今回まとめて発表する地震。震度はこれまでに発生した地震の揺れを重ねたもの */
-  const EEW_AFTER_FINAL = 30 /* 最終報からテロップを出し続ける最短の秒数（対象地域のすべての市町村にS波が届くまでは出し続ける。シミュレーター内の時間） */,
+  const EEW_AFTER_S = 30 /* 対象地域のすべての市町村にS波が届いてから、テロップを出し続ける秒数（シミュレーター内の時間） */,
+    EEW_AFTER_FINAL = 30 /* 最終報からテロップを出し続ける最短の秒数（対象地域のすべての市町村にS波が届くまでは出し続ける。シミュレーター内の時間） */,
     INFO_TO_TSU = 60 /* 津波（若干の海面変動以上）を伴う地震で、震度速報と津波情報の両方を出してからこの秒数で津波情報の表示に切り替える（シミュレーター内の時間） */,
     EEW_MIN_SHOW = 15,
     EEW_MINI_KEEP = 30;
@@ -7702,7 +7712,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const q0 = src[SP.lab[nd]],
         Dq = Math.hypot((st.lon - q0[0]) * kx, (st.lat - q0[1]) * 110.57),
         Dp = Math.max(D, SP.dist[nd]);
-      if (Dp > 1500) return;
       const detour = Dp / Math.max(D, 1),
         dif = Math.exp(-(Math.max(0, Dp - Dq) + 150 * SP.loss[nd]) / 150),
         hm = tsuHmax(st.lon, st.lat),
@@ -8148,7 +8157,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         else renderSw();
       }
     }
-    /* 緊急地震速報の表示（横テロップ・縦テロップ共通）は、「最終報（すべての発生中の地震で続報が終わった時点）から30秒」と「対象地域のすべての市町村へのS波到達」の両方を満たしたら消す。震度速報の時刻まで出し続けない */
+    /* 緊急地震速報の表示（横テロップ・縦テロップ共通）は、「最終報（すべての発生中の地震で続報が終わった時点）から30秒」と「対象地域のすべての市町村へのS波到達から30秒」の両方を満たしたら消す。震度速報の時刻まで出し続けない */
     if (!sim.infoShown && !sim.fake) {
       const live = sim.evs.filter(e => t >= e.t0 && !e.infoDone);
       const fin = live.length && live.every(e => e.eewDone) && live.some(e => e.reports.length);
@@ -9411,7 +9420,150 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     RM.tvChkT = 0;
     RM.need = RM.shDirty = true;
   }
+  /* ---------- テレビの津波の全国地図（Version 127）：見ている地点の県に津波注意報以上が出たら、NHK風の全国地図（沖縄・小笠原の枠）に切り替える ---------- */
+  const TVM = [
+    { lon0: 128.3, lon1: 146.3, lat0: 30.7, lat1: 45.7, x: 60, y: 22, w: 230, h: 150 } /* 本土 */,
+    { lon0: 122.8, lon1: 131.5, lat0: 23.9, lat1: 28.6, x: 12, y: 32, w: 94, h: 58, cut: 14, name: '沖縄' },
+    { lon0: 140.6, lon1: 142.8, lat0: 24.4, lat1: 27.9, x: 236, y: 62, w: 30, h: 48, name: '小笠原' }
+  ];
+  TVM.forEach(b => {
+    b.s = Math.min(b.w / ((b.lon1 - b.lon0) * K), b.h / (b.lat1 - b.lat0));
+    b.tx = b.x + b.w / 2 - ((b.lon0 + b.lon1) / 2) * K * b.s;
+    b.ty = b.y + b.h / 2 + ((b.lat0 + b.lat1) / 2) * b.s;
+  });
+  const tvBox = (c, b) => {
+    c.beginPath();
+    if (b.cut) {
+      /* 沖縄の枠は右下の角を斜めに切る（NHKの地図と同じ形） */
+      c.moveTo(b.x, b.y);
+      c.lineTo(b.x + b.w, b.y);
+      c.lineTo(b.x + b.w, b.y + b.h - b.cut);
+      c.lineTo(b.x + b.w - b.cut * 2, b.y + b.h);
+      c.lineTo(b.x, b.y + b.h);
+      c.closePath();
+    } else c.rect(b.x, b.y, b.w, b.h);
+  };
+  /* 見ている地点の県に出ている津波注意報以上の予報区（高い順） */
+  function tvTsuRegs() {
+    if (!sim || sim.canceled || !sim.tsuShown || !sim.tsunami || !COAST.regPref || RM.siteArea == null) return null;
+    const a = AREAS[RM.siteArea];
+    if (!a) return null;
+    const L = sim.tsunami.regs.filter(r => r.cat >= 2 && COAST.regPref.has(r.name) && COAST.regPref.get(r.name).has(a.pref));
+    return L.length ? L : null;
+  }
+  function tvTsuKey() {
+    const L = tvTsuRegs();
+    return L ? 'T|' + sim.tsunami.regs.filter(r => r.cat >= 2).map(r => r.name + ':' + r.cat).join(',') : null;
+  }
+  let tvMapBase = null;
+  function tvMapBaseCv() {
+    if (tvMapBase) return tvMapBase;
+    const cv = document.createElement('canvas');
+    cv.width = 320;
+    cv.height = 180;
+    const c = cv.getContext('2d');
+    const g = c.createLinearGradient(0, 0, 0, 180);
+    g.addColorStop(0, '#2547a8');
+    g.addColorStop(1, '#16318a');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 320, 180);
+    TVM.forEach((b, i) => {
+      c.save();
+      if (i) {
+        tvBox(c, b);
+        c.fillStyle = 'rgba(10,25,90,.35)';
+        c.fill();
+        c.strokeStyle = '#5f7fd6';
+        c.lineWidth = 1.2;
+        c.stroke();
+        tvBox(c, b);
+      } else c.rect(b.x - 30, b.y - 4, b.w + 40, b.h + 8);
+      c.clip();
+      c.setTransform(b.s, 0, 0, b.s, b.tx, b.ty);
+      c.fillStyle = '#d9dadf';
+      for (const pp of prefPaths) c.fill(pp);
+      c.strokeStyle = '#6f727b';
+      c.lineWidth = 0.35 / b.s;
+      for (const pp of prefPaths) c.stroke(pp);
+      c.restore();
+      if (b.name) {
+        c.fillStyle = '#fff';
+        c.font = 'bold 8px "BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'alphabetic';
+        c.fillText(b.name, b.x + b.w / 2 - (b.cut ? b.cut / 2 : 0), b.y + b.h - 4);
+      }
+    });
+    /* 凡例 */
+    const lg = [
+      ['紫', 4, '大津波警報'],
+      ['赤', 3, '津波警報'],
+      ['黄', 2, '津波注意報']
+    ];
+    c.font = 'bold 8px "BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif';
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    lg.forEach(([k, n, t], i) => {
+      const y = 132 + i * 13;
+      c.fillStyle = '#fff';
+      c.fillText(k, 242, y);
+      c.fillStyle = '#111';
+      c.fillRect(252, y - 3, 14, 6);
+      c.fillStyle = TSU_COL[n];
+      c.fillRect(253, y - 2, 12, 4);
+      c.fillStyle = '#fff';
+      c.fillText(t, 269, y, 48);
+    });
+    tvMapBase = cv;
+    return cv;
+  }
+  function tvDrawTsu(L) {
+    const c = RM.tvCv.getContext('2d');
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.drawImage(tvMapBaseCv(), 0, 0);
+    const regs = sim.tsunami.regs.filter(r => r.cat >= 2 && r.path).sort((a, b) => a.cat - b.cat);
+    TVM.forEach((b, i) => {
+      c.save();
+      if (i) tvBox(c, b);
+      else c.rect(b.x - 30, b.y - 4, b.w + 40, b.h + 8);
+      c.clip();
+      c.setTransform(b.s, 0, 0, b.s, b.tx, b.ty);
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
+      for (const r of regs) {
+        const w = r.cat >= 3 ? 2.6 : 2.2;
+        c.strokeStyle = 'rgba(0,0,0,.55)';
+        c.lineWidth = (w + 1.2) / b.s;
+        c.stroke(r.path);
+        c.strokeStyle = TSU_COL[r.cat];
+        c.lineWidth = w / b.s;
+        c.stroke(r.path);
+      }
+      c.restore();
+    });
+    /* 見出し：この県で最も高い発表と、その予報区 */
+    const top = L[0].cat,
+      lab = ['', '', '津波注意報', '津波警報', '大津波警報'][top],
+      F = '"Zen Kaku Gothic New","BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif';
+    c.font = 'bold 11px ' + F;
+    c.textBaseline = 'middle';
+    c.textAlign = 'left';
+    const lw = c.measureText(lab).width + 10;
+    c.fillStyle = TSU_COL[top];
+    c.fillRect(6, 4, lw, 16);
+    c.fillStyle = top >= 3 ? '#fff' : '#111';
+    c.fillText(lab, 11, 12.5);
+    const names = L.filter(r => r.cat === top).map(r => r.name).join('　');
+    c.fillStyle = '#fff';
+    c.shadowColor = 'rgba(0,0,0,.6)';
+    c.shadowBlur = 2;
+    c.fillText(names, 6 + lw + 6, 12.5, 320 - (6 + lw + 6) - 6);
+    c.shadowBlur = 0;
+    RM.tvTex.needsUpdate = true;
+  }
   function tvDraw() {
+    const TL = tvTsuRegs();
+    if (TL) return tvDrawTsu(TL);
     const c = RM.tvCv.getContext('2d'),
       W = 320,
       H = 180,
@@ -9624,6 +9776,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const TV_FX_MS = 700;
   /* テレビの画面は「内容が変わったとき」だけ描き直す（以前は0.5秒ごとに描いて画像を送り直していた）。カメラの視野の外にあるときは描かず、視野に入ったら描く（Version 118） */
   function tvKey() {
+    const tk = tvTsuKey();
+    if (tk) return tk;
     const ev = sim && sim.evs ? sim.evs.find(v => v.k === sim.shown) : null;
     const src = ($('tSrc').textContent || $('eewSrc').textContent || '').trim();
     return [
@@ -9644,6 +9798,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return v.z < 1 && Math.abs(v.x) < 1.15 && Math.abs(v.y) < 1.15;
   }
   function tvRefresh() {
+    if (!RM.tvOn && !RM.tvDead && RM.mode === 'sync' && tvTsuRegs()) tvSet(true);
     if (!RM.tvOn || RM.tvFxT || !RM.tvCv || !RM.visible) return;
     const now = performance.now();
     /* 判定は0.25秒ごと（毎コマ文字列を比べない） */
@@ -11947,6 +12102,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     tvFx();
     tvRefresh();
+    if (!RM.playing) roomEewSync();
     /* 画面に見えていて、動きがあるときだけ描画（止まっている間は描かない） */
     if (R.controls && R.controls.enableDamping && RM.visible) R.controls.update();
     if (RM.visible && RM.need) {
@@ -12002,6 +12158,25 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const el = $(id);
     if (el && el.textContent !== v) el.textContent = v;
   }
+  /* 室内の緊急地震速報の表示：地図の緊急地震速報（横テロップ・縦テロップ）が出ている間だけ出す。地図と同じ時刻に消える（Version 126）。
+     揺れの再生が終わった後も地図の表示は続くことがあるので、roomFrame から毎回呼ぶ */
+  function roomEewSync(t) {
+    const ban = $('roomEew'),
+      mo = RM.motion;
+    const mapEew = !!sim && (!$('telop').hidden || !$('eew').hidden || !$('band').hidden || !$('eewMini').hidden);
+    if (mo && RM.mode === 'sync' && mapEew && sim.warnAt && sim.warnAt.has(RM.siteArea)) {
+      if (t == null) t = sim.t;
+      const tw = sim.warnAt.get(RM.siteArea),
+        lead = mo.tS - tw;
+      if (ban.hidden) ban.hidden = false;
+      setTx('roomEewMsg',
+        t < mo.tS
+          ? '強い揺れまで　あと ' + Math.ceil(mo.tS - t) + ' 秒'
+          : lead > 0
+            ? '強い揺れに警戒（猶予 ' + lead.toFixed(1) + ' 秒）'
+            : '警報より先に強い揺れが到達');
+    } else if (!ban.hidden) ban.hidden = true;
+  }
   function updateHud(t, a) {
     const mo = RM.motion;
     /* 瞬間値は細かく振れて読めないので、0.4秒ごとにその間の最大値を表示する */
@@ -12025,19 +12200,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     else if (t < mo.tS) ph = '初期微動（P波）　S波まで ' + (mo.tS - t).toFixed(1) + '秒';
     else ph = '主要動（S波）';
     setTx('hudPhase', ph);
-    const ban = $('roomEew');
-    if (RM.mode === 'sync' && sim && sim.warn && sim.warnAt && sim.warnAt.has(RM.siteArea)) {
-      const tw = sim.warnAt.get(RM.siteArea),
-        lead = mo.tS - tw;
-      const bh = t > mo.tS + 10;
-      if (ban.hidden !== bh) ban.hidden = bh;
-      setTx('roomEewMsg',
-        t < mo.tS
-          ? '強い揺れまで　あと ' + Math.ceil(mo.tS - t) + ' 秒'
-          : lead > 0
-            ? '強い揺れに警戒（猶予 ' + lead.toFixed(1) + ' 秒）'
-            : '警報より先に強い揺れが到達');
-    } else if (!ban.hidden) ban.hidden = true;
+    roomEewSync(t);
     /* テレビ：この地点が警報の対象になったら点灯（リセットまで点けたまま）。描画は0.5秒ごと */
     if (RM.mode === 'sync' && sim && sim.warn && sim.warnAt && sim.warnAt.has(RM.siteArea)) tvSet(true);
     /* スマホ：この地点を警報の対象に含む地震のうち、最後に対象になった地震の通知を出す（取消報が出たら取消の通知）。リセットまで出したまま */
