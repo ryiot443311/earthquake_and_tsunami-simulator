@@ -2052,6 +2052,10 @@ details.grp .grpb h2 { margin-top: 4px; }
   user-select: none;
   -webkit-user-select: none;
 }
+/* ===== Version 119：「過去の地震・想定から選ぶ」に1つの地震とシナリオをまとめ、「複数の地震」の下へ ===== */
+details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
+.sublab { font-size: 0.82rem; font-weight: 700; color: var(--fg); display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 2px; }
+.sublab small { font-size: 0.74rem; font-weight: 400; color: var(--muted); }
 </style>
 
 <div class="app">
@@ -2150,18 +2154,20 @@ details.grp .grpb h2 { margin-top: 4px; }
           <div class="ctl"><label for="s">断層の向き</label><input id="s" type="range" min="0" max="359" step="1" value="45"><output id="so"></output></div>
           <div class="ctl"><label for="ty">地震のタイプ</label><select id="ty"><option value="crustal">内陸（地殻内）</option><option value="inter">海溝型（プレート境界）</option><option value="intra">スラブ内（プレート内）</option></select></div>
         </div>
-        <div class="sec">
-          <h2>過去の地震・想定から選ぶ</h2>
-          <div class="presets" id="presets"></div>
-        </div>
         <details class="grp multi" id="multiGrp"><summary>複数の地震（連続・同時発生）<small id="multiSum">1つ</small></summary><div class="grpb">
           <div class="qlist" id="qlist" role="group" aria-label="地震の一覧"></div>
           <div class="qbtns"><button id="qAdd">＋ 地震を追加</button><button id="qDel">選んだ地震を削除</button></div>
           <div class="ctl"><label for="qdt">発生のずれ</label><input id="qdt" type="range" min="0" max="4200" step="1" value="0"><output id="qdto"></output></div>
-          <h2>シナリオ（一覧を置き換え）</h2>
-          <div class="presets" id="scen"></div>
-          <p class="note">一覧で選んだ地震を上で編集します。最大5つ。時間差の大きい実例は、見やすいように間隔を縮めています。</p>
+          <p class="note">一覧で選んだ地震を上で編集します。最大8つ。</p>
         </div></details>
+        <div class="sec" id="pastSec">
+          <h2>過去の地震・想定から選ぶ</h2>
+          <div class="sublab">1つの地震<small>いま選んでいる地震を置き換え</small></div>
+          <div class="presets" id="presets"></div>
+          <div class="sublab">連続・同時発生のシナリオ<small>地震の一覧ごと置き換え</small></div>
+          <div class="presets" id="scen"></div>
+          <p class="note">時間差の大きい実例は、見やすいように間隔を縮めています。</p>
+        </div>
         <div class="sec">
           <h2>この震源での予想</h2>
           <div class="res" id="pre"></div>
