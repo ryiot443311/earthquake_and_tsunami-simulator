@@ -1673,7 +1673,8 @@ footer.method {
     max-width: none;
   }
   .main {
-    grid-template-columns: minmax(0, 1fr) clamp(400px, 24vw, 600px);
+    /* 地図：右パネル＝7：3（Version 138。右パネルは最小400px） */
+    grid-template-columns: minmax(0, 7fr) minmax(400px, 3fr);
   }
   .tv {
     max-height: calc(100vh - 140px);
@@ -2070,13 +2071,48 @@ details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
 @media (min-width: 1100px) {
   .tv {
     aspect-ratio: 4 / 3;
-    max-height: min(calc(100vh - 140px), max(calc(100vh - 280px), calc((100vw - clamp(400px, 24vw, 600px) - 32px) * 0.5625)));
-    max-height: min(calc(100dvh - 140px), max(calc(100dvh - 280px), calc((100vw - clamp(400px, 24vw, 600px) - 32px) * 0.5625)));
+    max-height: min(calc(100vh - 140px), max(calc(100vh - 280px), calc((100vw - 32px - max(400px, (100vw - 32px) * 0.3)) * 0.5625)));
+    max-height: min(calc(100dvh - 140px), max(calc(100dvh - 280px), calc((100vw - 32px - max(400px, (100vw - 32px) * 0.3)) * 0.5625)));
   }
 }
 /* ===== Version 121：地図の左上・右上の表示（時計・震度速報・津波・切替ボタン）の大きさに上限を付ける。1cqw が9pxを超える大きな地図（約900px幅以上）では文字・余白を増やさない ===== */
 .tv { --u: min(1cqw, 9px); }
 .info .chip { font-size: max(11px, calc(1.7 * var(--u))); }
+/* ===== UI改善（表示切替ボタン・状態表示・ボタンの文字・待ちの欄・音・凡例・説明文） ===== */
+/* 表示切替：オンは塗りつぶし、オフは控えめな文字色 */
+.layers button { color: var(--muted); }
+.layers button[aria-pressed="true"] { background: var(--warn); border-color: var(--warn); color: #111; font-weight: 700; }
+.layers button[aria-pressed="true"]:hover { background: #ffe44d; }
+.seekrow .sks { display: none; }
+/* 速報・震度タブ：発表前の欄（津波・震度・長周期）は1行にまとめる */
+#pendSec { display: none; }
+#p-log:has(.empty.wait) #pendSec { display: block; }
+#p-log .sec:has(> .res > .empty.wait) { display: none; }
+@media (max-width: 999px) {
+  /* 表示切替は折り返して、6つを1行に等分（横スクロールをやめる） */
+  .stage > .tv + .bar + .bar { flex-wrap: wrap; overflow-x: visible; }
+  .stage > .tv + .bar + .bar .layers { flex: 1 1 100%; gap: 5px; }
+  .stage > .tv + .bar + .bar .layers button { flex: 1 1 0; min-width: 0; padding: 5px 2px; font-size: 0.78rem; white-space: nowrap; }
+  .morebtn { font-size: 0.9rem; font-weight: 400; letter-spacing: 0; }
+  body.hintoff #hint { display: none; }
+  /* 「音を試す」は最後（次の行）に置き、音のオン・オフでほかのボタンの位置が動かないようにする */
+  .stage > .tv + .bar.more #sndTest { order: 9; }
+}
+@media (max-width: 620px) {
+  .seekrow .sks { display: inline; }
+}
+@media (max-width: 400px) {
+  .seekrow .skg { display: none; }
+  /* 狭い画面でも「その他」まで1行に収める */
+  .stage > .tv + .bar { gap: 6px; }
+  .stage > .tv + .bar button { padding: 9px 8px; font-size: 0.86rem; }
+  .stage > .tv + .bar button.go { padding: 9px 10px; font-size: 0.94rem; }
+}
+@media (max-width: 340px) {
+  .stage > .tv + .bar { gap: 4px; }
+  .stage > .tv + .bar button { padding: 9px 5px; font-size: 0.8rem; }
+  .stage > .tv + .bar button.go { padding: 9px 7px; font-size: 0.88rem; }
+}
 </style>
 
 <div class="app">
@@ -2128,9 +2164,9 @@ details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
         <button class="go" id="go">地震発生</button>
         <button id="reset">リセット</button>
         <button id="spd" aria-pressed="false">速度 ×1</button>
-        <button id="moreBtn" class="morebtn" aria-expanded="false" aria-label="その他の操作">⋯</button>
-        <button id="mute" class="mx" aria-pressed="true">音：オフ</button>
-        <button id="sndTest" class="mx">音を試す</button>
+        <button id="moreBtn" class="morebtn" aria-expanded="false" aria-label="その他の操作">その他</button>
+        <button id="mute" class="mx" aria-pressed="false">音：オフ</button>
+        <button id="sndTest" class="mx" hidden>音を試す</button>
         <span class="grow"></span>
         <div class="seg mx" role="group" aria-label="ズーム"><button id="zOut" aria-label="縮小">－</button><button id="zFit">全国</button><button id="zIn" aria-label="拡大">＋</button></div>
         <button id="pin" class="pinbtn mx" aria-pressed="true">地図を固定：オン</button>
@@ -2151,7 +2187,7 @@ details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
         <button id="skBack" aria-label="30秒戻る" disabled>◀ 30秒</button>
         <input id="seek" type="range" min="0" max="100" step="1" value="0" aria-label="シミュレーションの時刻（戻す・先へ進める）" disabled>
         <button id="skFwd" aria-label="30秒進む" disabled>30秒 ▶</button>
-        <button id="skNext" aria-label="次の地震の直前まで進む" title="次の地震の直前まで進む" disabled><span class="skl">次の地震 </span>⏭</button>
+        <button id="skNext" aria-label="次の地震の直前まで進む" title="次の地震の直前まで進む" disabled><span class="skl">次の地震 </span><span class="sks">次へ</span><span class="skg"> ⏭</span></button>
         <span class="stime" id="stime">0:00 / 0:00</span>
       </div>
       <div class="hintline" id="hint">地図をタップして震源を置きます。ドラッグで移動、ピンチ・ホイールで拡大。</div>
@@ -2200,6 +2236,7 @@ details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
           <h2>緊急地震速報の発表履歴</h2>
           <div class="log" id="log"><div class="empty">まだ発表はありません。「地震発生」で開始します。</div></div>
         </div>
+        <div class="sec" id="pendSec"><div class="empty">津波情報・各地域の震度・長周期地震動階級は、発表されしだいここに表示します。</div></div>
         <div class="sec">
           <h2>津波情報</h2>
           <div class="res" id="tsuRes"><div class="empty">地震発生から約3分後に発表します。</div></div>
@@ -5072,14 +5109,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       on = !b.classList.contains('more');
     b.classList.toggle('more', on);
     $('moreBtn').setAttribute('aria-expanded', on);
-    $('moreBtn').textContent = on ? '✕' : '⋯';
+    $('moreBtn').textContent = on ? '閉じる' : 'その他';
     syncHdr();
   };
   $('mute').onclick = () => {
     muted = !muted;
     if (muted) stopSound();
     $('mute').textContent = muted ? '音：オフ' : '音：オン';
-    $('mute').setAttribute('aria-pressed', muted);
+    $('mute').setAttribute('aria-pressed', !muted);
+    /* 「音を試す」は音がオンのときだけ出す */
+    $('sndTest').hidden = muted;
+    syncHdr();
   };
   function showLegend(mode) {
     const L = $('legend');
@@ -5106,7 +5146,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       b.textContent = '長周期階級';
       L.appendChild(b);
       for (let c = 1; c <= 4; c++) add(String(c), LP_COLOR[c], LP_TXT[c]);
-    } else for (let c = 1; c <= 9; c++) add(CLS_LABEL[c], CLS_COLOR[c], CLS_TXT[c]);
+    } else {
+      const b = document.createElement('b');
+      b.textContent = '震度';
+      L.appendChild(b);
+      for (let c = 1; c <= 9; c++) add(CLS_LABEL[c], CLS_COLOR[c], CLS_TXT[c]);
+    }
   }
   $('zIn').onclick = () => {
     autoView.on = false;
@@ -5211,14 +5256,33 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (!logVisible()) $('logDot').hidden = $('logDot2').hidden = false;
   }
   /* 状態表示 */
-  let stKey = '';
+  let stKey = '',
+    stFull = '待機中・想定震度を表示';
+  /* スマホ（幅999px以下）は上部が狭く途中で切れるので、短い言い方にする */
+  const stMq = matchMedia('(max-width: 999px)');
+  const stShort = t =>
+    t === '待機中・想定震度を表示'
+      ? '待機中'
+      : t === '緊急地震速報（警報）発表中'
+        ? '警報 発表中'
+        : t === '緊急地震速報を取り消し'
+          ? '速報を取り消し'
+          : t === '震源・震度に関する情報'
+            ? '震源・震度情報'
+            : t === '終了・結果を表示中'
+              ? '終了・結果表示'
+              : t.replace(/^地震発生から /, '発生から ').replace(/^誤報のテスト中 /, '誤報テスト ');
+  const stShow = () => ($('statusTxt').textContent = stMq.matches ? stShort(stFull) : stFull);
   function setStatus(s, txt) {
     const k = s + txt;
     if (k === stKey) return;
     stKey = k;
+    stFull = txt;
     $('status').dataset.s = s;
-    $('statusTxt').textContent = txt;
+    stShow();
   }
+  stMq.addEventListener('change', stShow);
+  stShow();
 
   /* ---------- 津波（断層モデルによる簡易計算。経験式（阿部の式）で上下限を確認） ---------- */
   /* 気象庁の基準：予想高さ 0.2m以上1m以下＝注意報、1m超3m以下＝警報、3m超＝大津波警報。
@@ -5956,6 +6020,23 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   let gesture = null;
   /* 地図の上のボタン類は地図の操作（ドラッグ・タップ）に取り込まない。「震度｜津波」の切替（.isw）と縦テロップの閉じるボタン（.vx）が抜けていて押せなかった（Version 124） */
   const onOv = e => e.target.closest && e.target.closest('#room3d,#info,#tsu,.esw,.isw,.vx');
+  /* スマホ：地図の下の説明文は、一度操作したら消す（「揺れを見る地点」を選んだときは次の操作まで出す） */
+  let hintSeen = false;
+  try {
+    hintSeen = localStorage.getItem('eqsim-hint') === '1';
+  } catch (e) {}
+  function hintOff(on) {
+    document.body.classList.toggle('hintoff', on);
+    if (on && !hintSeen) {
+      hintSeen = true;
+      try {
+        localStorage.setItem('eqsim-hint', '1');
+      } catch (e) {}
+    }
+  }
+  if (hintSeen) hintOff(true);
+  $('go').addEventListener('click', () => hintOff(true));
+  tv.addEventListener('pointerdown', () => hintOff(true));
   tv.addEventListener('pointerdown', e => {
     if (onOv(e)) return;
     tv.setPointerCapture(e.pointerId);
@@ -6208,7 +6289,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (!sim || !sim.running || !!sim.paused === on) return;
     sim.paused = on;
     if (on) {
-      pauseSt = [$('status').dataset.s, $('statusTxt').textContent];
+      pauseSt = [$('status').dataset.s, stFull];
       setStatus(pauseSt[0], '一時停止中');
       if (ac && ac.state === 'running') ac.suspend().catch(() => {});
     } else {
@@ -6373,12 +6454,20 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         if (e.tsunami) e.tsunami.regs.forEach(r => (r.arr += e.t0));
         /* 「認知」＝緊急地震速報の第1報の発表時。第1報が出た時点で上書きする（eewTick）。出ない地震は検知＋遅延から数える */
         const tRec = e.det.length ? e.det[0] + cfg.delay : e.t0;
-        e.tsT = tRec + 180;
+        /* 発表までの時間にばらつき（Version 140）：第1報は認知から2〜4分（気象庁の目標は約3分）、M8超の数値への更新は13〜18分 */
+        const rt = rng(runSeed + e.k * 7919 + 2718);
+        rt();
+        e.tsOff = 120 + 120 * rt();
+        e.tsOff2 = 780 + 300 * rt();
+        e.tsSeed = runSeed + e.k * 7919 + 5151;
+        e.tsFc = null;
+        e.tsuQ = [];
+        e.tsT = tRec + e.tsOff;
         e.tsQual = qual;
         if (e.tsunami && e.tsunami.gen) {
           e.endT = Math.max(e.endT, e.tsT + 25);
           if (qual) {
-            e.tsT2 = tRec + 900;
+            e.tsT2 = tRec + e.tsOff2;
             e.endT = Math.max(e.endT, e.tsT2 + 20);
           }
         }
@@ -6408,9 +6497,21 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.mwShown = null;
       if (!fake && e.mBias >= 0.15) {
         const t0 = e.det.length ? e.det[0] + cfg.delay : e.t0;
-        MW_STEPS.forEach(([dt, f]) => e.mwSteps.push({ t: t0 + dt, f }));
-        e.mwSteps.push({ t: t0 + MW_FINAL, f: 1, fin: true });
-        e.endT = Math.max(e.endT, t0 + MW_FINAL + 20);
+        /* 時刻と詰める割合にばらつき（Version 140）：各段階の時刻は ±2〜5分（MW_JIT）、割合は ±0.06。前の段階から3分以上あける */
+        const rm = rng(runSeed + e.k * 7919 + 777);
+        rm();
+        let tp = t0,
+          fp = 0;
+        MW_STEPS.forEach(([dt, f], i) => {
+          const tt = Math.max(tp + 180, t0 + dt + (rm() * 2 - 1) * MW_JIT[i]),
+            ff = Math.min(0.97, Math.max(fp + 0.08, f + (rm() * 2 - 1) * 0.06));
+          e.mwSteps.push({ t: tt, f: ff });
+          tp = tt;
+          fp = ff;
+        });
+        const tf = Math.max(tp + 300, t0 + MW_FINAL + (rm() * 2 - 1) * MW_JIT[3]);
+        e.mwSteps.push({ t: tf, f: 1, fin: true });
+        e.endT = Math.max(e.endT, tf + 20);
       }
       e.tauConv = Math.max(
         10,
@@ -6456,14 +6557,20 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       shakeEnd: Math.max(...evs.map(e => e.endT0 ?? e.endT)),
       tobsCo: null,
       tobsOff: null,
-      tobsChk: null
+      tobsChk: null,
+      tsuChk: null,
+      tsuAdj: new Map(),
+      tsuPend: new Map(),
+      tsuObsQ: []
     };
     $('log').innerHTML = '<div class="empty">地震波を監視中…</div>';
-    $('res').innerHTML = '<div class="empty">シミュレーション中…</div>';
-    $('lpRes').innerHTML = '<div class="empty">シミュレーション中…</div>';
+    $('res').innerHTML = '<div class="empty wait">シミュレーション中…</div>';
+    $('lpRes').innerHTML = '<div class="empty wait">シミュレーション中…</div>';
     tobsClear();
     $('tsuRes').innerHTML =
-      '<div class="empty">' +
+      '<div class="empty' +
+      (!fake && cfg.tsu ? ' wait' : '') +
+      '">' +
       (fake
         ? '今回は発表しません。'
         : cfg.tsu
@@ -6543,7 +6650,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     [1200, 0.75],
     [2400, 0.92]
   ],
-    MW_FINAL = 3600; /* 地震を認知してからの秒数と、緊急地震速報の最後のMから実際のMまでの差を詰める割合 */
+    MW_FINAL = 3600, /* 地震を認知してからの秒数と、緊急地震速報の最後のMから実際のMまでの差を詰める割合 */
+    MW_JIT = [120, 180, 240, 300]; /* 各段階の時刻のばらつき（±秒。Version 140） */
   function eewLastM(e) {
     return e.reports.length ? e.reports[e.reports.length - 1].M : e.q.M;
   }
@@ -6846,10 +6954,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       dM: s.fake || !e.q ? null : est.M - e.q.M
     };
     e.reports.push(rep);
-    /* 津波予報は、地震を認知（第1報の発表）してから3分後。M8超の数値更新は15分後 */
+    /* 津波予報は、地震を認知（第1報の発表）してから約3分後（2〜4分）。M8超の数値更新は約15分後（13〜18分） */
     if (e.reports.length === 1 && e.tsT != null && !e.tsuDone && !s.fake) {
-      e.tsT = t + 180;
-      if (e.tsQual) e.tsT2 = t + 900;
+      e.tsT = t + (e.tsOff || 180);
+      if (e.tsQual) e.tsT2 = t + (e.tsOff2 || 900);
       if (e.tsunami && e.tsunami.gen) {
         e.endT = Math.max(e.endT, e.tsT + 25, e.tsT2 ? e.tsT2 + 20 : 0);
         s.endT = Math.max(s.endT, e.endT);
@@ -7711,25 +7819,38 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
 
   /* 津波警報・注意報（地震ごとに発生から約3分後。複数の地震は予報区ごとに高い方でまとめる）。upd＝巨大地震の数値への更新 */
+  /* upd：false＝第1報、true＝M8超の数値への更新、'M'＝Mの更新による見直し、'obs'＝観測による引き上げ・追加（'M'・'obs' は変化があるときだけ発表） */
   function issueTsunami(t, e, upd) {
     const s = sim;
-    if (upd) {
+    if (upd === true) {
       const ts = computeTsunami(e.q, false);
       if (ts) ts.regs.forEach(r => (r.arr += e.t0));
       e.tsunami = ts;
+      e.tsFc = ts;
       e.tsuUpd = true;
-    } else e.tsuDone = true;
+    } else if (!upd) {
+      e.tsuDone = true;
+      /* 第1報は、その時点で分かっているMで予想する（実際のMとずれていれば、後の情報や観測で見直す） */
+      e.tsFc = tsuFc(e, infoM(e, t));
+    }
     const prev = s.tsunami,
-      ts = mergeTsu(s.evs.filter(v => v.tsuDone).map(v => v.tsunami));
+      ts = tsuAdjApply(mergeTsu(s.evs.filter(v => v.tsuDone).map(v => v.tsFc || v.tsunami)));
     if (!ts || !ts.gen) return;
-    s.tsunami = ts;
-    s.tsuShown = true;
-    s.tsuAt = t;
-    const top = ts.regs[0].cat;
     const up = ts.regs.filter(r => {
       const o = prev && prev.regs.find(x => x.name === r.name);
       return !o || r.cat > o.cat;
     });
+    /* 見直し・観測による発表は、注意報以上の追加か区分の引き上げがあるときだけ */
+    if (
+      (upd === 'M' || upd === 'obs') &&
+      prev &&
+      !up.some(r => r.cat >= 2)
+    )
+      return;
+    s.tsunami = ts;
+    s.tsuShown = true;
+    s.tsuAt = t;
+    const top = ts.regs[0].cat;
     const clk = a => {
       const d = new Date(s.startClock + a * 1000);
       return d.getHours() + '時' + String(d.getMinutes()).padStart(2, '0') + '分';
@@ -7815,10 +7936,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       );
     const head = !prev
       ? TSU_NAME[top]
-      : upd
+      : upd === true
         ? '津波情報の更新（予想される高さを数値で発表）'
         : up.length
-          ? '津波警報・注意報の切り替え・追加'
+          ? '津波警報・注意報の切り替え・追加' +
+            (upd === 'obs' ? '（観測された津波から引き上げ）' : upd === 'M' ? '（地震の規模の更新から引き上げ）' : '')
           : '津波情報の更新';
     addLog(
       '<div class="r t"><div class="h">' +
@@ -7840,6 +7962,117 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     setStatus(top >= 2 ? 'tsu' : 'live', TSU_NAME[top].replace('（若干の海面変動）', '') + ' 発表中');
     notifyLog();
     dirty = true;
+  }
+
+  /* ===== 津波予報のばらつきと見直し（Version 140） =====
+     ・第1報は、その時点のM（緊急地震速報の最後のM、または情報で出したM）で予想する。実際の津波（観測される波）は実際のMで起きる。
+       予報区ごとの高さは、実際のMでの値に 10^(k·ΔM)（ΔM＝予報のM−実際のM）を掛ける。k は近い所（第1波まで20分以内）0.5、遠い所（60分以上）1.0
+       （阿部の式：近地の上限 log H＝0.5Mw−3.3、遠地 log H＝Mw−log Δ−5.80）。さらに予報区ごとに予想の誤差（対数正規、σ0.2）を掛ける。
+     ・Mの更新（M7.5超の地震）で大きくなったら、30秒〜2分半後に予報を見直し、引き上げ・追加があれば「津波警報・注意報の切り替え・追加」を出す。
+     ・観測：沿岸の観測点の最大波×1.4（予報区内の高い所への換算）、沖合の観測点は沿岸の推定値が、その予報区の今の区分を超えたら、1〜4分後に引き上げる・追加する。
+       判断にはばらつきがある（観測点ごとに、比べる値に0.8〜1.2倍を掛け、約15%は引き上げに使わない）。下げる（解除・引き下げ）は扱わない */
+  function tsuFc(e, M) {
+    const T = e.tsunami;
+    if (!T || !T.gen || e.tsQual) return T;
+    const dM = M - e.q.M,
+      g = rng(e.tsSeed),
+      regs = [];
+    g();
+    for (const r of T.regs) {
+      const z = gauss(g),
+        ta = (r.arr - e.t0) / 60,
+        k = 0.5 + 0.5 * Math.min(1, Math.max(0, (ta - 20) / 40)),
+        H = r.H * Math.pow(10, k * dM) * Math.exp(0.2 * z),
+        cat = tsuCatJ(H);
+      if (cat >= 1) regs.push(Object.assign({}, r, { H, cat, lab: tsuLabelJ(cat, H, false) }));
+    }
+    regs.sort((a, b) => b.cat - a.cat || b.H - a.H);
+    return { gen: regs.length > 0, regs, raw: T.raw };
+  }
+  /* 新しいMで見直す：区分が上がる予報区だけ差し替える（下げない） */
+  function tsuReFc(t, e, M) {
+    const nw = tsuFc(e, M);
+    if (!nw || !nw.gen) return;
+    const by = new Map(((e.tsFc && e.tsFc.regs) || []).map(r => [r.name, r]));
+    for (const r of nw.regs) {
+      const o = by.get(r.name);
+      if (!o || r.cat > o.cat) by.set(r.name, r);
+    }
+    const regs = [...by.values()].sort((a, b) => b.cat - a.cat || b.H - a.H);
+    e.tsFc = { gen: regs.length > 0, regs, raw: e.tsunami.raw };
+    issueTsunami(t, e, 'M');
+  }
+  /* 観測による引き上げ・追加を、まとめた予報に重ねる */
+  function tsuAdjApply(ts) {
+    const A = sim.tsuAdj;
+    if (!A || !A.size) return ts;
+    const regs = ts ? ts.regs.map(r => Object.assign({}, r)) : [];
+    for (const [name, a] of A) {
+      const o = regs.find(r => r.name === name);
+      if (!o) regs.push(Object.assign({}, a.r, { cat: a.cat, H: a.H, lab: a.lab }));
+      else if (a.cat > o.cat) Object.assign(o, { cat: a.cat, H: Math.max(o.H, a.H), lab: a.lab });
+    }
+    regs.sort((a, b) => b.cat - a.cat || b.H - a.H);
+    return { gen: regs.length > 0, regs };
+  }
+  function tsuObsCheck(t0) {
+    const s = sim,
+      t = Math.floor(t0 / TOBS_CHK) * TOBS_CHK;
+    if (s.tsuChk != null && t <= s.tsuChk) return;
+    s.tsuChk = t;
+    const evs = s.evs.filter(e => e.tobs && e.tsuDone);
+    if (!evs.length) return;
+    const T = tstnInit(),
+      tau = t - TOBS_DELAY,
+      cur = new Map(((s.tsunami && s.tsunami.regs) || []).map(r => [r.name, r.cat]));
+    s.tsuPend = s.tsuPend || new Map();
+    s.tsuObsQ = s.tsuObsQ || [];
+    const look = (list, i, st, off) => {
+      if (st.far || !st.reg) return;
+      let mx = 0,
+        src = null;
+      for (const e of evs) {
+        const w = e.tobs[list][i];
+        if (!w || w.miss) continue;
+        const v = wvAt(w, tau);
+        if (!v) continue;
+        const h = off ? v.mx * (w.ratio || 0) : v.mx * 1.4;
+        if (h > mx) {
+          mx = h;
+          src = e;
+        }
+      }
+      if (!src || mx < 0.2) return;
+      const g = rng(runSeed + i * 131 + (off ? 70001 : 0) + 99991);
+      g();
+      const u = 0.8 + 0.4 * g(),
+        use = g() < 0.85,
+        c = tsuCatJ(mx * u),
+        have = Math.max(cur.get(st.reg) || 0, s.tsuPend.get(st.reg) || 0);
+      if (!use || c < 2 || c <= have) return;
+      const tr = src.tsunami.regs.find(r => r.name === st.reg);
+      if (!tr) return;
+      s.tsuPend.set(st.reg, c);
+      s.tsuObsQ.push({ t: t + 60 + 180 * g(), name: st.reg, cat: c, H: mx, r: tr, e: src });
+      s.tsuObsQ.sort((a, b) => a.t - b.t);
+    };
+    T.co.forEach((st, i) => look('co', i, st, false));
+    T.off.forEach((st, i) => look('off', i, st, true));
+  }
+  function tsuObsRun(t) {
+    const s = sim,
+      Q = s.tsuObsQ;
+    if (!Q || !Q.length || t < Q[0].t) return;
+    s.tsuAdj = s.tsuAdj || new Map();
+    let e = null;
+    while (Q.length && t >= Q[0].t) {
+      const q = Q.shift(),
+        o = s.tsuAdj.get(q.name);
+      if (o && o.cat >= q.cat) continue;
+      s.tsuAdj.set(q.name, { cat: q.cat, H: q.H, lab: tsuLabelJ(q.cat, q.H, false), r: q.r });
+      e = e || q.e;
+    }
+    if (e) issueTsunami(t, e, 'obs');
   }
 
   /* ===== 津波観測に関する情報（沿岸）・沖合の津波観測に関する情報 =====
@@ -8411,6 +8644,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
             st = { M: mwM(e, si), fin: e.mwSteps[si].fin },
             prev = e.mwShown != null ? e.mwShown : eewLastM(e);
           e.mwShown = st.M;
+          /* 津波予報も新しいMで見直す（30秒〜2分半後。引き上げ・追加があるときだけ発表） */
+          if (e.tsuDone && !e.tsQual && e.tsuQ && st.M > prev) {
+            const rq = rng(e.tsSeed + si * 17);
+            e.tsuQ.push({ t: e.mwSteps[si].t + 30 + 120 * rq(), M: st.M });
+          }
           if (!sim.infoShown || st.M === prev) continue;
           const nm = epiName(e.q.lon, e.q.lat),
             dp = e.q.depth || 10,
@@ -8435,7 +8673,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         if (!e.tsuDone) {
           if (t >= e.tsT) issueTsunami(t, e, false);
         } else if (e.tsT2 && !e.tsuUpd && t >= e.tsT2) issueTsunami(t, e, true);
+        while (e.tsuDone && e.tsuQ && e.tsuQ.length && t >= e.tsuQ[0].t) tsuReFc(t, e, e.tsuQ.shift().M);
       }
+    /* 観測された津波から、津波警報・注意報を引き上げる・追加する（Version 140） */
+    if (!sim.fake && sim.evs.some(e => e.tsuDone && e.tobs)) {
+      tsuObsCheck(t);
+      tsuObsRun(t);
+    }
     if (!sim.fake && sim.tsuShown) tobsTick(t);
     if (
       !sim.fake &&
@@ -8537,9 +8781,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     last = performance.now();
     if (sim && sim.running && wasPaused) {
       if (!sim.paused) setPause(true);
-      else if ($('statusTxt').textContent !== '一時停止中') {
+      else if (stFull !== '一時停止中') {
         /* 一時停止のまま時刻だけ動かした場合：状態表示を「一時停止中」に戻し、再開時の復元先を今の表示にする */
-        pauseSt = [$('status').dataset.s, $('statusTxt').textContent];
+        pauseSt = [$('status').dataset.s, stFull];
         setStatus(pauseSt[0], '一時停止中');
       }
     }
@@ -8998,8 +9242,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
 
   /* ---------- 3D room ---------- */
-  const RW = 2.5,
-    RD = 2.0,
+  /* 部屋の広さ（Version 137：幅5.0×奥行4.0m → 幅5.6×奥行4.6m、約16畳）。壁沿いの家具・窓・時計・額は壁からの距離で置く */
+  const RW = 2.8,
+    RD = 2.3,
     RH = 2.4;
   function mat(c, o) {
     return new THREE.MeshStandardMaterial(
@@ -9073,6 +9318,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     g.putImageData(im, 0, 0);
     const tx = new THREE.CanvasTexture(c);
     tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+    /* 色の画像は sRGB として読む（Version 135。出力も sRGB＋トーンマッピング） */
+    tx.encoding = 3001;
     if (RM.R3 && RM.R3.renderer) tx.anisotropy = Math.min(4, RM.R3.renderer.capabilities.getMaxAnisotropy());
     TEXC[key] = tx;
     return tx;
@@ -9302,6 +9549,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     draw(c.getContext('2d'), w, h);
     const tx = new THREE.CanvasTexture(c);
     tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+    tx.encoding = 3001;
     if (rep) tx.repeat.set(rep[0], rep[1]);
     if (RM.R3 && RM.R3.renderer) tx.anisotropy = Math.min(4, RM.R3.renderer.capabilities.getMaxAnisotropy());
     TEXC[key] = tx;
@@ -9686,7 +9934,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       RM.tvTex = new THREE.CanvasTexture(c);
       RM.tvTex.minFilter = THREE.LinearFilter;
       RM.tvTex.generateMipmaps = false;
-      RM.tvMat = new THREE.MeshBasicMaterial({ map: RM.tvTex });
+      RM.tvTex.encoding = 3001;
+      RM.tvMat = new THREE.MeshBasicMaterial({ map: RM.tvTex, toneMapped: false });
     }
     scr.material = on ? RM.tvMat : RM.tvOffMat;
     RM.tvKey = null;
@@ -9842,9 +10091,87 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     c.shadowBlur = 0;
     RM.tvTex.needsUpdate = true;
   }
+  /* 津波の全国地図の上に重ねる緊急地震速報のテロップ（NHK風：幅は画面の62.9%・縦横比3:1・下から画面幅の5.85%）。
+     津波の地図は後ろ、緊急地震速報は手前（Version 134） */
+  function tvDrawTelop(c) {
+    const W = 320,
+      H = 180,
+      F = '"Noto Sans JP","Zen Kaku Gothic New","BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif';
+    const w = Math.round(W * 0.629),
+      h = Math.round(w / 3),
+      x = Math.round((W - w) / 2),
+      y = H - Math.round(W * 0.0585) - h,
+      mw = Math.round(w * 0.268),
+      hh = 14,
+      cancel = !!(sim && sim.canceled);
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.shadowColor = 'rgba(0,0,0,.5)';
+    c.shadowBlur = 4;
+    c.fillStyle = '#fff';
+    c.fillRect(x - 1.5, y - 1.5, w + 3, h + 3);
+    c.shadowBlur = 0;
+    /* 左：対象地域の小地図 */
+    c.fillStyle = '#2b3768';
+    c.fillRect(x, y, mw, h);
+    const tm = $('tmap');
+    try {
+      if (tm && tm.width && tm.height) c.drawImage(tm, x, y, mw, h);
+    } catch (e) {}
+    /* 右：見出しと本文 */
+    const bx = x + mw + 1,
+      bw = w - mw - 1;
+    const g = c.createLinearGradient(0, y, 0, y + hh);
+    if (cancel) {
+      g.addColorStop(0, '#8a95a8');
+      g.addColorStop(1, '#5d6b82');
+    } else {
+      g.addColorStop(0, '#e67a94');
+      g.addColorStop(0.3, '#ec5579');
+      g.addColorStop(1, '#b83b58');
+    }
+    c.fillStyle = g;
+    c.fillRect(bx, y, bw, hh);
+    c.fillStyle = cancel ? '#3a455a' : '#306ec9';
+    c.fillRect(bx, y + hh, bw, h - hh);
+    c.textBaseline = 'middle';
+    c.textAlign = 'center';
+    c.fillStyle = '#fff';
+    c.font = 'bold 9.5px ' + F;
+    c.fillText(cancel ? '緊急地震速報（取消）' : '緊急地震速報（気象庁）', bx + bw / 2, y + hh / 2 + 0.5, bw - 6);
+    c.textAlign = 'left';
+    const src = ($('tSrc').textContent || $('eewSrc').textContent || '').trim();
+    c.fillStyle = '#fff23a';
+    c.font = '500 8px ' + F;
+    c.fillText(src || '強い揺れに警戒', bx + 4, y + hh + 7.5, bw - 8);
+    const regs = cancel ? ['揺れは観測されていません'] : shownRegs().map(r => REGNAME[r]).filter(Boolean);
+    c.fillStyle = '#fff';
+    c.font = 'bold 10.5px ' + F;
+    let line = '',
+      ly = y + hh + 21;
+    const lim = y + h - 5;
+    for (const r of regs) {
+      const t = line ? line + '　' + r : r;
+      if (c.measureText(t).width > bw - 8 && line) {
+        c.fillText(line, bx + 4, ly, bw - 8);
+        line = r;
+        ly += 13;
+        if (ly > lim) break;
+      } else line = t;
+    }
+    if (line && ly <= lim) c.fillText(line, bx + 4, ly, bw - 8);
+    c.restore();
+  }
   function tvDraw() {
     const TL = tvTsuRegs();
-    if (TL) return tvDrawTsu(TL);
+    if (TL) {
+      tvDrawTsu(TL);
+      if (siteEew()) {
+        tvDrawTelop(RM.tvCv.getContext('2d'));
+        RM.tvTex.needsUpdate = true;
+      }
+      return;
+    }
     const c = RM.tvCv.getContext('2d'),
       W = 320,
       H = 180,
@@ -9947,9 +10274,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         RM.phTex = new THREE.CanvasTexture(c);
         RM.phTex.minFilter = THREE.LinearFilter;
         RM.phTex.generateMipmaps = false;
-        RM.phMat = new THREE.MeshBasicMaterial({ map: RM.phTex });
+        RM.phTex.encoding = 3001;
+        RM.phMat = new THREE.MeshBasicMaterial({ map: RM.phTex, toneMapped: false });
       }
-      phDraw(name, /c$/.test(key));
+      if (typeof key === 'string' && key[0] === 'T') phDrawTsu(+key.slice(1));
+      else phDraw(name, /c$/.test(key));
     }
     scr.material = key != null ? RM.phMat : RM.phOffMat;
     RM.need = RM.shDirty = true;
@@ -10053,15 +10382,151 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     c.textAlign = 'left';
     RM.phTex.needsUpdate = true;
   }
+  /* スマホの津波の通知（緊急速報メール風。絵と見出しはオリジナル）。cat：2＝津波注意報、3＝津波警報、4＝大津波警報 */
+  function phDrawTsu(cat) {
+    const c = RM.phCv.getContext('2d'),
+      W = 300,
+      H = 640,
+      F = '"Noto Sans JP","BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif',
+      Y = '#f3e727';
+    const rr = (x, y, w, h, r) => {
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.arcTo(x + w, y, x + w, y + h, r);
+      c.arcTo(x + w, y + h, x, y + h, r);
+      c.arcTo(x, y + h, x, y, r);
+      c.arcTo(x, y, x + w, y, r);
+      c.closePath();
+    };
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, W, H);
+    c.textBaseline = 'middle';
+    c.textAlign = 'left';
+    /* 見出しの帯 */
+    let g = c.createLinearGradient(0, 28, 0, 62);
+    g.addColorStop(0, '#f4f4f4');
+    g.addColorStop(1, '#c9c9c9');
+    c.fillStyle = g;
+    c.fillRect(0, 28, W, 34);
+    c.fillStyle = '#d4001a';
+    c.fillRect(0, 28, 5, 34);
+    rr(12, 33, 24, 24, 5);
+    c.fillStyle = '#d4001a';
+    c.fill();
+    c.fillStyle = '#fff';
+    c.fillRect(22.5, 38, 3, 9.5);
+    c.fillRect(22.5, 49.5, 3, 3);
+    c.fillStyle = '#111';
+    c.font = 'bold 17px ' + F;
+    c.fillText('緊急速報メール', 44, 46);
+    /* 本文（幅に合わせて折り返す） */
+    const head = ['', '', '津波注意報', '津波警報', '大津波警報'][cat] + '発表';
+    const body =
+      cat >= 3
+        ? '沿岸部の方は直ちに高台など安全な場所へ避難して下さい（気象庁）'
+        : '海の中や海岸付近は危険です。海から上がり、海岸から離れて下さい（気象庁）';
+    c.fillStyle = '#fff';
+    c.font = '15.5px ' + F;
+    let ty = 84;
+    c.fillText(head, 12, ty);
+    let line = '';
+    for (const ch of body) {
+      if (c.measureText(line + ch).width > W - 24) {
+        ty += 22;
+        c.fillText(line, 12, ty);
+        line = ch;
+      } else line += ch;
+    }
+    if (line) c.fillText(line, 12, ty + 22);
+    /* 絵（オリジナル）：黄色の枠と地に、黒い波 */
+    const s = 172,
+      px = (W - s) / 2,
+      py = 196;
+    rr(px + 3, py + 3, s - 6, s - 6, 14);
+    c.strokeStyle = Y;
+    c.lineWidth = 6;
+    c.stroke();
+    const ix = px + 20,
+      iy = py + 20,
+      iw = s - 40;
+    c.fillStyle = Y;
+    c.fillRect(ix, iy, iw, iw);
+    c.save();
+    c.beginPath();
+    c.rect(ix, iy, iw, iw);
+    c.clip();
+    c.fillStyle = '#000';
+    /* 大きな波：左下からせり上がり、右上で巻く */
+    c.beginPath();
+    c.moveTo(ix, iy + iw);
+    c.lineTo(ix, iy + iw * 0.7);
+    c.bezierCurveTo(ix + iw * 0.3, iy + iw * 0.62, ix + iw * 0.42, iy + iw * 0.08, ix + iw * 0.78, iy + iw * 0.12);
+    c.bezierCurveTo(ix + iw * 0.96, iy + iw * 0.15, ix + iw * 1.0, iy + iw * 0.36, ix + iw * 0.86, iy + iw * 0.42);
+    c.bezierCurveTo(ix + iw * 0.9, iy + iw * 0.28, ix + iw * 0.76, iy + iw * 0.24, ix + iw * 0.68, iy + iw * 0.34);
+    c.bezierCurveTo(ix + iw * 0.58, iy + iw * 0.5, ix + iw * 0.62, iy + iw * 0.72, ix + iw * 0.74, iy + iw * 0.8);
+    c.lineTo(ix + iw, iy + iw * 0.8);
+    c.lineTo(ix + iw, iy + iw);
+    c.closePath();
+    c.fill();
+    /* しぶき */
+    for (const [dx, dy, r] of [
+      [0.9, 0.52, 0.035],
+      [0.8, 0.5, 0.03],
+      [0.94, 0.64, 0.028]
+    ]) {
+      c.beginPath();
+      c.arc(ix + iw * dx, iy + iw * dy, iw * r, 0, Math.PI * 2);
+      c.fill();
+    }
+    /* 手前のさざ波（黄色の山） */
+    c.fillStyle = Y;
+    for (let k = 0; k < 4; k++) {
+      c.beginPath();
+      c.arc(ix + iw * (0.125 + k * 0.25), iy + iw * 1.02, iw * 0.15, Math.PI, 0);
+      c.fill();
+    }
+    c.restore();
+    /* 閉じるボタン */
+    rr(14, 548, W - 28, 60, 6);
+    g = c.createLinearGradient(0, 548, 0, 608);
+    g.addColorStop(0, '#5a5a5a');
+    g.addColorStop(0.5, '#3a3a3a');
+    g.addColorStop(1, '#222');
+    c.fillStyle = g;
+    c.fill();
+    c.strokeStyle = '#6e6e6e';
+    c.lineWidth = 1;
+    c.stroke();
+    c.beginPath();
+    c.arc(W / 2, 568, 11, 0, Math.PI * 2);
+    c.fillStyle = '#9a9a9a';
+    c.fill();
+    c.strokeStyle = '#333';
+    c.lineWidth = 3;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(W / 2 - 4.5, 563.5);
+    c.lineTo(W / 2 + 4.5, 572.5);
+    c.moveTo(W / 2 + 4.5, 563.5);
+    c.lineTo(W / 2 - 4.5, 572.5);
+    c.stroke();
+    c.fillStyle = '#fff';
+    c.font = '13px ' + F;
+    c.textAlign = 'center';
+    c.fillText('閉じる', W / 2, 594);
+    c.textAlign = 'left';
+    RM.phTex.needsUpdate = true;
+  }
   /* 倒れた・台から離れたら画面を消す（リセットまで点けない）。点いていたら「ブチブチ」と途切れてから消える（実時間0.7秒）。揺れが終わった後に倒れても判定する */
   const TV_FX_MS = 700;
   /* テレビの画面は「内容が変わったとき」だけ描き直す（以前は0.5秒ごとに描いて画像を送り直していた）。カメラの視野の外にあるときは描かず、視野に入ったら描く（Version 118） */
   function tvKey() {
     const tk = tvTsuKey();
-    if (tk) return tk;
+    if (tk && !siteEew()) return tk;
     const ev = sim && sim.evs ? sim.evs.find(v => v.k === sim.shown) : null;
     const src = ($('tSrc').textContent || $('eewSrc').textContent || '').trim();
     return [
+      tk || '',
       sim && sim.canceled ? 1 : 0,
       src,
       shownRegs().join(','),
@@ -10255,6 +10720,1048 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     [0.04, 0.195], [0.031, 0.235], [0.029, 0.265], [0.032, 0.288], [0.037, 0.299], [0.0355, 0.3], [0.03, 0.292],
     [0.025, 0.265], [0.027, 0.235], [0.036, 0.19], [0.045, 0.14], [0.05, 0.09], [0.045, 0.03], [0, 0.02]
   ];
+  /* フロアライト（Version 135）：黒い金属のろくろ形の支柱（重い台座・飾りのふくらみ・上の壺形）、木の輪、リネンの筒形シェード（内側が明るく光る）、電球。
+     部品はろくろ形4つ＋電球1つ（同じ材質はまとめて描く）。点灯中は暖色の点光源（影なし）。倒れると消える（lampFx） */
+  const LAMP_POST = [
+    [0, 0], [0.148, 0], [0.152, 0.006], [0.15, 0.016], [0.13, 0.026], [0.085, 0.036], [0.045, 0.046], [0.026, 0.06], [0.016, 0.08], [0.0115, 0.1],
+    [0.0115, 0.4], [0.016, 0.42], [0.026, 0.46], [0.031, 0.5], [0.026, 0.545], [0.015, 0.575], [0.013, 0.59], [0.021, 0.615], [0.013, 0.64], [0.0115, 0.66],
+    [0.0115, 1.06], [0.014, 1.075], [0.026, 1.11], [0.033, 1.15], [0.031, 1.175], [0.022, 1.19], [0.014, 1.195],
+    [0.014, 1.225], [0.021, 1.23], [0.02, 1.245], [0.009, 1.255], [0.009, 1.3], [0.017, 1.305], [0.017, 1.355], [0.012, 1.36], [0, 1.36]
+  ];
+  function buildFloorLamp(f, o) {
+    const g = new THREE.Group(),
+      lp = RM.lowP,
+      metal = mat(0x1f1e1d, { roughness: 0.38, metalness: 0.65 }),
+      wood = woodMat('lampw', [168, 120, 72], [116, 78, 44], 141, 0, true, 0.45),
+      sh = fabricTex('lshade', [240, 232, 214], 44, 142);
+    g.add(lathe(LAMP_POST, lp ? 16 : 24, metal));
+    /* 支柱の上の木の輪（写真の真鍮・木の飾り） */
+    g.add(lathe([[0.014, 1.19], [0.03, 1.192], [0.036, 1.2], [0.036, 1.218], [0.03, 1.226], [0.014, 1.228]], lp ? 16 : 24, wood));
+    /* シェード：下が広い筒形。外側は布の色＋弱い透過光、内側は明るく光る。上下の縁は少し厚く */
+    const prof = [[0.208, 1.225], [0.21, 1.229], [0.2085, 1.236], [0.162, 1.477], [0.1635, 1.484], [0.161, 1.487]],
+      seg = lp ? 24 : 36,
+      outM = mat(0xffffff, { map: sh, bumpMap: lp ? null : sh, bumpScale: 0.0006, roughness: 0.95, emissive: 0xffc98a, emissiveMap: sh, emissiveIntensity: 0.32 }),
+      inM = mat(0xffffff, { map: sh, roughness: 1, emissive: 0xffd9a3, emissiveMap: sh, emissiveIntensity: 0.95, side: THREE.BackSide }),
+      geo = latheGeo(prof, seg, 0),
+      so = new THREE.Mesh(geo, outM),
+      si = new THREE.Mesh(geo, inM);
+    so.castShadow = true;
+    si.castShadow = false;
+    g.add(so, si);
+    /* 電球（上から覗くと見える） */
+    const bm = new THREE.MeshBasicMaterial({ color: 0xfff1d6, toneMapped: false }),
+      bulb = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), bm);
+    bulb.position.y = 1.39;
+    bulb.scale.y = 1.25;
+    g.add(bulb);
+    /* 光：シェードの中。影は付けない（軽さのため） */
+    const pl = new THREE.PointLight(new THREE.Color(0xffc98e).convertSRGBToLinear(), RX.lamp, 3.6, 1.6);
+    pl.position.y = 1.38;
+    g.add(pl);
+    o.lamp = { pl, outM, inM, bm, on: true, fxT: 0 };
+    RM.flamp = o;
+    return g;
+  }
+  /* フロアライトの点灯・消灯（Version 135）：大きく傾いたら（上向き成分 R[4]<0.45＝約63度）0.4秒ちらついて消える。
+     光の数を変えるとシェーダーの作り直しで一瞬止まるので、光は強さ0で消す */
+  function lampSet(on) {
+    const o = RM.flamp;
+    if (!o || o.lamp.on === on) return;
+    const L = o.lamp;
+    L.on = on;
+    L.pl.intensity = on ? RX.lamp : 0;
+    L.outM.emissiveIntensity = on ? 0.32 : 0;
+    L.inM.emissiveIntensity = on ? 0.95 : 0.04;
+    L.bm.color.setRGB(on ? 1 : 0.25, on ? 0.88 : 0.24, on ? 0.67 : 0.22);
+    RM.need = true;
+  }
+  function lampFx() {
+    const o = RM.flamp;
+    if (!o || !o.b) return;
+    const L = o.lamp;
+    if (!L.dead && !L.fxT && o.b.R[4] < 0.45) L.fxT = performance.now();
+    if (L.fxT) {
+      const el = performance.now() - L.fxT;
+      if (el >= 400) {
+        L.fxT = 0;
+        L.dead = true;
+        lampSet(false);
+      } else {
+        const k = Math.floor(el / 50);
+        lampSet(k === 1 || k === 4 || k === 6);
+      }
+    }
+  }
+  /* ===== 映り込み用の部屋の画像（Version 137） =====
+     正距円筒図法（横＝方位、縦＝上下）で、天井・壁・窓・床を描く。three.js が初めて使うときに全方位のぼかし画像（PMREM）に変換する */
+  function envTex() {
+    const t = cvTex('env', 256, 128, (g, W, H) => {
+      const gr = g.createLinearGradient(0, 0, 0, H);
+      gr.addColorStop(0, '#fbf7ef');
+      gr.addColorStop(0.42, '#ece4d6');
+      gr.addColorStop(0.5, '#d9cdb9');
+      gr.addColorStop(0.56, '#b98f62');
+      gr.addColorStop(1, '#8a6440');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, W, H);
+      /* 窓（明るい空）と、反対側の暗い家具 */
+      const sk = g.createLinearGradient(0, 22, 0, 60);
+      sk.addColorStop(0, '#ffffff');
+      sk.addColorStop(1, '#cfe4f6');
+      g.fillStyle = sk;
+      g.fillRect(40, 24, 34, 34);
+      g.fillStyle = 'rgba(255,255,255,0.9)';
+      g.fillRect(55, 24, 3, 34);
+      g.fillStyle = 'rgba(70,52,36,0.55)';
+      g.fillRect(150, 34, 40, 34);
+      g.fillStyle = 'rgba(40,40,40,0.5)';
+      g.fillRect(208, 44, 22, 14);
+      /* 天井の照明 */
+      g.fillStyle = 'rgba(255,248,230,1)';
+      g.beginPath();
+      g.ellipse(128, 4, 30, 4, 0, 0, Math.PI * 2);
+      g.fill();
+    });
+    t.mapping = 303; /* EquirectangularReflectionMapping */
+    t.wrapS = t.wrapT = 1001;
+    return t;
+  }
+
+  /* ===== 壁の額（Version 137）：釘にワイヤーで掛けた額 =====
+     額（44×56cm・厚さ2.5cm・1.2kg）は、背面に張ったワイヤーの頂点（額の上端から8cm下）で釘に掛かる。重心は釘の20cm下・背面から1.25cm前。
+     ・面内の傾き φ：釘まわりの振り子（固有周期約1.3秒）。ワイヤーと釘・額と壁の摩擦（クーロン摩擦）で止まるので、揺れの後に傾いたまま残る。
+       動き出すのは面内の揺れが約0.06G（60gal）を超えたとき（摩擦トルク 0.012m×質量×重力 ÷ 重心までの距離0.2m）。
+     ・壁から離れる向きのあおり ψ：釘を軸に下端が壁から離れる。下端が壁に当たる角（ψmin）と上端が壁に当たる角（ψmax）で跳ね返る。
+     ・ワイヤーが釘の上を滑る量 s：釘は壁から上向き10度に打ってあり、ワイヤーと釘の摩擦係数0.25。壁から離れる向きの揺れが約0.45G を超えると外へ滑り、
+       釘の長さ（1.4cm）を越えると外れて落ちる（剛体として床へ）。上向きの加速度でワイヤーが浮くと滑りやすくなる。上端が壁に当たったときの勢いもワイヤーを外へ押す */
+  const FRM = { w: 0.44, h: 0.56, t: 0.025, L: 0.2, c: 0.0125, lb: 0.48, lt: 0.08, m: 1.2, sMax: 0.014, s0: 0.004, beta: 0.1745, mu: 0.25, cf: 0.012, x: -1.0, y: 1.7 };
+  function buildFrame(room, artTex) {
+    const hang = new THREE.Group(),
+      inner = new THREE.Group();
+    const fm = woodMat('frame', [150, 112, 74], [102, 72, 44], 99, 0, true, 0.5),
+      fr = rbox(FRM.w, FRM.h, FRM.t, 0.004, fm, 0, 0, 0),
+      art = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.5), mat(0xffffff, { map: artTex, roughness: 0.85 })),
+      /* 額のガラス（ごく薄い映り込みだけ） */
+      gl = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.5), mat(0xffffff, { transparent: true, opacity: 0.08, roughness: 0.05, depthWrite: false }));
+    gl.material.userData.env = 1.2;
+    art.position.z = FRM.t / 2 + 0.0005;
+    gl.position.z = FRM.t / 2 + 0.0012;
+    art.receiveShadow = true;
+    inner.add(fr, art, gl);
+    inner.position.set(0, -FRM.L, FRM.c);
+    hang.add(inner);
+    room.add(hang);
+    /* 釘：壁から上向き10度、長さ2cm（頭付き） */
+    const nm = mat(0x9a9890, { roughness: 0.35, metalness: 0.8 }),
+      nail = new THREE.Group(),
+      sh = new THREE.Mesh(new THREE.CylinderGeometry(0.0012, 0.0012, 0.02, 6), nm),
+      hd = new THREE.Mesh(new THREE.CylinderGeometry(0.0028, 0.0028, 0.0012, 10), nm);
+    sh.position.y = 0.01;
+    hd.position.y = 0.0195;
+    nail.add(sh, hd);
+    nail.position.set(FRM.x, FRM.y - 0.0035, -RD);
+    nail.rotation.x = Math.PI / 2 - FRM.beta;
+    room.add(nail);
+    const F = { hang, inner, on: true, b: null };
+    frameReset(F);
+    return F;
+  }
+  function frameReset(F) {
+    if (!F) return;
+    F.phi = F.dphi = F.dpsi = F.ds = 0;
+    F.s = FRM.s0;
+    F.psi = -Math.asin(F.s / FRM.lb);
+    F.on = true;
+    F.b = null;
+    if (F.inner.parent !== F.hang) {
+      if (F.inner.parent) F.inner.parent.remove(F.inner);
+      F.hang.add(F.inner);
+    }
+    F.inner.position.set(0, -FRM.L, FRM.c);
+    F.inner.quaternion.set(0, 0, 0, 1);
+    framePose(F);
+  }
+  function framePose(F) {
+    F.hang.position.set(FRM.x, FRM.y, -RD + F.s);
+    F.hang.rotation.set(-F.psi, 0, F.phi, 'ZXY');
+  }
+  /* 額の両隣の家具（壁際にある物）の端：面内に傾いた額の角がぶつかる位置 [左, 右] */
+  function frameLimits(F) {
+    let lo = -RW,
+      hi = RW;
+    const y0 = FRM.y - FRM.lb - 0.05,
+      y1 = FRM.y + FRM.lt + 0.05;
+    for (const b of RM.R3.bodies) {
+      const A = b.aab;
+      if (!A || b.dead || A[2] > -RD + 0.08 || A[4] < y0 || A[1] > y1) continue;
+      if (A[3] <= FRM.x) lo = Math.max(lo, A[3]);
+      else if (A[0] >= FRM.x) hi = Math.min(hi, A[0]);
+    }
+    return [lo, hi];
+  }
+  function frameStep(dt, G) {
+    const F = RM.frame;
+    if (!F || !F.on) return false;
+    const m = FRM.m,
+      L = FRM.L,
+      c = FRM.c,
+      Fx = G[0],
+      Fy = G[1],
+      Fz = G[2],
+      ge = Math.max(0, -Fy);
+    /* 面内（釘まわりの振り子＋摩擦） */
+    const Ip = m * (L * L + (FRM.w * FRM.w + FRM.h * FRM.h) / 12),
+      cp = Math.cos(F.phi),
+      sp = Math.sin(F.phi),
+      tau = m * L * (Fx * cp + Fy * sp),
+      contact = F.psi <= -Math.asin(F.s / FRM.lb) + 1e-4,
+      tf = (FRM.cf + (contact ? 0.005 : 0)) * m * ge;
+    if (Math.abs(F.dphi) < 2e-3 && Math.abs(tau) <= tf) F.dphi = 0;
+    else {
+      const sg = Math.abs(F.dphi) >= 2e-3 ? Math.sign(F.dphi) : Math.sign(tau),
+        nd = F.dphi + ((tau - sg * tf) / Ip - 0.3 * F.dphi) * dt;
+      /* 摩擦で向きが逆転するところで止める */
+      F.dphi = Math.abs(F.dphi) >= 2e-3 && nd * F.dphi < 0 && Math.abs(tau) <= tf ? 0 : nd;
+    }
+    const ph0 = F.phi;
+    F.phi += F.dphi * dt;
+    /* 角が両隣の家具に当たる */
+    const lim = frameLimits(F),
+      c2 = Math.cos(F.phi),
+      s2 = Math.sin(F.phi);
+    let mn = 9,
+      mx = -9;
+    for (const cx of [-FRM.w / 2, FRM.w / 2])
+      for (const cy of [FRM.lt, -FRM.lb]) {
+        const x = FRM.x + cx * c2 - cy * s2;
+        if (x < mn) mn = x;
+        if (x > mx) mx = x;
+      }
+    if (mn < lim[0] + 0.003 || mx > lim[1] - 0.003) {
+      F.phi = ph0;
+      F.dphi = -0.3 * F.dphi;
+    }
+    /* 壁から離れる向き（下端が壁から離れる角 ψ） */
+    const Ix = m * (L * L + c * c + (FRM.h * FRM.h + FRM.t * FRM.t) / 12),
+      cs = Math.cos(F.psi),
+      ss = Math.sin(F.psi),
+      ry = -L * cs + c * ss,
+      rz = L * ss + c * cs,
+      taux = m * (ry * Fz - rz * Fy);
+    F.dpsi += (-taux / Ix - 0.6 * F.dpsi) * dt;
+    F.psi += F.dpsi * dt;
+    const pmin = -Math.asin(Math.min(1, F.s / FRM.lb)),
+      pmax = Math.asin(Math.min(1, F.s / FRM.lt));
+    if (F.psi < pmin) {
+      F.psi = pmin;
+      if (F.dpsi < 0) F.dpsi = -0.25 * F.dpsi;
+    }
+    if (F.psi > pmax) {
+      F.psi = pmax;
+      if (F.dpsi > 0) {
+        /* 上端が壁に当たり、上端を支点に回ろうとする勢いでワイヤーが外へ押される */
+        F.ds += 0.5 * FRM.lt * F.dpsi;
+        F.dpsi = -0.2 * F.dpsi;
+      }
+    }
+    /* ワイヤーが釘の上を滑る（釘の向きに沿った力と、釘に押し付ける力） */
+    const cb = Math.cos(FRM.beta),
+      sb = Math.sin(FRM.beta),
+      fa = Fz * cb - ge * sb,
+      N = ge * cb + Fz * sb;
+    if (N <= 0) F.ds += fa * dt;
+    else if (Math.abs(F.ds) < 1e-4 && Math.abs(fa) <= FRM.mu * N) F.ds = 0;
+    else {
+      const sg = Math.abs(F.ds) >= 1e-4 ? Math.sign(F.ds) : Math.sign(fa),
+        nd = F.ds + (fa - sg * FRM.mu * N) * dt;
+      F.ds = Math.abs(F.ds) >= 1e-4 && nd * F.ds < 0 && Math.abs(fa) <= FRM.mu * N ? 0 : nd;
+    }
+    F.s += F.ds * dt;
+    if (F.s < 0) {
+      F.s = 0;
+      if (F.ds < 0) F.ds = 0;
+    }
+    if (F.s > FRM.sMax) {
+      frameDrop(F);
+      return true;
+    }
+    return Math.abs(F.dphi) > 2e-3 || Math.abs(F.dpsi) > 2e-3 || Math.abs(F.ds) > 1e-4;
+  }
+  /* ワイヤーが釘から外れた：額を剛体（箱）にして落とす */
+  function frameDrop(F) {
+    const R = RM.R3;
+    F.on = false;
+    framePose(F);
+    F.hang.updateMatrixWorld(true);
+    const pos = R.room.worldToLocal(F.inner.getWorldPosition(new THREE.Vector3())),
+      q = F.inner.getWorldQuaternion(new THREE.Quaternion()),
+      rx = pos.x - FRM.x,
+      ry = pos.y - FRM.y,
+      rz = pos.z - (-RD + F.s),
+      w = [-F.dpsi, 0, F.dphi],
+      v = [w[1] * rz - w[2] * ry, w[2] * rx - w[0] * rz + 0, w[0] * ry - w[1] * rx + F.ds];
+    F.hang.remove(F.inner);
+    R.room.add(F.inner);
+    const pb = partBody({ m: FRM.m, half: [FRM.w / 2, FRM.h / 2, FRM.t / 2], mu: 0.45 });
+    pb.e = 0.15;
+    addPartBody(pb, F.inner, pos, q, v, w);
+    F.b = pb;
+    RM.need = RM.shDirty = true;
+  }
+
+  /* ===== 水の入ったコップ（Version 137） =====
+     ガラスのタンブラー（口の外径7.4cm・高さ11cm・底の厚さ9mm、ガラス約200g）に水252mL（底から8.8cm、口まで2cm）。
+     コップ自体は剛体（滑る・倒れる・落ちて割れる）。水面は円筒容器の液面揺動（スロッシング）の1次モードを左右・前後の2つで計算する：
+       固有角振動数 ω² = g_eff·(ξ/R)·tanh(ξh/R)（ξ＝1.8412、R＝水面での半径、h＝水深）→ この水量で約3.6Hz
+       η'' + 2ζωη' + ω²η = 0.837·R·(ξ/R)·tanh(ξh/R)·a（a＝コップが感じる横の加速度。0.837 は1次モードの寄与率 2/(ξ²−1)）
+       減衰 ζ は 1.2%（壁面の境界層による減衰の理論値 約0.6% に、水面の縁の減衰を加えた値）＋振幅が大きいときの砕波分。
+     g_eff と横の加速度は、コップが感じる見かけの重力（床の揺れ・コップ自体の加速と回転・傾き）から求める（上下動で固有振動数も変わる）。
+     水面の形は1次モードがベッセル関数 J1 の形、残り（高次モードの静的な分）は平面で足す（ゆっくり傾けたときは水平な水面になる）。
+     波の山が口を越えると、越えた高さから堰の式で流量を求めてこぼす（Q＝(2/3)·0.6·b·√(2g)·H^1.5）。こぼれた水は水滴になって飛び、
+     テーブルや床に落ちると水たまりになる（厚さ約2.5mm）。コップが大きく傾く・割れると残りの水がこぼれる */
+  const GL = { yb: 0.009, rb: 0.0296, yt: 0.108, rt: 0.0352, y0: 0.088, mG: 0.2, xi: 1.8412, j1: 0.58187, NR: 7, NS: 28 };
+  function glassR(y) {
+    return GL.rb + ((GL.rt - GL.rb) * (Math.min(GL.yt, y) - GL.yb)) / (GL.yt - GL.yb);
+  }
+  function glassV(y) {
+    const r2 = glassR(y),
+      h = Math.max(0, y - GL.yb);
+    return (Math.PI * h * (GL.rb * GL.rb + GL.rb * r2 + r2 * r2)) / 3;
+  }
+  function glassY(V) {
+    let a = GL.yb,
+      b = GL.yt;
+    for (let i = 0; i < 30; i++) {
+      const m = (a + b) / 2;
+      if (glassV(m) < V) a = m;
+      else b = m;
+    }
+    return (a + b) / 2;
+  }
+  /* ベッセル関数 J1（0〜1.85 の範囲用の級数） */
+  function besJ1(x) {
+    const x2 = x * x;
+    return (x / 2) * (1 - x2 / 8 + (x2 * x2) / 192 - (x2 * x2 * x2) / 9216);
+  }
+  function buildGlass(f, o) {
+    /* ガラスと水は2層で描く：①ごく薄い色のついた透明な層（通常の重ね方）②映り込みと光沢だけの層（加算。地の色は黒なので映った光だけが足される）。
+       半透明の1層だと映り込みまで薄まり、白く濁って見えるため */
+    const g = new THREE.Group(),
+      gm = mat(0x8ea69f, { transparent: true, opacity: 0.1, roughness: 0.05, metalness: 0, depthWrite: false }),
+      gR = mat(0x000000, { transparent: true, blending: 2, roughness: 0.03, metalness: 0, depthWrite: false }),
+      wm = mat(0x5f8792, { transparent: true, opacity: 0.12, roughness: 0.02, metalness: 0, depthWrite: false, side: THREE.DoubleSide }),
+      wR = mat(0x000000, { transparent: true, blending: 2, roughness: 0.02, metalness: 0, depthWrite: false });
+    gR.userData.env = 0.35;
+    wR.userData.env = 0.5;
+    gm.userData.env = 0.01;
+    /* ガラス：外側（底の縁を丸く、上へ少し開く）→口の縁→内側→厚い底 */
+    const gl = lathe(
+      [
+        [0, 0], [0.0285, 0], [0.0305, 0.0015], [0.0312, 0.005], [0.0372, 0.1065], [0.0373, 0.1092], [0.0366, 0.1102],
+        [0.0358, 0.1096], [0.0353, 0.108], [0.0297, 0.012], [0.0288, 0.0094], [0.0272, 0.009], [0, 0.009]
+      ],
+      RM.lowP ? 24 : 36,
+      gR
+    );
+    gl.castShadow = false;
+    gl.renderOrder = 4;
+    const glT = new THREE.Mesh(gl.geometry, gm);
+    glT.renderOrder = 3;
+    /* 水：水面（中心＋同心円 NR 本×NS 分割）・側面（上の縁が水面に合わせて動く）・底 */
+    const NR = GL.NR,
+      NS = GL.NS,
+      nv = 1 + NR * NS + NS * 2 + 1 + NS,
+      pos = new Float32Array(nv * 3),
+      idx = [];
+    const ring = k => 1 + (k - 1) * NS;
+    for (let j = 0; j < NS; j++) idx.push(0, ring(1) + ((j + 1) % NS), ring(1) + j);
+    for (let k = 1; k < NR; k++)
+      for (let j = 0; j < NS; j++) {
+        const a = ring(k) + j,
+          b = ring(k) + ((j + 1) % NS),
+          c = ring(k + 1) + j,
+          d = ring(k + 1) + ((j + 1) % NS);
+        idx.push(a, b, c, b, d, c);
+      }
+    const sT = 1 + NR * NS,
+      sB = sT + NS,
+      bC = sB + NS,
+      bR = bC + 1;
+    for (let j = 0; j < NS; j++) {
+      const a = sT + j,
+        b = sT + ((j + 1) % NS),
+        c = sB + j,
+        d = sB + ((j + 1) % NS);
+      idx.push(a, b, c, b, d, c);
+      idx.push(bC, bR + j, bR + ((j + 1) % NS));
+    }
+    const BG = Object.getPrototypeOf(THREE.BoxGeometry.prototype).constructor,
+      geo = new BG(),
+      AT = new THREE.BoxGeometry(1, 1, 1).attributes.position.constructor;
+    geo.setAttribute('position', new AT(pos, 3));
+    geo.setIndex(idx);
+    const wa = new THREE.Mesh(geo, wm),
+      waR = new THREE.Mesh(geo, wR);
+    wa.renderOrder = 1;
+    waR.renderOrder = 2;
+    wa.castShadow = wa.receiveShadow = waR.castShadow = waR.receiveShadow = false;
+    wa.add(waR);
+    g.add(wa, glT, gl);
+    /* 割れたかけら：見えるように少し濃いガラス */
+    o.fragMat = mat(0xdcebe6, { transparent: true, opacity: 0.4, roughness: 0.08, metalness: 0 });
+    o.fragMat.userData.env = 1.2;
+    o.fragCol = null;
+    o.water = { geo, mesh: wa, V0: glassV(GL.y0), V: 0, yw: GL.y0, ex: 0, ez: 0, vx: 0, vz: 0, fx: 0, fz: 0, ge: GRAV, sp: 0, sx: 1, sz: 0, key: '' };
+    glassFill(o);
+    RM.glass = o;
+    return g;
+  }
+  function glassFill(o) {
+    const W = o.water;
+    W.V = W.V0;
+    W.yw = GL.y0;
+    W.ex = W.ez = W.vx = W.vz = W.fx = W.fz = W.sp = 0;
+    W.ge = GRAV;
+    W.key = '';
+    W.mesh.visible = true;
+    glassMesh(o);
+  }
+  /* 水の形を作り直す（状態が変わったときだけ） */
+  function glassMesh(o) {
+    const W = o.water;
+    if (W.V <= 1e-7) {
+      W.mesh.visible = false;
+      return;
+    }
+    const key = [W.ex, W.ez, W.fx, W.fz, W.yw].map(v => v.toFixed(5)).join();
+    if (key === W.key) return;
+    W.key = key;
+    const P = W.geo.attributes.position,
+      A = P.array,
+      NR = GL.NR,
+      NS = GL.NS,
+      R = glassR(W.yw) - 0.0004,
+      ge = Math.max(1, W.ge),
+      tx = W.fx / ge,
+      tz = W.fz / ge,
+      jn = 1 / GL.j1;
+    let k = 0;
+    const set = (x, y, z) => {
+      A[k++] = x;
+      A[k++] = y;
+      A[k++] = z;
+    };
+    const surf = (r, ct, st) => {
+      const J = besJ1((GL.xi * r) / R) * jn,
+        mode = (W.ex * ct + W.ez * st) * J,
+        stat = (tx * ct + tz * st) * (r - 0.837 * R * J);
+      return Math.min(GL.yt + 0.004, Math.max(GL.yb + 0.0005, W.yw + mode + stat));
+    };
+    set(0, surf(0, 1, 0), 0);
+    for (let i = 1; i <= NR; i++) {
+      const r = (R * i) / NR;
+      for (let j = 0; j < NS; j++) {
+        const a = (j / NS) * Math.PI * 2,
+          ct = Math.cos(a),
+          st = Math.sin(a);
+        set(r * ct, surf(r, ct, st), r * st);
+      }
+    }
+    for (let j = 0; j < NS; j++) {
+      const a = (j / NS) * Math.PI * 2,
+        ct = Math.cos(a),
+        st = Math.sin(a);
+      set(R * ct, surf(R, ct, st), R * st);
+    }
+    const rb = GL.rb - 0.0004;
+    for (let j = 0; j < NS; j++) {
+      const a = (j / NS) * Math.PI * 2;
+      set(rb * Math.cos(a), GL.yb + 0.0004, rb * Math.sin(a));
+    }
+    set(0, GL.yb + 0.0004, 0);
+    for (let j = 0; j < NS; j++) {
+      const a = (j / NS) * Math.PI * 2;
+      set(rb * Math.cos(a), GL.yb + 0.0004, rb * Math.sin(a));
+    }
+    P.needsUpdate = true;
+    W.geo.computeVertexNormals();
+    W.geo.computeBoundingSphere();
+    W.mesh.visible = true;
+  }
+  /* 1ステップ分の水面の計算（stepRoom から。G＝室内の見かけの重力） */
+  function glassStep(dt, G) {
+    const o = RM.glass;
+    if (!o || !o.b) return false;
+    const W = o.water,
+      b = o.b;
+    if (W.V <= 1e-7) return false;
+    if (o.broken) {
+      /* 割れた：残りの水は床にこぼれる */
+      puddleAdd(null, b.p[0], b.p[2], W.V);
+      W.V = 0;
+      W.mesh.visible = false;
+      return true;
+    }
+    feltAt(b, G, 0, W.yw, 0);
+    const fx = FT[0],
+      fz = FT[2],
+      ge = -FT[1];
+    W.fx = fx;
+    W.fz = fz;
+    W.ge = ge;
+    const R = glassR(W.yw),
+      h = W.yw - GL.yb,
+      k = GL.xi / R,
+      th = Math.tanh(k * h),
+      w2 = Math.max(0, ge) * k * th,
+      w = Math.sqrt(w2),
+      amp = Math.hypot(W.ex, W.ez) / R,
+      zt = 0.012 + 0.15 * amp * amp,
+      cf = 0.837 * R * k * th;
+    W.vx += (-w2 * W.ex - 2 * zt * w * W.vx + cf * fx) * dt;
+    W.vz += (-w2 * W.ez - 2 * zt * w * W.vz + cf * fz) * dt;
+    W.ex += W.vx * dt;
+    W.ez += W.vz * dt;
+    /* 線形の式が使える範囲を大きく超えない（大きく傾いたとき） */
+    const em = Math.hypot(W.ex, W.ez),
+      emx = 1.2 * R;
+    if (em > emx) {
+      W.ex *= emx / em;
+      W.ez *= emx / em;
+      W.vx *= 0.5;
+      W.vz *= 0.5;
+    }
+    /* 口を越える波：口での水面の高さ（1次モード＋静的な平面の分） */
+    const gs = Math.max(1, ge),
+      cx = W.ex + 0.163 * R * (fx / gs),
+      cz = W.ez + 0.163 * R * (fz / gs),
+      cl = Math.hypot(cx, cz),
+      /* 波の山は谷より高い（2次の非線形：山の高さ ≒ a＋k·a²/2·coth(kh)） */
+      crest = cl + (0.5 * k * cl * cl) / Math.max(0.3, th),
+      fb = GL.yt - W.yw;
+    let dV = 0;
+    const tilt = b.R[4];
+    if (ge < 0.3 * GRAV && tilt < 0.3) {
+      /* 大きく傾いた・逆さ：残りが流れ出る */
+      dV = Math.min(W.V, W.V * Math.min(1, 5 * dt) + 2e-6);
+      const l = Math.hypot(fx, fz) || 1;
+      W.sx = fx / l;
+      W.sz = fz / l;
+    } else if (crest > fb) {
+      const H = Math.min(crest - fb, 0.03),
+        bw = 2 * Math.acos(Math.min(1, fb / crest)) * R;
+      dV = Math.min(W.V, ((2 / 3) * 0.6 * bw * Math.sqrt(2 * GRAV) * Math.pow(H, 1.5)) * dt);
+      W.sx = cx / cl;
+      W.sz = cz / cl;
+      /* 口より大きく盛り上がった分は保てない（こぼれる水に勢いが移る） */
+      const lim = fb + 0.006;
+      if (crest > lim) {
+        const sc = Math.sqrt(lim / crest);
+        W.ex *= sc;
+        W.ez *= sc;
+        W.vx *= sc;
+        W.vz *= sc;
+      }
+    }
+    if (dV > 0) {
+      W.V -= dV;
+      W.sp += dV;
+      W.yw = glassY(W.V);
+      /* 水が減った分だけコップを軽く */
+      const m = GL.mG + W.V * 1000;
+      b.im = 1 / m;
+      b.iI = o.f.I.map(v => 1 / Math.max(1e-7, (v * m) / o.f.mass));
+      while (W.sp > 1.2e-6 || (W.V <= 1e-7 && W.sp > 0)) {
+        const dv = Math.min(W.sp, 2.5e-6);
+        W.sp -= dv;
+        dropEmit(o, dv);
+      }
+    }
+    return Math.abs(W.ex) + Math.abs(W.ez) > 1.5e-4 || Math.abs(W.vx) + Math.abs(W.vz) > 3e-3;
+  }
+  /* こぼれた水滴（最大16個を使い回す。重力と床の揺れの見かけの力で飛び、テーブルか床に落ちると水たまりに） */
+  function dropEmit(o, vol) {
+    const R = RM.R3,
+      W = o.water,
+      b = o.b,
+      M = b.R,
+      Rr = glassR(GL.yt) + 0.002,
+      lx = W.sx * Rr,
+      ly = GL.yt - b.com[1],
+      lz = W.sz * Rr;
+    const px = b.p[0] + M[0] * lx + M[1] * ly + M[2] * lz,
+      py = b.p[1] + M[3] * lx + M[4] * ly + M[5] * lz,
+      pz = b.p[2] + M[6] * lx + M[7] * ly + M[8] * lz;
+    /* 外向き（口の外側へ）の速さ 0.15〜0.35m/s ＋ コップの速さ */
+    const sp = 0.15 + Math.random() * 0.2,
+      ox = M[0] * W.sx + M[2] * W.sz,
+      oz = M[6] * W.sx + M[8] * W.sz,
+      ol = Math.hypot(ox, oz) || 1;
+    let d = R.drops.find(q => !q.on);
+    if (!d) {
+      if (R.drops.length >= 16) {
+        dropLand({ p: [px + (ox / ol) * 0.05, py, pz + (oz / ol) * 0.05], vol }, true);
+        return;
+      }
+      const mesh = new THREE.Mesh(R.dropGeo, o.water.mesh.material);
+      mesh.renderOrder = 2;
+      mesh.castShadow = false;
+      R.room.add(mesh);
+      d = { mesh, p: [0, 0, 0], v: [0, 0, 0] };
+      R.drops.push(d);
+    }
+    d.on = true;
+    d.vol = vol;
+    d.p = [px, py, pz];
+    d.v = [b.v[0] + (ox / ol) * sp, b.v[1] + 0.05 + Math.random() * 0.15, b.v[2] + (oz / ol) * sp];
+    const r = Math.min(0.006, Math.cbrt((3 * vol) / (4 * Math.PI)));
+    d.mesh.scale.set(r, r * 1.15, r);
+    d.mesh.visible = true;
+    d.mesh.position.set(px, py, pz);
+  }
+  function dropStep(dt, G) {
+    const R = RM.R3;
+    let act = false;
+    for (const d of R.drops) {
+      if (!d.on) continue;
+      act = true;
+      for (let i = 0; i < 3; i++) {
+        d.v[i] += G[i] * dt;
+        d.p[i] += d.v[i] * dt;
+      }
+      const top = tableTop(d.p[0], d.p[2]);
+      if ((top != null && d.p[1] <= top && d.p[1] > top - 0.03) || d.p[1] <= 0.002) dropLand(d, false);
+      else d.mesh.position.set(d.p[0], d.p[1], d.p[2]);
+    }
+    return act;
+  }
+  /* テーブルの天板の高さ（その位置が天板の上で、テーブルが立っているとき） */
+  function tableTop(x, z) {
+    const t = RM.R3.objs.table;
+    if (!t || !t.b || t.b.R[4] < 0.8) return null;
+    const A = t.b.aab;
+    return x > A[0] && x < A[3] && z > A[2] && z < A[5] ? A[4] : null;
+  }
+  function dropLand(d, direct) {
+    const top = tableTop(d.p[0], d.p[2]);
+    puddleAdd(top != null && (direct || d.p[1] > top - 0.03) ? 'table' : null, d.p[0], d.p[2], d.vol);
+    if (d.mesh) {
+      d.on = false;
+      d.mesh.visible = false;
+    }
+  }
+  /* 水たまり：テーブルの上はテーブルと一緒に動く。近くの水たまりにまとめる（最大10個）。厚さ2.5mm（ラグの上は染み込んで広がりにくい） */
+  function puddleAdd(on, x, z, vol) {
+    const R = RM.R3;
+    const tb = on === 'table' ? R.objs.table : null;
+    const par = tb ? tb.root : R.room;
+    let lx = x,
+      ly = 0.0006,
+      lz = z;
+    if (tb) {
+      R.room.updateMatrixWorld(true);
+      const v = tb.root.worldToLocal(R.room.localToWorld(new THREE.Vector3(x, 0, z)));
+      lx = v.x;
+      lz = v.z;
+      ly = tb.f.h + 0.0006;
+    } else if (x > RUG[0] && x < RUG[1] && z > RUG[2] && z < RUG[3]) ly = 0.0106;
+    let best = null,
+      bd = 1e9;
+    for (const p of R.puddles) {
+      if (p.par !== par) continue;
+      const dd = Math.hypot(p.x - lx, p.z - lz) - p.r;
+      if (dd < bd) {
+        bd = dd;
+        best = p;
+      }
+    }
+    if (!best || (bd > 0.05 && R.puddles.length < 10)) {
+      const geo = new THREE.CylinderGeometry(1, 1, 0.0008, 22, 1),
+        P = geo.attributes.position,
+        sd = Math.random() * 100;
+      /* 縁を少し不規則に */
+      for (let i = 0; i < P.count; i++) {
+        const px = P.getX(i),
+          pz = P.getZ(i),
+          a = Math.atan2(pz, px),
+          rr = Math.hypot(px, pz);
+        if (rr > 0.5) {
+          const k = 1 + 0.1 * Math.sin(a * 3 + sd) + 0.05 * Math.sin(a * 5 + sd * 1.7);
+          P.setX(i, px * k);
+          P.setZ(i, pz * k);
+        }
+      }
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, R.pudMat),
+        gls = new THREE.Mesh(geo, R.pudGloss);
+      mesh.renderOrder = 1;
+      gls.renderOrder = 2;
+      gls.position.y = 0.0002;
+      mesh.add(gls);
+      mesh.castShadow = gls.castShadow = false;
+      mesh.receiveShadow = true;
+      par.add(mesh);
+      best = { par, mesh, x: lx, z: lz, y: ly, vol: 0, r: 0, rug: ly > 0.01 };
+      R.puddles.push(best);
+    } else {
+      /* 混ざった位置へ少し寄せる */
+      const w = vol / (best.vol + vol);
+      best.x += (lx - best.x) * w;
+      best.z += (lz - best.z) * w;
+    }
+    best.vol += vol;
+    best.r = Math.sqrt(best.vol / (Math.PI * (best.rug ? 0.004 : 0.0025)));
+    best.mesh.position.set(best.x, best.y, best.z);
+    best.mesh.scale.set(best.r, 1, best.r);
+    RM.need = RM.shDirty = true;
+  }
+  /* テーブルが倒れたら、上の水たまりは流れ落ちる（見えなくする） */
+  function puddleSync() {
+    const R = RM.R3;
+    const t = R.objs.table;
+    if (!t || !t.b) return;
+    const up = t.b.R[4] > 0.9;
+    for (const p of R.puddles) if (p.par === t.root) p.mesh.visible = up;
+  }
+  function waterReset() {
+    const R = RM.R3;
+    for (const p of R.puddles) {
+      p.par.remove(p.mesh);
+      p.mesh.geometry.dispose();
+    }
+    R.puddles = [];
+    for (const d of R.drops) {
+      d.on = false;
+      d.mesh.visible = false;
+    }
+    if (RM.glass) {
+      glassFill(RM.glass);
+      const o = RM.glass;
+      if (o.b) {
+        o.b.im = 1 / o.f.mass;
+        o.b.iI = o.f.I.map(v => 1 / v);
+      }
+    }
+  }
+  /* ===== テレビの電源ケーブル（Version 139） =====
+     テレビの背面（画面の裏の右下寄り）から、テレビ台の上の壁のコンセント（床から55cm）へ。ケーブルは2点の間の直線距離より5cm長い（たるみ）。
+     ・力学：ケーブルは引っ張りにしか効かない（押せない・曲げに強さなし）。たるんでいる間は何もせず、張ると、テレビの差込み口の点をコンセントの方へ引く
+       一方向の拘束として、床・壁・物どうしの接触と同じ逐次インパルス法の中で一緒に解く（摩擦なし）。テレビが前へ大きく傾く・滑ると張って倒れにくくなる。
+       ケーブルの重さ（約50g）がテレビに与える力は小さいので省く。
+     ・プラグが抜ける：張力のうち壁から抜ける向きの成分が、50N（コンセントの保持力は数十N）を約0.04秒続けて超えると抜ける。抜けるとテレビの電源が切れ、
+       ケーブルはテレビにつながったまま、プラグごと引きずられる。
+     ・見た目：ケーブルは16区間の糸（質点と長さの拘束、Verlet法）。重力と床の揺れの見かけの力でたるみ・揺れ、床・壁・テレビ台の上に乗る。
+       拘束が張っているときは糸もまっすぐに伸びる */
+  const CAB = { lp: [-0.036, 0.2, 0.22], o: [0, 0.55, 0.95], slack: 0.05, N: 16, r: 0.0032, pull: 50 };
+  function buildCable(room) {
+    const R = RM.R3;
+    /* コンセント（2口の白いプレート）とプラグ */
+    const plate = rbox(0.008, 0.12, 0.072, 0.003, mat(0xf2efe8, { roughness: 0.55 }), -RW + 0.004, CAB.o[1], CAB.o[2]),
+      /* 差込口（2口×刃の穴2つ）は1枚の絵にして1回で描く */
+      slotT = cvTex('outlet', 64, 96, (g, W, H) => {
+        g.clearRect(0, 0, W, H);
+        for (const cy of [0.27, 0.73]) {
+          g.fillStyle = 'rgba(225,221,212,1)';
+          g.beginPath();
+          g.roundRect ? g.roundRect(10, cy * H - 16, 44, 32, 8) : g.rect(10, cy * H - 16, 44, 32);
+          g.fill();
+          g.fillStyle = '#222';
+          g.fillRect(20, cy * H - 7, 4, 14);
+          g.fillRect(40, cy * H - 7, 4, 14);
+        }
+      }),
+      face = new THREE.Mesh(new THREE.PlaneGeometry(0.064, 0.096), mat(0xffffff, { map: slotT, transparent: true, roughness: 0.6 }));
+    slotT.wrapS = slotT.wrapT = 1001;
+    face.rotation.y = Math.PI / 2;
+    face.position.set(-RW + 0.0082, CAB.o[1], CAB.o[2]);
+    room.add(plate, face);
+    const plug = new THREE.Group(),
+      pm = mat(0x1d1d1f, { roughness: 0.5 });
+    plug.add(rbox(0.026, 0.032, 0.022, 0.005, pm, 0, 0, 0));
+    plug.add(rbox(0.012, 0.016, 0.014, 0.004, pm, 0.018, 0, 0));
+    plug.traverse(m => (m.castShadow = true));
+    room.add(plug);
+    /* ケーブル：輪6点×(N+1) の管 */
+    const N = CAB.N,
+      K = 6,
+      pos = new Float32Array((N + 1) * K * 3),
+      nrm = new Float32Array((N + 1) * K * 3),
+      idx = [];
+    for (let i = 0; i < N; i++)
+      for (let k = 0; k < K; k++) {
+        const a = i * K + k,
+          b = i * K + ((k + 1) % K),
+          c = a + K,
+          d = b + K;
+        idx.push(a, c, b, b, c, d);
+      }
+    const BG = Object.getPrototypeOf(THREE.BoxGeometry.prototype).constructor,
+      geo = new BG(),
+      AT = new THREE.BoxGeometry(1, 1, 1).attributes.position.constructor;
+    geo.setAttribute('position', new AT(pos, 3));
+    geo.setAttribute('normal', new AT(nrm, 3));
+    geo.setIndex(idx);
+    const tube = new THREE.Mesh(geo, mat(0x1a1a1c, { roughness: 0.55 }));
+    tube.castShadow = true;
+    tube.frustumCulled = false;
+    room.add(tube);
+    const nodes = [];
+    for (let i = 0; i <= N; i++) nodes.push({ p: [0, 0, 0], q: [0, 0, 0] });
+    return { plug, tube, geo, nodes, on: true, L: 0, Fa: 0, ct: null, chg: true, K };
+  }
+  /* テレビ側の点（室内の座標） */
+  function cabA(out) {
+    const b = RM.R3.objs.tv.b,
+      M = b.R,
+      lx = CAB.lp[0] - b.com[0],
+      ly = CAB.lp[1] - b.com[1],
+      lz = CAB.lp[2] - b.com[2];
+    out[0] = b.p[0] + M[0] * lx + M[1] * ly + M[2] * lz;
+    out[1] = b.p[1] + M[3] * lx + M[4] * ly + M[5] * lz;
+    out[2] = b.p[2] + M[6] * lx + M[7] * ly + M[8] * lz;
+    return out;
+  }
+  /* コンセント側の点（プラグの根元。ここからケーブルが出る） */
+  function cabO(out) {
+    out[0] = -RW + 0.008 + 0.034;
+    out[1] = CAB.o[1] - 0.022;
+    out[2] = CAB.o[2];
+    return out;
+  }
+  const CAB_A = [0, 0, 0],
+    CAB_O = [0, 0, 0];
+  function cableReset() {
+    const C = RM.R3 && RM.R3.cab;
+    if (!C || !RM.R3.objs.tv.b) return;
+    C.on = true;
+    C.Fa = 0;
+    C.ct = null;
+    cabA(CAB_A);
+    cabO(CAB_O);
+    /* 置いた状態の直線距離＋たるみ */
+    C.L = Math.hypot(CAB_O[0] - CAB_A[0], CAB_O[1] - CAB_A[1], CAB_O[2] - CAB_A[2]) + CAB.slack;
+    const N = CAB.N;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N,
+        n = C.nodes[i];
+      for (let j = 0; j < 3; j++) n.p[j] = n.q[j] = CAB_A[j] + (CAB_O[j] - CAB_A[j]) * t;
+      /* 真ん中ほど下げておく（落ち着くまでの計算を短く） */
+      n.p[1] = n.q[1] = n.p[1] - Math.sin(Math.PI * t) * 0.05;
+    }
+    for (let k = 0; k < 160; k++) ropeStep(C, 1 / 120, [0, -GRAV, 0], true);
+    for (const n of C.nodes) n.q = n.p.slice();
+    C.chg = true;
+    cableDraw(C);
+  }
+  /* 張っていれば、テレビを引く拘束を接触として足す（stepBodies の中、接触を解く前） */
+  function cableCt() {
+    const R = RM.R3,
+      C = R.cab,
+      t = R.objs.tv;
+    if (!C) return;
+    C.ct = null;
+    if (!C.on || !t || !t.b || t.b.sleep) return;
+    cabA(CAB_A);
+    cabO(CAB_O);
+    const dx = CAB_O[0] - CAB_A[0],
+      dy = CAB_O[1] - CAB_A[1],
+      dz = CAB_O[2] - CAB_A[2],
+      d = Math.hypot(dx, dy, dz);
+    if (d < C.L - 0.004) return;
+    const c = addCt(t.b, null, 1000, CAB_A[0], CAB_A[1], CAB_A[2], dx / d, dy / d, dz / d, d - C.L, 0, 1);
+    if (c) {
+      c.key = (t.b.id * 1000 + PLANE_ID + 5) * 1024 + 1000;
+      C.ct = c;
+    }
+  }
+  /* 解いた後：張力からプラグが抜けるかを判定 */
+  function cablePost(dt) {
+    const C = RM.R3.cab;
+    if (!C || !C.on) return;
+    const c = C.ct;
+    /* 壁から抜ける向き（+x）の成分。ケーブルはテレビ側へ引くので、張力の向きは −n */
+    const Fa = c ? Math.max(0, (c.j / dt) * -c.n[0]) : 0;
+    C.Fa += (Fa - C.Fa) * Math.min(1, dt / 0.04);
+    if (C.Fa > CAB.pull) {
+      C.on = false;
+      C.ct = null;
+      /* プラグが抜けた：抜ける勢いで少し飛ぶ */
+      const n = C.nodes[CAB.N];
+      n.q[0] = n.p[0] - 0.4 * dt * 2;
+      RM.tvDead = true;
+      RM.tvFxT = 0;
+      tvSet(false);
+      RM.need = true;
+    }
+  }
+  /* 糸の計算（Verlet）。端：テレビ側は固定、コンセント側は差さっていれば固定・抜けていればプラグの重さ */
+  function ropeStep(C, dt, G, quiet) {
+    const N = CAB.N,
+      P = C.nodes,
+      seg = C.L / N,
+      r = CAB.r,
+      st = RM.R3.objs.stand && RM.R3.objs.stand.b,
+      A = st && st.aab;
+    if (!quiet) {
+      cabA(CAB_A);
+      cabO(CAB_O);
+    }
+    let mv = 0;
+    for (let i = 1; i <= N; i++) {
+      if (i === N && C.on) continue;
+      const n = P[i],
+        p = n.p,
+        q = n.q;
+      for (let j = 0; j < 3; j++) {
+        const v = (p[j] - q[j]) * 0.985;
+        q[j] = p[j];
+        p[j] += v + G[j] * dt * dt;
+      }
+    }
+    for (let it = 0; it < 10; it++) {
+      P[0].p[0] = CAB_A[0];
+      P[0].p[1] = CAB_A[1];
+      P[0].p[2] = CAB_A[2];
+      if (C.on) {
+        P[N].p[0] = CAB_O[0];
+        P[N].p[1] = CAB_O[1];
+        P[N].p[2] = CAB_O[2];
+      }
+      for (let i = 0; i < N; i++) {
+        const a = P[i].p,
+          b = P[i + 1].p,
+          dx = b[0] - a[0],
+          dy = b[1] - a[1],
+          dz = b[2] - a[2],
+          d = Math.hypot(dx, dy, dz) || 1e-9,
+          /* 端は動かさない。プラグ（約30g）はケーブルの1区間（約3g）より重い */
+          wa = i === 0 ? 0 : 1,
+          wb = i + 1 === N ? (C.on ? 0 : 0.1) : 1,
+          ws = wa + wb;
+        if (!ws) continue;
+        const k = (d - seg) / d / ws;
+        a[0] += dx * k * wa;
+        a[1] += dy * k * wa;
+        a[2] += dz * k * wa;
+        b[0] -= dx * k * wb;
+        b[1] -= dy * k * wb;
+        b[2] -= dz * k * wb;
+      }
+      /* 床・壁・テレビ台（外接の箱）から押し出す */
+      for (let i = 1; i <= N; i++) {
+        if (i === N && C.on) continue;
+        const p = P[i].p;
+        if (p[1] < r) p[1] = r;
+        if (p[0] < -RW + r) p[0] = -RW + r;
+        if (A && p[0] > A[0] - r && p[0] < A[3] + r && p[2] > A[2] - r && p[2] < A[5] + r && p[1] > A[1] && p[1] < A[4] + r) {
+          const dd = [p[0] - (A[0] - r), A[3] + r - p[0], p[2] - (A[2] - r), A[5] + r - p[2], A[4] + r - p[1]],
+            m = dd.indexOf(Math.min(...dd));
+          if (m === 0) p[0] = A[0] - r;
+          else if (m === 1) p[0] = A[3] + r;
+          else if (m === 2) p[2] = A[2] - r;
+          else if (m === 3) p[2] = A[5] + r;
+          else {
+            p[1] = A[4] + r;
+            /* 天板の上では摩擦で止まりやすい */
+            const q = P[i].q;
+            q[0] += (p[0] - q[0]) * 0.5;
+            q[2] += (p[2] - q[2]) * 0.5;
+          }
+        }
+      }
+    }
+    for (let i = 1; i <= N; i++) {
+      const n = P[i];
+      mv = Math.max(mv, Math.abs(n.p[0] - n.q[0]) + Math.abs(n.p[1] - n.q[1]) + Math.abs(n.p[2] - n.q[2]));
+    }
+    return mv;
+  }
+  function cableStep(dt, G) {
+    const C = RM.R3.cab;
+    if (!C) return false;
+    const t = RM.R3.objs.tv.b;
+    /* テレビが止まっていて、糸もほぼ止まっていれば計算しない */
+    if (t.sleep && C.still && C.on) return false;
+    const mv = ropeStep(C, dt, G, false);
+    C.still = mv < 2e-5;
+    C.chg = true;
+    return !C.still;
+  }
+  /* 管の形を作り直す（描くときに、変わっていれば） */
+  function cableDraw(C) {
+    if (!C.chg) return;
+    C.chg = false;
+    const N = CAB.N,
+      K = C.K,
+      P = C.nodes,
+      A = C.geo.attributes.position.array,
+      Nm = C.geo.attributes.normal.array,
+      r = CAB.r;
+    let u = [0, 1, 0];
+    for (let i = 0; i <= N; i++) {
+      const a = P[Math.max(0, i - 1)].p,
+        b = P[Math.min(N, i + 1)].p;
+      let tx = b[0] - a[0],
+        ty = b[1] - a[1],
+        tz = b[2] - a[2];
+      const tl = Math.hypot(tx, ty, tz) || 1;
+      tx /= tl;
+      ty /= tl;
+      tz /= tl;
+      /* 接線に垂直な2方向（前の輪の向きを引き継いでねじれを防ぐ） */
+      let nx = u[1] * tz - u[2] * ty,
+        ny = u[2] * tx - u[0] * tz,
+        nz = u[0] * ty - u[1] * tx,
+        nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-4) {
+        nx = 0;
+        ny = tz;
+        nz = -ty;
+        nl = Math.hypot(ny, nz) || 1;
+      }
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+      const bx = ty * nz - tz * ny,
+        by = tz * nx - tx * nz,
+        bz = tx * ny - ty * nx;
+      u = [bx, by, bz];
+      const c = P[i].p;
+      for (let k = 0; k < K; k++) {
+        const an = (k / K) * Math.PI * 2,
+          ca = Math.cos(an),
+          sa = Math.sin(an),
+          ox = nx * ca + bx * sa,
+          oy = ny * ca + by * sa,
+          oz = nz * ca + bz * sa,
+          o = (i * K + k) * 3;
+        A[o] = c[0] + ox * r;
+        A[o + 1] = c[1] + oy * r;
+        A[o + 2] = c[2] + oz * r;
+        Nm[o] = ox;
+        Nm[o + 1] = oy;
+        Nm[o + 2] = oz;
+      }
+    }
+    C.geo.attributes.position.needsUpdate = true;
+    C.geo.attributes.normal.needsUpdate = true;
+    C.geo.computeBoundingSphere();
+    /* プラグ：差さっていれば壁に垂直、抜けていればケーブルの向きに */
+    const pe = P[N].p,
+      pp = P[N - 1].p;
+    if (C.on) {
+      /* 下の差込口（プレートの中心から2.2cm下） */
+      C.plug.position.set(-RW + 0.008 + 0.013, CAB.o[1] - 0.022, CAB.o[2]);
+      C.plug.rotation.set(0, Math.PI, 0);
+    } else {
+      const dx = pe[0] - pp[0],
+        dy = pe[1] - pp[1],
+        dz = pe[2] - pp[2],
+        l = Math.hypot(dx, dy, dz) || 1;
+      C.plug.position.set(pe[0] + (dx / l) * 0.013, Math.max(0.011, pe[1] + (dy / l) * 0.013), pe[2] + (dz / l) * 0.013);
+      C.plug.quaternion.setFromUnitVectors(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(dx / l, dy / l, dz / l));
+    }
+  }
   function buildVase(f, o) {
     const g = new THREE.Group(),
       vm = mat(0xffffff, { map: ceramicTex(), roughness: 0.2 }),
@@ -10298,8 +11805,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     {
       key: 'shelf',
       name: '本棚',
-      x: -1.55,
-      z: -1.85,
+      x: -1.85,
+      z: -RD + 0.15,
       w: 0.8,
       d: 0.3,
       h: 1.8,
@@ -10312,8 +11819,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     {
       key: 'cup',
       name: '食器棚',
-      x: 0.15,
-      z: -1.8,
+      x: 0,
+      z: -RD + 0.2,
       w: 1.0,
       d: 0.4,
       h: 1.8,
@@ -10326,8 +11833,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     {
       key: 'fridge',
       name: '冷蔵庫',
-      x: 1.75,
-      z: -1.66,
+      x: 2.0,
+      z: -RD + 0.34,
       w: 0.65,
       d: 0.68,
       h: 1.8,
@@ -10340,7 +11847,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     {
       key: 'stand',
       name: 'テレビ台',
-      x: -2.28,
+      x: -RW + 0.22,
       z: 0.4,
       w: 0.42,
       d: 1.5,
@@ -10366,7 +11873,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     {
       key: 'sofa',
       name: 'ソファ',
-      x: -0.7,
+      x: -0.95,
       z: 0.4,
       w: 0.85,
       d: 1.9,
@@ -10379,7 +11886,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     {
       key: 'table',
       name: 'テーブル',
-      x: 1.25,
+      x: 1.35,
       z: 0.9,
       w: 1.4,
       d: 0.8,
@@ -10390,7 +11897,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     },
     {
       key: 'c1',
-      x: 0.9,
+      x: 1.0,
       z: 0.24,
       w: 0.42,
       d: 0.42,
@@ -10403,7 +11910,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     },
     {
       key: 'c2',
-      x: 1.6,
+      x: 1.7,
       z: 0.24,
       w: 0.42,
       d: 0.42,
@@ -10416,7 +11923,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     },
     {
       key: 'c3',
-      x: 0.9,
+      x: 1.0,
       z: 1.56,
       w: 0.42,
       d: 0.42,
@@ -10429,7 +11936,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     },
     {
       key: 'c4',
-      x: 1.6,
+      x: 1.7,
       z: 1.56,
       w: 0.42,
       d: 0.42,
@@ -10454,6 +11961,33 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       rock: 'x',
       shape: 'cyl',
       build: buildVase
+    },
+    {
+      /* フロアライト（Version 135。Version 136 で移動）：ソファの窓と反対側の端の横、ソファより少し前（テレビとソファの間）。重い台座で重心は低め（約0.31m） */
+      key: 'flamp',
+      name: 'フロアライト',
+      x: -1.75,
+      z: 1.62,
+      w: 0.3,
+      d: 0.3,
+      h: 1.49,
+      mu: 0.45,
+      mass: 5,
+      build: buildFloorLamp
+    },
+    {
+      /* 水の入ったコップ（Version 137）：テーブルの上、花瓶とスマホの間の手前 */
+      key: 'glass',
+      name: 'コップ',
+      on: 'table',
+      x: 0.06,
+      z: 0.2,
+      w: 0.075,
+      d: 0.075,
+      h: 0.11,
+      mu: 0.35,
+      mass: 0.452,
+      build: buildGlass
     },
     {
       /* 机の上のスマホ（Version 115）。画面を上にして置き、画面の上端がカメラの奥（−x−z）を向くよう ry で回す */
@@ -10498,7 +12032,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         [0.01, 0.38, 0, 0.015, 0.28, f.d / 2],
         [-0.02, 0.34, 0, 0.015, 0.17, 0.3]
       ];
-      f.com = 0.34;
+      /* 重心の高さ（Version 139：0.34→0.29m）。画面（約8.5kg、中心0.38m）と金属の台座・首（約3.5kg、0.01〜0.1m）から求めた値。
+         前後に倒れ始める角度は約18度→約21度（台座の奥行きの半分0.11m÷重心の高さ） */
+      f.com = 0.29;
       f.iw = 0.2;
       f.ih = 0.6;
     }
@@ -10549,6 +12085,24 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       f.com = 0.11;
       f.frag = 2.8;
     }
+    if (f.key === 'flamp') {
+      /* 円柱3つ（台座・支柱・シェード）。点は台座の縁・支柱の中ほど・シェードの上下の縁。慣性モーメントは台座・支柱・シェードの和 */
+      f.com = 0.315;
+      f.cyls = [[0, 0.04, 0.15], [0.04, 1.225, 0.022], [1.225, 1.487, 0.205]];
+      f.rings = [[0, 0.148, 10], [0.03, 0.13, 6], [0.55, 0.03, 4], [1.225, 0.208, 8], [1.487, 0.162, 8]];
+      f.I = [1.34, 0.065, 1.34];
+      /* 倒れる目安は台座の半径（シェードの方が広いので外形の箱では大きすぎる） */
+      f.tipW = 0.148;
+    }
+    if (f.key === 'glass') {
+      /* コップ（ガラス200g＋水252g）：円柱1つ（口の外径に合わせる）。点は底の縁・口の縁・底の中心。ガラスは床に落ちると割れやすい */
+      f.com = 0.042;
+      f.cyls = [[0, 0.11, 0.0373]];
+      f.rings = [[0, 0.03, 8], [0.11, 0.0373, 8]];
+      f.I = [6.1e-4, 3.3e-4, 6.1e-4];
+      f.tipW = 0.03;
+      f.frag = 3.0;
+    }
   });
 
   /* 動かない部品をまとめる（Version 110）：同じ材質・同じ影の設定のメッシュを1つの形に結合し、描く回数を減らす（スマホの負荷対策）。
@@ -10594,6 +12148,77 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       g.add(mm);
     }
   }
+  /* 隅の陰の帯：四角形ごとに [隅側の2点, 外側の2点]。v＝0 が隅（濃い）、1 が外側（透明） */
+  function aoStrips() {
+    const W0 = 0.32,
+      e = 0.002,
+      Q = [
+        /* 床：奥の壁沿い・左の壁沿い */
+        [[-RW, e, -RD], [RW, e, -RD], [RW, e, -RD + W0], [-RW, e, -RD + W0]],
+        [[-RW, e, RD], [-RW, e, -RD], [-RW + W0, e, -RD], [-RW + W0, e, RD]],
+        /* 壁の下：奥の壁・左の壁 */
+        [[RW, 0, -RD + e], [-RW, 0, -RD + e], [-RW, W0, -RD + e], [RW, W0, -RD + e]],
+        [[-RW + e, 0, -RD], [-RW + e, 0, RD], [-RW + e, W0, RD], [-RW + e, W0, -RD]],
+        /* 壁と壁の境目（縦） */
+        [[-RW, RH, -RD + e], [-RW, 0, -RD + e], [-RW + W0 * 0.8, 0, -RD + e], [-RW + W0 * 0.8, RH, -RD + e]],
+        [[-RW + e, 0, -RD], [-RW + e, RH, -RD], [-RW + e, RH, -RD + W0 * 0.8], [-RW + e, 0, -RD + W0 * 0.8]]
+      ],
+      pos = [],
+      uv = [],
+      nrm = [];
+    for (const [a, b, c, d] of Q) {
+      for (const [p, v] of [[a, 0], [b, 0], [c, 1], [a, 0], [c, 1], [d, 1]]) {
+        pos.push(p[0], p[1], p[2]);
+        uv.push(0.5, v);
+        nrm.push(0, 1, 0);
+      }
+    }
+    const BG = Object.getPrototypeOf(THREE.BoxGeometry.prototype).constructor,
+      geo = new BG(),
+      F = new THREE.BoxGeometry(1, 1, 1).attributes.position.constructor;
+    geo.setAttribute('position', new F(new Float32Array(pos), 3));
+    geo.setAttribute('normal', new F(new Float32Array(nrm), 3));
+    geo.setAttribute('uv', new F(new Float32Array(uv), 2));
+    geo.computeBoundingSphere();
+    const tex = cvTex('ao', 4, 64, (g, W, H) => {
+      const gr = g.createLinearGradient(0, 0, 0, H);
+      /* canvas の上（y＝0）が uv の v＝1（外側） */
+      gr.addColorStop(0, 'rgba(0,0,0,0)');
+      gr.addColorStop(0.5, 'rgba(0,0,0,0.06)');
+      gr.addColorStop(0.85, 'rgba(0,0,0,0.22)');
+      gr.addColorStop(1, 'rgba(0,0,0,0.4)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, W, H);
+    });
+    tex.wrapS = tex.wrapT = 1001;
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+    m.castShadow = m.receiveShadow = false;
+    m.renderOrder = 1;
+    return m;
+  }
+  function R3env(R, env) {
+    R.pudMat.envMap = env;
+    R.pudMat.envMapIntensity = 0.01;
+    R.pudGloss.envMap = env;
+    R.pudGloss.envMapIntensity = 0.55;
+    R.pudMat.color.convertSRGBToLinear();
+    R.pudMat.userData.lin = true;
+  }
+  /* 材質の色（color・emissive）を sRGB から線形へ直す（Version 135。1つの材質に1回だけ） */
+  function linMats(root) {
+    root.traverse(m => {
+      for (const mt of [].concat(m.material || [])) {
+        if (!mt || mt.userData.lin) continue;
+        mt.userData.lin = true;
+        /* スマホ等は凹凸（bumpMap）を外す：画面上ではほぼ見えず、画素ごとの計算が重い */
+        if (RM.lowP && mt.bumpMap) mt.bumpMap = null;
+        if (mt.color) mt.color.convertSRGBToLinear();
+        if (mt.emissive) mt.emissive.convertSRGBToLinear();
+      }
+    });
+  }
+  /* 照明の強さ（Version 135。sRGB出力に合わせて調整） */
+  const RX = { exp: 0.8, hemi: 0.38, sun: 1.35, pend: 0.5, sx: 4.2, sz: 2.2, lamp: 1.25 };
   /* 同梱の three.js をこのとき初めて実行する（起動を軽くするため。通信は不要） */
   function loadThree() {
     if (window.THREE) return;
@@ -10623,10 +12248,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     /* ギザギザ対策：アンチエイリアスは常に有効。軽量化：影は物が動いたときだけ描き直し、スマホは描画を毎秒30回に抑える */
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
     /* 高解像度のスマホは1.25倍まで（描く画素を約3割減らす。Version 111） */
-    renderer.setPixelRatio(Math.min(lowP ? 1.25 : 1.5, window.devicePixelRatio || 1));
+    RM.pr = Math.min(lowP ? 1.25 : 1.5, window.devicePixelRatio || 1);
+    RM.prMin = Math.min(RM.pr, 1);
+    RM.prW = { n: 0, t: 0, skip: 1 };
+    renderer.setPixelRatio(RM.pr);
     /* シェーダーの準備のたびにエラー確認で待たされるのを省く（Version 131。描画結果は同じ） */
     if (renderer.debug) renderer.debug.checkShaderErrors = false;
     renderer.shadowMap.enabled = true;
+    /* 色の扱い（Version 135）：材質の色は sRGB→線形に直して計算し、出力は sRGB。明るい所は ACES のトーンマッピングで白飛びを抑える（同梱three.jsは定数を公開していないので値で指定：sRGBEncoding＝3001、ACESFilmicToneMapping＝4） */
+    renderer.outputEncoding = 3001;
+    renderer.toneMapping = 4;
+    renderer.toneMappingExposure = RX.exp;
     /* 影：スマホ等は粗く軽い方式（512・落ちた物は影なし）、PCなどは細かく柔らかい方式（2048・PCFSoft）。同梱three.jsは定数 PCFSoftShadowMap を公開していないので値の2を指定（Version 118） */
     renderer.shadowMap.type = lowP ? THREE.PCFShadowMap : 2;
     renderer.shadowMap.autoUpdate = false;
@@ -10634,9 +12266,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     RM.lowP = lowP;
     host.prepend(renderer.domElement);
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0e1626);
+    scene.background = new THREE.Color(0x0e1626).convertSRGBToLinear();
     const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 60);
-    camera.position.set(4.6, 3.4, 5.4);
+    camera.position.set(5.15, 3.8, 6.05);
     const controls = THREE.OrbitControls ? new THREE.OrbitControls(camera, renderer.domElement) : null;
     if (controls) {
       controls.addEventListener('change', () => {
@@ -10650,16 +12282,16 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       controls.maxDistance = 12;
       controls.update();
     } else camera.lookAt(0, 0.8, -0.2);
-    scene.add(new THREE.HemisphereLight(0xfff4e6, 0x55504a, 0.75));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.75);
-    sun.position.set(3, 6, 4);
+    scene.add(new THREE.HemisphereLight(new THREE.Color(0xfff4e6).convertSRGBToLinear(), new THREE.Color(0x55504a).convertSRGBToLinear(), RX.hemi));
+    const sun = new THREE.DirectionalLight(new THREE.Color(0xfff6ea).convertSRGBToLinear(), RX.sun);
+    sun.position.set(RX.sx, 6, RX.sz);
     sun.castShadow = true;
     sun.shadow.mapSize.set(lowP ? 512 : 2048, lowP ? 512 : 2048);
     /* 影の縞模様（ギザギザ）を防ぐずらしと、輪郭を少しぼかす */
     sun.shadow.bias = -0.0006;
     sun.shadow.normalBias = 0.025;
     sun.shadow.radius = 2;
-    Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 1, far: 15 });
+    Object.assign(sun.shadow.camera, { left: -4.4, right: 4.4, top: 4.4, bottom: -4.4, near: 1, far: 16 });
     scene.add(sun);
     const room = new THREE.Group();
     scene.add(room);
@@ -10755,7 +12387,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       g.lineWidth = 2.5;
       g.strokeRect(28, 28, W - 56, H - 56);
     });
-    const rug = box(1.6, 0.01, 2.2, mat(0xffffff, { map: rugTex, roughness: 1 }), -0.6, 0.005, 0.4);
+    const rug = box(1.6, 0.01, 2.2, mat(0xffffff, { map: rugTex, roughness: 1 }), -0.85, 0.005, 0.4);
     rug.castShadow = false;
     room.add(rug);
     // 時計（壁掛け）：木の縁、白い文字盤と目盛り・針
@@ -10789,7 +12421,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       clk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.03, 32), [clkRim, mat(0xffffff, { map: faceTex, roughness: 0.4 }), clkRim]);
     clk.rotation.x = Math.PI / 2;
     clk.rotation.y = Math.PI / 2;
-    clk.position.set(1.0, 2.0, -RD + 0.02);
+    clk.position.set(1.1, 2.0, -RD + 0.02);
     room.add(clk);
     /* 壁の絵（本棚と食器棚の間）：木の額とやわらかい色の抽象画 */
     const artTex = cvTex('art', 128, 160, (g, W, H) => {
@@ -10807,13 +12439,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       g.fillStyle = '#3d3a35';
       g.fillRect(14, H - 30, W - 28, 2);
     });
-    room.add(rbox(0.44, 0.56, 0.025, 0.004, woodMat('frame', [150, 112, 74], [102, 72, 44], 99, 0, true, 0.5), -0.75, 1.5, -RD + 0.0125));
-    const art = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.5), mat(0xffffff, { map: artTex, roughness: 0.85 }));
-    art.position.set(-0.75, 1.5, -RD + 0.0255);
-    room.add(art);
+    const frameG = buildFrame(room, artTex);
+    /* 部屋の隅の陰（Version 135）：床と壁・壁と壁の境目を少し暗くする（環境光の遮り。光の計算をせず、透明な黒の帯1枚で描く） */
+    room.add(aoStrips());
     // 照明（吊り下げ）：天井の台座、布張りのかさ
     const lamp = new THREE.Group();
-    lamp.position.set(1.25, RH, 0.9);
+    lamp.position.set(1.35, RH, 0.9);
     room.add(lamp);
     const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 20), trim);
     canopy.position.y = -0.01;
@@ -10837,7 +12468,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     );
     bulb.position.y = -LL - 0.12;
     lampArm.add(bulb);
-    const pl = new THREE.PointLight(0xffe7b8, 0.5, 6);
+    const pl = new THREE.PointLight(new THREE.Color(0xffe7b8).convertSRGBToLinear(), RX.pend, 6);
     pl.position.y = -LL - 0.15;
     lampArm.add(pl);
     mergeStatic(room);
@@ -10871,9 +12502,28 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       sorted: [],
       lampT: [0, 0],
       lampW: [0, 0],
+      drops: [],
+      puddles: [],
+      dropGeo: new THREE.SphereGeometry(1, 8, 6),
+      /* 水たまり：濡れて暗くなった面＋つやのある映り込み */
+      pudMat: mat(0x24190f, { transparent: true, opacity: 0.4, roughness: 0.03, metalness: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+      pudGloss: mat(0x000000, { transparent: true, blending: 2, roughness: 0.02, metalness: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
       host
     };
+    RM.frame = frameG;
+    /* 映り込み（Version 137）：部屋を描いた全方位の画像を、ガラス・水・金属の材質にだけ付ける（他の材質は計算を増やさない） */
+    const env = envTex();
+    scene.traverse(m => {
+      for (const mt of [].concat(m.material || []))
+        if (mt && mt.isMeshStandardMaterial && !mt.envMap && (mt.userData.env || mt.metalness >= 0.3)) {
+          mt.envMap = env;
+          mt.envMapIntensity = mt.userData.env || 0.8;
+        }
+    });
+    linMats(scene);
+    R3env(RM.R3, env);
     for (const o of list) o.b = furnBody(o);
+    RM.R3.cab = buildCable(room);
     resetRoom();
     new ResizeObserver(() => {
       const r = host.getBoundingClientRect();
@@ -10892,6 +12542,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const R = RM.R3;
     if (!R) return;
     RM.tvDead = false;
+    if (RM.flamp) {
+      RM.flamp.lamp.dead = false;
+      RM.flamp.lamp.fxT = 0;
+      lampSet(true);
+    }
     RM.catchUp = false;
     RM.tvFxT = 0;
     tvSet(false);
@@ -10945,6 +12600,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     RM.tvRest = tvRel(R);
     R.lampT = [0, 0];
     R.lampW = [0, 0];
+    frameReset(RM.frame);
+    waterReset();
+    cableReset();
     R.room.position.set(0, 0, 0);
     RM.maxA = 0;
     renderRoom();
@@ -10956,7 +12614,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      これで、前後左右どちらにも傾く・滑りながら傾く・脚のガタつき・物どうしの積み重なりが自然に出る。
      止まった物は計算を止め（眠らせ）、その物が動き出せる強さの揺れや、ぶつかってきた物で再開する */
   const PHY = { dt: 1 / 120, it: 6, slop: 0.003, beta: 0.2, maxBias: 0.5, sleepV: 0.0009, sleepW: 0.1, sleepT: 0.35, maxParts: 220 };
-  const RUG = [-1.4, 0.2, -0.7, 1.5]; /* じゅうたんの範囲（割れにくい） */
+  const RUG = [-1.65, -0.05, -0.7, 1.5]; /* じゅうたんの範囲（割れにくい） */
   const PLANE_ID = 990; /* 床・壁の番号（接触の識別用） */
   let BID = 100;
   /* 角（c=1 の印）は床・壁との接触にも使う。辺の中点・面の中心は物どうしの接触だけに使う（床に平らに置かれた物の接触点を減らして軽くする） */
@@ -11139,7 +12797,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     b.aa[0] = b.aa[1] = b.aa[2] = 0;
     const A = b.aab,
       hc = Math.max(0.005, b.p[1] - A[1]),
-      tip = Math.min(b.p[0] - A[0], A[3] - b.p[0], b.p[2] - A[2], A[5] - b.p[2]) / hc;
+      tip = Math.min(b.p[0] - A[0], A[3] - b.p[0], b.p[2] - A[2], A[5] - b.p[2], b.o && b.o.f && b.o.f.tipW ? b.o.f.tipW : 9) / hc;
     b.wk = 0.8 * GRAV * Math.min(b.mu, Math.max(0.02, tip));
   }
   function wakeBody(b) {
@@ -11602,6 +13260,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       nk++;
     }
     nCT = nk;
+    cableCt();
     /* 解く準備（前回の力積から始める） */
     const prevM = WSM[1 - wsI],
       prevB = WSB[1 - wsI],
@@ -11725,6 +13384,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           if (b && b.frag && !b.dead && !b.brk && -c.vn0 > b.frag * c.hard * (1 + 0.4 * Math.random())) b.brk = true;
       }
     }
+    cablePost(dt);
     wsI = 1 - wsI;
     /* 位置と向きを進める */
     const kf = dt / (dt + 0.008);
@@ -11849,7 +13509,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       com = [0, cy, 0];
     const S = [],
       pts = [];
-    if (f.shape === 'cyl') {
+    if (f.cyls) {
+      /* 円柱を重ねた家具（フロアライト。Version 135）：f.cyls＝[下端, 上端, 半径]、f.rings＝[高さ, 半径, 点の数] */
+      for (const [y0, y1, r] of f.cyls) S.push({ t: 1, c: [0, (y0 + y1) / 2 - cy, 0], r, hh: (y1 - y0) / 2 });
+      for (const [y, r, n] of f.rings)
+        for (let k = 0; k < n; k++) {
+          const a = (k * 2 * Math.PI) / n + (n === 4 ? 0.4 : 0),
+            p = [r * Math.cos(a), y - cy, r * Math.sin(a)];
+          p.c = 1;
+          pts.push(p);
+        }
+    } else if (f.shape === 'cyl') {
       /* 花瓶（Version 110）：ろくろ形の胴・首・口を高さ別の4つの円柱で包み、花（3輪と葉）を1つの円柱にする */
       for (const [y0, y1, r] of [[0, 0.11, 0.061], [0.11, 0.17, 0.056], [0.17, 0.24, 0.046], [0.24, f.h, 0.038], [f.h, f.h + 0.13, 0.075]])
         S.push({ t: 1, c: [0, (y0 + y1) / 2 - cy, 0], r, hh: (y1 - y0) / 2 });
@@ -11885,7 +13555,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           pts.push(p);
         }
     }
-    const I = f.shape === 'cyl'
+    const I = f.I ? f.I : f.shape === 'cyl'
       ? [(f.mass * (3 * 0.05 * 0.05 + f.h * f.h)) / 12, (f.mass * 0.05 * 0.05) / 2, (f.mass * (3 * 0.05 * 0.05 + f.h * f.h)) / 12]
       : boxI(f.mass, f.iw || f.w, f.ih || f.h, f.id || f.d);
     const b = mkBody({ m: f.mass, I, S, pts, mu: f.mu, e: 0.1, com, o, frag: f.frag || 0 });
@@ -12227,6 +13897,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         }
       }
     }
+    /* 額・コップの水・水滴（Version 137） */
+    if (frameStep(dt, G)) act = true;
+    if (cableStep(dt, G)) act = true;
+    if (glassStep(dt, G)) act = true;
+    if (dropStep(dt, G)) act = true;
     // 照明（振り子）
     const gl = Math.max(0, ge);
     for (let k = 0; k < 2; k++) {
@@ -12265,6 +13940,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         b.mesh.quaternion.set(b.q[0], b.q[1], b.q[2], b.q[3]);
       }
     R.lampArm.rotation.set(R.lampT[1], 0, -R.lampT[0]);
+    if (RM.frame && RM.frame.on) framePose(RM.frame);
+    if (R.cab) cableDraw(R.cab);
+    if (RM.glass && !RM.glass.broken) glassMesh(RM.glass);
+    puddleSync();
     if (!camOnly) R.renderer.shadowMap.needsUpdate = true;
     R.renderer.render(R.scene, R.camera);
     RM.lastDraw = performance.now();
@@ -12285,6 +13964,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     prepareMotion();
     resetRoom();
     RM.mode = mode;
+    if (RM.prW) Object.assign(RM.prW, { n: 0, t: 0, skip: 1 });
     RM.playing = true;
     lockRun();
     RM.t = 0;
@@ -12383,8 +14063,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       RM.active = act;
       RM.need = RM.shDirty = true;
     }
+    prAdapt(dtReal);
     tvFx();
+    lampFx();
     tvRefresh();
+    phSync();
     if (!RM.playing) roomEewSync();
     /* 画面に見えていて、動きがあるときだけ描画（止まっている間は描かない） */
     if (R.controls && R.controls.enableDamping && RM.visible) R.controls.update();
@@ -12395,6 +14078,26 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
   }
 
+  /* 画質の自動調整（Version 135）：揺れの再生中、コマの間隔の平均が2秒続けて約22コマ/秒より遅いと、描画の解像度を1段（0.25倍）下げる（下限1倍）。
+     下げるだけで戻さない（ページを開き直すと元に戻る）。最初の2秒（準備・シェーダーの用意）は数えない */
+  function prAdapt(dt) {
+    const W = RM.prW;
+    if (!W || !RM.playing || !RM.visible || dt > 0.25 || RM.pr <= RM.prMin) return;
+    W.n++;
+    W.t += dt;
+    if (W.t < 2) return;
+    const avg = W.t / W.n;
+    W.n = W.t = 0;
+    if (W.skip) {
+      W.skip--;
+      return;
+    }
+    if (avg > 0.045) {
+      RM.pr = Math.max(RM.prMin, RM.pr - 0.25);
+      RM.R3.renderer.setPixelRatio(RM.pr);
+      RM.need = true;
+    }
+  }
   function updateSiteInfo() {
     const { arv, I, lp } = siteInfo();
     const k = lpClass(lp);
@@ -12443,10 +14146,49 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   /* 室内の緊急地震速報の表示：地図の緊急地震速報（横テロップ・縦テロップ）が出ている間だけ出す。地図と同じ時刻に消える（Version 126）。
      揺れの再生が終わった後も地図の表示は続くことがあるので、roomFrame から毎回呼ぶ */
+  /* 地図に緊急地震速報（横テロップ・縦テロップなど）が出ているか */
+  const mapEewOn = () => !!sim && (!$('telop').hidden || !$('eew').hidden || !$('band').hidden || !$('eewMini').hidden);
+  /* この地点を対象にした緊急地震速報のうち、いま表示中のもの（複数あれば最後に対象になった地震）。無ければ null。
+     地図のテロップが消えると同時に null になる（Version 134） */
+  function siteEew() {
+    if (RM.mode !== 'sync' || !sim || !sim.evs || RM.siteArea == null) return null;
+    let ev = null;
+    const on = mapEewOn();
+    for (const e of sim.evs) {
+      if (!e.warnAreas || !e.warnAreas.has(RM.siteArea) || !e.reports || !e.reports.length) continue;
+      if (e.phAt == null) e.phAt = sim.t;
+      if (!on) continue;
+      if (!(sim.canceled || eewActive(e, sim.t) || (!sim.infoShown && !e.infoDone))) continue;
+      if (!ev || e.phAt >= ev.phAt) ev = e;
+    }
+    return ev;
+  }
+  /* スマホの画面：緊急地震速報の通知は地図のテロップと同じ時刻に消す。この地点の県に津波注意報以上が出たら津波の通知（リセットまで残す）。
+     手前に出すのは新しい方：速報の表示中に津波が出たら津波、その後に別の地震の速報がこの地点に出たら速報（速報が消えたら津波に戻る） */
+  function phSync() {
+    if (!RM.phScr) return;
+    if (RM.mode !== 'sync' || !sim || !sim.evs) {
+      if (!sim) phSet(null);
+      return;
+    }
+    const ev = siteEew(),
+      L = sim.canceled ? null : tvTsuRegs(),
+      top = L ? L[0].cat : 0;
+    if (top > (sim.phTsu ? sim.phTsu.cat : 0)) sim.phTsu = { cat: top, t: sim.t };
+    const ts = sim.phTsu;
+    if (ev && !(ts && ts.t >= ev.phAt)) {
+      if (!ev.phName) {
+        const r = ev.reports.find(q => q.warn) || ev.reports[ev.reports.length - 1];
+        ev.phName = eewName(r.lon, r.lat);
+      }
+      phSet(ev.k + (sim.canceled ? 'c' : ''), ev.phName);
+    } else if (ts) phSet('T' + ts.cat);
+    else phSet(null);
+  }
   function roomEewSync(t) {
     const ban = $('roomEew'),
       mo = RM.motion;
-    const mapEew = !!sim && (!$('telop').hidden || !$('eew').hidden || !$('band').hidden || !$('eewMini').hidden);
+    const mapEew = mapEewOn();
     if (mo && RM.mode === 'sync' && mapEew && sim.warnAt && sim.warnAt.has(RM.siteArea)) {
       if (t == null) t = sim.t;
       const tw = sim.warnAt.get(RM.siteArea),
@@ -12486,23 +14228,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     roomEewSync(t);
     /* テレビ：この地点が警報の対象になったら点灯（リセットまで点けたまま）。描画は0.5秒ごと */
     if (RM.mode === 'sync' && sim && sim.warn && sim.warnAt && sim.warnAt.has(RM.siteArea)) tvSet(true);
-    /* スマホ：この地点を警報の対象に含む地震のうち、最後に対象になった地震の通知を出す（取消報が出たら取消の通知）。リセットまで出したまま */
-    if (RM.mode === 'sync' && sim && sim.evs) {
-      let ev = null,
-        tw = -1;
-      for (const e of sim.evs)
-        if (e.warnAreas && e.warnAreas.has(RM.siteArea) && e.reports && e.reports.length) {
-          if (e.phAt == null) e.phAt = sim.t;
-          if (e.phAt >= tw) (tw = e.phAt), (ev = e);
-        }
-      if (ev) {
-        if (!ev.phName) {
-          const r = ev.reports.find(q => q.warn) || ev.reports[ev.reports.length - 1];
-          ev.phName = eewName(r.lon, r.lat);
-        }
-        phSet(ev.k + (sim.canceled ? 'c' : ''), ev.phName);
-      }
-    }
+    /* スマホの通知は phSync（roomFrame から毎コマ。揺れの再生が終わった後も続ける） */
     /* 時刻が進んでいないとき（一時停止中など）は波形を描き直さない（Version 103） */
     if (t !== RM.waveT) {
       RM.waveT = t;
@@ -12594,6 +14320,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   $('tapEpi').onclick = () => setTapMode('epi');
   $('tapSite').onclick = () => {
+    hintOff(false);
     setTapMode('site');
     if (curTab !== 'room' && !(splitOn() && tab2 === 'room') && !pipOn) setTab('room');
   };
