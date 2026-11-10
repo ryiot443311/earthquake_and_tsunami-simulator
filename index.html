@@ -977,6 +977,16 @@ header.top h1 {
     display: none;
   }
 }
+@media (max-width: 340px) {
+  /* 幅320pxでは時刻の表示が画面から6pxはみ出していた（Version 130） */
+  .seekrow button {
+    padding: 8px 6px;
+  }
+  .seekrow .stime {
+    min-width: 0;
+    font-size: 0.74rem;
+  }
+}
 @media (max-width: 400px) {
   .seekrow {
     gap: 4px;
@@ -3013,8 +3023,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
 
   /* ---------- canvas ---------- */
   const tv = $('tv'),
-    cv = $('cv'),
-    ctx = cv.getContext('2d');
+    cv = $('cv');
+  /* ctx は地図の描き先。地名・震度アイコンを別の画像に描いておくときだけ一時的に差し替える（draw の中） */
+  let ctx = cv.getContext('2d');
+  const ovCv = document.createElement('canvas'),
+    stCvs = [document.createElement('canvas'), null],
+    mapStKey = [null, null];
+  let mapStView = '',
+    ovKey = '',
+    ovSeen = '',
+    fontVer = 0,
+    obsVer = 0,
+    landVer = 0;
   let W = 0,
     H = 0,
     DPR = 1;
@@ -3063,6 +3083,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return stShakeAll(i, t, cfg.rt === 'max');
   }
   const STC = [];
+  /* 地図の観測点を色ごとにまとめて描くための表（draw） */
+  const ST_FIX = ['rgba(120,130,140,.16)', 'rgba(120,200,255,.5)', 'rgba(190,200,210,.45)', 'rgba(120,200,255,.7)', 'rgba(225,232,240,.75)', 'rgba(170,180,190,.5)'],
+    stHead = new Int32Array(167);
+  let stNext = null;
   function stColor(v) {
     const q = Math.max(-20, Math.min(140, Math.round(v * 20)));
     return STC[q + 20] || (STC[q + 20] = stColor0(q / 20));
@@ -3120,6 +3144,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           b = Math.floor(y0 / cell),
           c = Math.floor(x1 / cell),
           d = Math.floor(y1 / cell);
+        /* 範囲が異常に広い・数値でないときは置かない（縮尺が壊れたときに終わらないループになるのを防ぐ） */
+        if (!(c - a < 600 && d - b < 600)) return false;
         for (let i = a; i <= c; i++) for (let j = b; j <= d; j++) if (m.has(i * 4096 + j)) return false;
         for (let i = a; i <= c; i++) for (let j = b; j <= d; j++) m.add(i * 4096 + j);
         return true;
@@ -3257,8 +3283,110 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (coastPath) l.stroke(coastPath);
       else for (const p of prefPaths) l.stroke(p);
     }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(baseCv, 0, 0);
+    const nhkLive = sim && cfg.style === 'nhk' && !sim.infoShown;
+    /* 「震度｜津波」で津波を選んでいる間は、震度・長周期の塗り、震度アイコン、地震の観測点、凡例を出さない（津波観測点は別。Version 104） */
+    const tsuView = !!(sim && sim.ivView === 'tsu');
+    /* 地図の下地（海・陸）＋震度の塗り＋警報の塗り＋県境・海岸線＋津波予報区の色分けは、表示位置と中身が同じ間は1枚に重ねた画像を使い回す
+       （Version 131。以前は毎コマ、画面全体の画像を3〜4枚重ね、津波の海岸線を引き直していた）。地図が動いている間は従来どおり直接描く */
+    const landSrc = tsuView ? null : layers.lp && cellLp && !nhkLive ? lpCv : layers.heat && cellI && !nhkLive ? heatCv : null,
+      landA = landSrc === lpCv ? 0.85 : sim ? 0.92 : 0.8,
+      warnOn = !!(sim && sim.warn && !sim.infoShown && warnPref.size),
+      tsuOn = !!(sim && sim.tsuShown && sim.tsunami),
+      blink = Math.floor(t * 2) % 2 === 0;
+    /* 大津波警報の点滅（0.5秒ごとに白と紫）は、2通りの画像を別々に持って切り替える（点滅のたびに海岸線を引き直さない） */
+    let tsuSig = '',
+      tsuBlink = false;
+    if (tsuOn) {
+      let top = 0;
+      for (const r of sim.tsunami.regs)
+        if (r.cat >= 1) {
+          tsuSig += r.name + r.cat;
+          if (r.cat > top) top = r.cat;
+        }
+      tsuBlink = top === 4 && blink;
+    }
+    const paintStatic = () => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(baseCv, 0, 0);
+      ctx.setTransform(
+        DPR * view.s,
+        0,
+        0,
+        DPR * view.s,
+        DPR * (W / 2 - view.cx * view.s),
+        DPR * (H / 2 - view.cy * view.s)
+      );
+      ctx.imageSmoothingEnabled = false;
+      if (landSrc) drawOnLand(landSrc, gx, gy, gw, gh, landA, DPR, W, H);
+      if (warnOn) {
+        const xf = [
+          DPR * view.s,
+          0,
+          0,
+          DPR * view.s,
+          DPR * (W / 2 - view.cx * view.s),
+          DPR * (H / 2 - view.cy * view.s)
+        ];
+        const wc = warnScreen(xf);
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = nhkLive ? 0.92 : 0.55;
+        ctx.drawImage(wc, 0, 0);
+        ctx.restore();
+      }
+      // 県境（細）→ 海岸線（明るく）
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(lineCv, 0, 0);
+      ctx.restore();
+      // 津波予報区の色分け
+      if (tsuOn) {
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        for (const r of sim.tsunami.regs) {
+          const k = r.cat;
+          if (k < 1) continue;
+          const col = TSU_COL[k];
+          ctx.strokeStyle = k === 4 && tsuBlink ? '#ffffff' : col;
+          ctx.lineWidth = (k >= 3 ? 5 : k === 2 ? 4 : 3) / view.s;
+          ctx.stroke(r.path);
+        }
+      }
+    };
+    {
+      const vk = view.cx + ',' + view.cy + ',' + view.s + ',' + baseKey,
+        sk =
+          (landSrc ? (landSrc === heatCv ? 'h' : 'l') + landVer + ',' + landA : '') +
+          '|' +
+          (warnOn ? warnVer + ',' + nhkLive : '') +
+          '|' +
+          tsuSig;
+      const bi = tsuBlink ? 1 : 0;
+      if (vk !== mapStView) {
+        mapStView = vk;
+        mapStKey[0] = mapStKey[1] = null;
+        paintStatic();
+      } else {
+        if (bi && !stCvs[1]) stCvs[1] = document.createElement('canvas');
+        const stCv = stCvs[bi];
+        if (sk !== mapStKey[bi]) {
+          mapStKey[bi] = sk;
+          if (stCv.width !== cv.width || stCv.height !== cv.height) {
+            stCv.width = cv.width;
+            stCv.height = cv.height;
+          }
+          const main = ctx;
+          ctx = stCv.getContext('2d');
+          try {
+            paintStatic();
+          } finally {
+            ctx = main;
+          }
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(stCv, 0, 0);
+      }
+    }
     ctx.setTransform(
       DPR * view.s,
       0,
@@ -3268,50 +3396,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       DPR * (H / 2 - view.cy * view.s)
     );
     ctx.imageSmoothingEnabled = false;
-    const nhkLive = sim && cfg.style === 'nhk' && !sim.infoShown;
-    /* 「震度｜津波」で津波を選んでいる間は、震度・長周期の塗り、震度アイコン、地震の観測点、凡例を出さない（津波観測点は別。Version 104） */
-    const tsuView = !!(sim && sim.ivView === 'tsu');
-    if (tsuView) {
-      /* 塗りなし */
-    } else if (layers.lp && cellLp && !nhkLive) {
-      drawOnLand(lpCv, gx, gy, gw, gh, 0.85, DPR, W, H);
-    } else if (layers.heat && cellI && !nhkLive) {
-      drawOnLand(heatCv, gx, gy, gw, gh, sim ? 0.92 : 0.8, DPR, W, H);
-    }
-    if (sim && sim.warn && !sim.infoShown && warnPref.size) {
-      const xf = [
-        DPR * view.s,
-        0,
-        0,
-        DPR * view.s,
-        DPR * (W / 2 - view.cx * view.s),
-        DPR * (H / 2 - view.cy * view.s)
-      ];
-      const wc = warnScreen(xf);
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.globalAlpha = nhkLive ? 0.92 : 0.55;
-      ctx.drawImage(wc, 0, 0);
-      ctx.restore();
-    }
-    // 県境（細）→ 海岸線（明るく）
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(lineCv, 0, 0);
-    ctx.restore();
-    // 津波予報区の色分け
-    if (sim && sim.tsuShown && sim.tsunami) {
-      const blink = Math.floor(t * 2) % 2 === 0;
+    if (tsuOn) {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      for (const r of sim.tsunami.regs) {
-        const k = r.cat;
-        if (k < 1) continue;
-        const col = TSU_COL[k];
-        ctx.strokeStyle = k === 4 && blink ? '#ffffff' : col;
-        ctx.lineWidth = (k >= 3 ? 5 : k === 2 ? 4 : 3) / view.s;
-        ctx.stroke(r.path);
-      }
     }
     // 断層と破壊の進み方
     /* 表示する地震：待機中は一覧の全て、シミュレーション中は発生済みのもの（誤報テストは除く） */
@@ -3431,31 +3518,35 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         vx1 = view.cx + hx,
         vy0 = view.cy - hy,
         vy1 = view.cy + hy;
-      let prev = '';
-      for (let i = 0; i < ST.length; i++) {
+      /* 色ごとにまとめて描く（Version 131）：色の設定（文字列の解釈）は重いので、同じ色の観測点を続けて描いて設定の回数を減らす。
+         色の番号：0〜160＝揺れの色（stColor と同じ刻み）、161〜166＝下の ST_FIX */
+      const n = ST.length,
+        mx = cfg.rt === 'max';
+      if (!stNext || stNext.length !== n) stNext = new Int32Array(n);
+      stHead.fill(-1);
+      for (let i = 0; i < n; i++) {
         const s = ST[i],
           sx = s.lon * K,
           sy = -s.lat;
         if (sx < vx0 || sx > vx1 || sy < vy0 || sy > vy1) continue;
-        let col;
-        if (!cfg.net[s.type]) col = 'rgba(120,130,140,.16)';
+        let c;
+        if (!cfg.net[s.type]) c = 161;
         else if (sim) {
-          const v = stShake(i, t);
-          if (v < -5) col = s.type >= 2 ? 'rgba(120,200,255,.5)' : 'rgba(190,200,210,.45)';
-          else col = stColor(v);
-        } else
-          col =
-            s.type >= 2
-              ? 'rgba(120,200,255,.7)'
-              : s.type === 1
-                ? 'rgba(225,232,240,.75)'
-                : 'rgba(170,180,190,.5)';
-        /* 前の点と同じ色なら色の設定を省く */
-        if (col !== prev) {
-          ctx.fillStyle = col;
-          prev = col;
+          const v = stShakeAll(i, t, mx);
+          if (v < -5) c = s.type >= 2 ? 162 : 163;
+          else c = Math.max(-20, Math.min(140, Math.round(v * 20))) + 20;
+        } else c = s.type >= 2 ? 164 : s.type === 1 ? 165 : 166;
+        stNext[i] = stHead[c];
+        stHead[c] = i;
+      }
+      for (let c = 0; c < 167; c++) {
+        let i = stHead[c];
+        if (i < 0) continue;
+        ctx.fillStyle = c > 160 ? ST_FIX[c - 161] : STC[c] || (STC[c] = stColor0((c - 20) / 20));
+        for (; i >= 0; i = stNext[i]) {
+          const s = ST[i];
+          ctx.fillRect(s.lon * K - r, -s.lat - r, 2 * r, 2 * r);
         }
-        ctx.fillRect(s.lon * K - r, -s.lat - r, 2 * r, 2 * r);
       }
     }
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -3534,28 +3625,66 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         }
       }
     }
-    // 地名
-    drawIslandMarks();
-    if (layers.name) drawLabels(nhkLive ? 0.5 : sim && sim.infoShown ? 0.7 : 1);
-    // 震度アイコン（震度速報→各地の震度）
-    if (sim && sim.infoShown && !sim.fake && !tsuView) {
-      const city = view.s >= 140,
-        sz = Math.max(13, Math.min(22, view.s / (city ? 14 : 9)));
-      const occ = Occ(sz * 0.9),
-        list = [];
-      const src = city
-        ? CITIES.map(c => ({ lon: c.lon, lat: c.lat, v: c.Ip }))
-        : AREAS.map(a => ({ lon: a.lon, lat: a.lat, v: a.obsP }));
-      const minC = sim.t < sim.infoAt + 5 && !city ? 3 : 1;
-      src.sort((a, b) => b.v - a.v);
-      for (const q of src) {
-        const c = cls(q.v);
-        if (c < minC) break;
-        const [x, y] = toScreen(q.lon * K, -q.lat);
-        if (x < -sz || y < -sz || x > W + sz || y > H + sz) continue;
-        if (occ.take(x - sz / 2, y - sz / 2, x + sz / 2, y + sz / 2)) list.push([x, y, c]);
+    /* 地名・離島の印・震度アイコンは、表示位置と中身が変わらない限り同じ絵なので、1枚の画像に描いておいて使い回す（Version 131。文字の描画は重い）。
+       地図を動かしている間（毎コマ位置が変わる）は直接描き、位置が止まった2コマ目から画像にする */
+    {
+      const lbA = nhkLive ? 0.5 : sim && sim.infoShown ? 0.7 : 1,
+        icoOn = !!(sim && sim.infoShown && !sim.fake && !tsuView),
+        key =
+          view.cx + ',' + view.cy + ',' + view.s + ',' + cv.width + ',' + cv.height + ',' + layers.name + ',' + lbA + ',' + fontVer +
+          (icoOn ? ',' + obsVer + (sim.t < sim.infoAt + 5 ? 'a' : 'b') : '');
+      const paintOv = () => {
+      drawIslandMarks();
+      if (layers.name) drawLabels(nhkLive ? 0.5 : sim && sim.infoShown ? 0.7 : 1);
+      // 震度アイコン（震度速報→各地の震度）
+      if (sim && sim.infoShown && !sim.fake && !tsuView) {
+        const city = view.s >= 140,
+          sz = Math.max(13, Math.min(22, view.s / (city ? 14 : 9)));
+        const occ = Occ(sz * 0.9),
+          list = [];
+        const src = city
+          ? CITIES.map(c => ({ lon: c.lon, lat: c.lat, v: c.Ip }))
+          : AREAS.map(a => ({ lon: a.lon, lat: a.lat, v: a.obsP }));
+        const minC = sim.t < sim.infoAt + 5 && !city ? 3 : 1;
+        src.sort((a, b) => b.v - a.v);
+        for (const q of src) {
+          const c = cls(q.v);
+          if (c < minC) break;
+          const [x, y] = toScreen(q.lon * K, -q.lat);
+          if (x < -sz || y < -sz || x > W + sz || y > H + sz) continue;
+          if (occ.take(x - sz / 2, y - sz / 2, x + sz / 2, y + sz / 2)) list.push([x, y, c]);
+        }
+        for (let i = list.length - 1; i >= 0; i--) intIcon(list[i][0], list[i][1], sz, list[i][2]);
       }
-      for (let i = list.length - 1; i >= 0; i--) intIcon(list[i][0], list[i][1], sz, list[i][2]);
+      };
+      if (key === ovKey) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(ovCv, 0, 0);
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      } else if (key === ovSeen) {
+        if (ovCv.width !== cv.width || ovCv.height !== cv.height) {
+          ovCv.width = cv.width;
+          ovCv.height = cv.height;
+        }
+        const main = ctx;
+        ctx = ovCv.getContext('2d');
+        try {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, ovCv.width, ovCv.height);
+          ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+          paintOv();
+        } finally {
+          ctx = main;
+        }
+        ovKey = key;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(ovCv, 0, 0);
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      } else {
+        ovSeen = key;
+        ovKey = '';
+        paintOv();
+      }
     }
     /* 津波表示：警報・注意報が出ている予報区に、予想の高さと第1波の予想時刻を書く（重ならない範囲で。Version 105） */
     if (tsuView && sim.tsunami && sim.tsuShown) {
@@ -3900,14 +4029,15 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* 震度・長周期の格子の塗りを、県境・海岸線の内側（陸地）だけに切り抜いて描く。格子は粗いので、そのままだと海や隣の県にはみ出す */
   const landMaskCv = document.createElement('canvas'),
     landTmp = document.createElement('canvas');
-  let landMaskKey = '';
+  let landMaskKey = '',
+    landTmpKey = '';
   function drawOnLand(src, gx, gy, gw, gh, alpha, DPR, W, H) {
     const cw = cv.width,
       ch = cv.height;
     if (landTmp.width !== cw || landTmp.height !== ch) {
       landTmp.width = landMaskCv.width = cw;
       landTmp.height = landMaskCv.height = ch;
-      landMaskKey = '';
+      landMaskKey = landTmpKey = '';
     }
     const xf = [DPR * view.s, 0, 0, DPR * view.s, DPR * (W / 2 - view.cx * view.s), DPR * (H / 2 - view.cy * view.s)];
     const key = xf.join(',') + ',' + cw + ',' + ch;
@@ -3920,17 +4050,22 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       m.fillStyle = '#000';
       for (const p of prefPaths) m.fill(p);
     }
-    const t = landTmp.getContext('2d');
-    t.globalCompositeOperation = 'source-over';
-    t.setTransform(1, 0, 0, 1, 0, 0);
-    t.clearRect(0, 0, cw, ch);
-    t.setTransform(...xf);
-    t.imageSmoothingEnabled = false;
-    t.drawImage(src, gx, gy, gw, gh);
-    t.setTransform(1, 0, 0, 1, 0, 0);
-    t.globalCompositeOperation = 'destination-in';
-    t.drawImage(landMaskCv, 0, 0);
-    t.globalCompositeOperation = 'source-over';
+    /* 切り抜いた結果は、表示位置と塗りの中身（landVer）が同じ間は使い回す（Version 131。以前は毎コマ、画面全体の合成を2回やり直していた） */
+    const tk = key + (src === heatCv ? ',h,' : ',l,') + landVer;
+    if (tk !== landTmpKey) {
+      landTmpKey = tk;
+      const t = landTmp.getContext('2d');
+      t.globalCompositeOperation = 'source-over';
+      t.setTransform(1, 0, 0, 1, 0, 0);
+      t.clearRect(0, 0, cw, ch);
+      t.setTransform(...xf);
+      t.imageSmoothingEnabled = false;
+      t.drawImage(src, gx, gy, gw, gh);
+      t.setTransform(1, 0, 0, 1, 0, 0);
+      t.globalCompositeOperation = 'destination-in';
+      t.drawImage(landMaskCv, 0, 0);
+      t.globalCompositeOperation = 'source-over';
+    }
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = alpha;
@@ -4055,8 +4190,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     return m;
   }
+  /* 入力（地震の一覧と設定）が前回と同じなら計算し直さない（Version 131。予想の表示で計算済みの結果を「地震発生」でそのまま使う） */
+  let cellsKey = '';
   function computeCells() {
     if (!NC) return;
+    const ck = NC + '|' + JSON.stringify(EQS) + '|' + JSON.stringify(cfg);
+    if (ck === cellsKey && cellI && cellLp && cellEv.length === EQS.length) return;
+    cellsKey = ck;
     cellI = new Float32Array(NC).fill(-9);
     cellLp = new Float32Array(NC);
     const base = Math.min(...EQS.map(q => q.dt || 0));
@@ -4117,10 +4257,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       d[k + 3] = k0 < 2 ? 150 : 230;
     }
     c.putImageData(img, 0, 0);
+    landVer++;
   }
   /* t=null：最終的な震度、t指定：その時刻の揺れ（設定により累積最大か現在値） */
   /* 画像バッファは使い回す（毎回の確保をやめる）。色は32bitでまとめて書き込む */
-  let heatID = null,
+  let heatHash = 0,
+    heatID = null,
     heat32 = null,
     heatBB = null; /* 前回塗った範囲（格子の座標）。次回はこの範囲の消去と、塗った範囲の転送だけで済ませる */
   const CLS_U32 = CLS_RGB.map((c, i) =>
@@ -4141,7 +4283,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     let bx0 = 1e9,
       bx1 = -1,
       by0 = 1e9,
-      by1 = -1;
+      by1 = -1,
+      hsh = 7;
     for (let i = 0; i < NC; i++) {
       let v = cellI[i];
       if (t != null) {
@@ -4161,11 +4304,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         ry = (pz / GW) | 0,
         rx = pz - ry * GW;
       d[pz] = CLS_U32[c];
+      hsh = (Math.imul(hsh, 31) + pz * 16 + c) | 0;
       if (rx < bx0) bx0 = rx;
       if (rx > bx1) bx1 = rx;
       if (ry < by0) by0 = ry;
       if (ry > by1) by1 = ry;
     }
+    /* 塗った結果が前回とまったく同じなら（揺れが行き渡った後など）、画像の転送と地図の描き直しを省く（Version 131） */
+    if (hsh === heatHash && heatBB && bx0 === heatBB.x0 && bx1 === heatBB.x1 && by0 === heatBB.y0 && by1 === heatBB.y1) {
+      dirty = true;
+      return;
+    }
+    heatHash = hsh;
     /* 前回と今回の塗った範囲を合わせた長方形だけを転送する */
     const old = heatBB;
     heatBB = bx1 >= 0 ? { x0: bx0, x1: bx1, y0: by0, y1: by1 } : null;
@@ -4175,6 +4325,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         uy0 = Math.min(old ? old.y0 : 1e9, heatBB ? heatBB.y0 : 1e9),
         uy1 = Math.max(old ? old.y1 : -1, heatBB ? heatBB.y1 : -1);
       heatCv.getContext('2d').putImageData(heatID, 0, 0, ux0, uy0, ux1 - ux0 + 1, uy1 - uy0 + 1);
+      landVer++;
     }
     dirty = true;
   }
@@ -4279,18 +4430,28 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function isNorthernTerr(lon, lat) {
     return lon > 145.84 || (lat > 43.6 && lon > 145.38);
   }
+  let FAR = null;
   function farCityIdx(lon, lat) {
     const tokyo = lat < 28 && lon > 135.5;
+    /* 起動時に離島の格子の数だけ呼ばれるので、市区町村の位置を配列にしておき、距離は2乗のまま比べる（Version 131。選ぶ市区町村は同じ） */
+    if (!FAR) FAR = { lon: Float64Array.from(CITIES, c => c.lon), lat: Float64Array.from(CITIES, c => c.lat), tk: Uint8Array.from(CITIES, c => (AREAS[c.area].pref === 13 ? 1 : 0)) };
+    const L = FAR.lon,
+      A = FAR.lat,
+      T = FAR.tk;
     let best = -1,
       bd = 1e18;
-    CITIES.forEach((c, i) => {
-      if (tokyo && AREAS[c.area].pref !== 13) return;
-      const d = kmDist(lon, lat, c.lon, c.lat);
+    for (let i = 0; i < L.length; i++) {
+      if (tokyo && !T[i]) continue;
+      /* 南北の差だけで今の最短より遠い市区町村は、東西の計算（cos）を省く */
+      const y = (A[i] - lat) * 110.57;
+      if (y * y >= bd) continue;
+      const x = (L[i] - lon) * 111.32 * Math.cos(((lat + A[i]) / 2) * D2R),
+        d = x * x + y * y;
       if (d < bd) {
         bd = d;
         best = i;
       }
-    });
+    }
     return best;
   }
   function tsuRegion(lon, lat, area) {
@@ -5364,7 +5525,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return { dist, lab, loss };
   }
   /* 同じ震源・規模なら計算結果を使い回す（つまみを動かすたびの再計算を減らす）。呼び出し側が到達時刻を書き換えるので複製して返す */
-  const tsuMemo = new Map();
+  const tsuMemo = new Map(),
+    tsuGeo = new Map();
   let tsuNoBuild = false,
     seaIdle = false;
   function computeTsunami(P, qual) {
@@ -5542,7 +5704,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (tsuNoBuild) return { pending: true };
       buildSeaGrid();
     }
-    const S = tsuSource(P);
+    /* 波源と海の上の最短距離は震源・規模・断層の向きだけで決まるので、同じ地震なら使い回す（Version 131。
+       M8超は「巨大・高い」の第1報と数値の続報で2回計算するため、続報のときの一瞬の引っかかりがなくなる） */
+    const gk = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, P.dip, P.rup].join();
+    let GS = tsuGeo.get(gk);
+    if (!GS) {
+      const S0 = tsuSource(P);
+      GS = { S: S0, SP: S0 ? seaPath(S0.src) : null };
+      if (tsuGeo.size >= 8) tsuGeo.clear();
+      tsuGeo.set(gk, GS);
+    }
+    const S = GS.S;
     if (!S) return { gen: false, regs: [] };
     const src = S.src;
     /* 経験式（阿部の式、遠地 log H = Mw − log Δ − 5.80、近地の上限 log H = 0.5Mw − 3.30）は断層モデルの値の上下限として使う。
@@ -5572,7 +5744,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       srcJS.set(q, JSEA_REGS.has(br));
     }
     const by = new Map(),
-      SP = seaPath(src),
+      SP = GS.SP,
       ptH = new Float32Array(COAST.length),
       ptA = new Float32Array(COAST.length),
       ptS = new Int8Array(COAST.length);
@@ -6061,9 +6233,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* シミュレートする時間（終了時刻）の倍率。以前の2倍 */
   const SIM_LEN_MUL = 2;
   /* 実行ごとの乱数の種（誤認・検知の遅れ）。「地震発生」のたびに変わり、時刻を戻したときは同じ結果を再現する */
-  let runSeed = 1;
+  let runSeed = 1,
+    runClock = 0; /* 開始時の時計。時刻を戻したときも同じ値を使う（以前は戻すたびに発表時刻の表示がずれていた。Version 130） */
   function start(fake) {
-    if (!seeking) runSeed = 1 + Math.floor(Math.random() * 2147483000);
+    if (!seeking || !runClock) {
+      if (!seeking) runSeed = 1 + Math.floor(Math.random() * 2147483000);
+      runClock = Date.now();
+    }
     ensureAudio();
     if (sim) reset();
     clearTimeout(previewTimer);
@@ -6272,7 +6448,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       rt: 0,
       miniUntil: 0,
       endT: Math.max(...evs.map(e => e.endT)),
-      startClock: Date.now(),
+      startClock: runClock,
       lastHeat: -1,
       sites,
       tsunami: null,
@@ -6300,6 +6476,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         (evs.length > 1 ? '（' + evs.length + 'つの地震）' : '') +
         '。ドラッグで移動、ピンチ・ホイールで拡大できます。';
     showLegend(false);
+    obsVer++;
     paintHeat(0);
     clearWarnFill();
     autoView.on = cfg.zoom;
@@ -7150,6 +7327,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     H.style.setProperty('--thy', dy.toFixed(2) + 'px');
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitTelopText());
+  /* 文字の書体が読み込まれたら、地名の幅の記録と描いておいた画像を作り直す */
+  if (document.fonts && document.fonts.addEventListener)
+    document.fonts.addEventListener('loadingdone', () => {
+      fontVer++;
+      labW.clear();
+      dirty = true;
+    });
   /* テロップ内の文字が枠に収まらないとき（対象地域が多い・震央地名が長い）だけ、文字を小さくする */
   const TSRC_FS = 4.05,
     TREGS_FS = 5.5;
@@ -7324,6 +7508,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       c.lpP = lpP;
     });
     if (!ch) return false;
+    obsVer++;
     AREAS.forEach(a => {
       a.obs = -9;
       a.lp = 0;
@@ -8262,8 +8447,20 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       t >= Math.max(sim.infoAt, sim.tsuAt || 0) + INFO_TO_TSU
     )
       ivView('tsu');
-    if (!sim.warn && !sim.infoShown && !sim.canceled)
-      setStatus('live', (sim.fake ? '誤報のテスト中 ' : '地震発生から ') + Math.floor(t) + '秒');
+    /* 津波注意報以上の発表中は、震度速報がまだ出ていない間（緊急地震速報の表示が終わってから震度速報まで、次の地震で画面が切り替わった後）も、
+       緊急地震速報を表示していなければ津波の表示を出し、状態表示も津波のままにする（Version 130。以前は大津波警報の発表中でも画面に何も出ない時間があった） */
+    const tsuCat = !sim.fake && sim.tsuShown && sim.tsunami ? sim.tsunami.regs[0].cat : 0;
+    if (tsuCat >= 2 && !sim.infoShown) {
+      const eewOn = !$('telop').hidden || !$('eew').hidden || !$('band').hidden;
+      if ($('tsu').hidden !== eewOn) {
+        $('tsu').hidden = eewOn;
+        dirty = true;
+      }
+    }
+    if (!sim.warn && !sim.infoShown && !sim.canceled) {
+      if (tsuCat >= 2) setStatus('tsu', TSU_NAME[tsuCat] + ' 発表中');
+      else setStatus('live', (sim.fake ? '誤報のテスト中 ' : '地震発生から ') + Math.floor(t) + '秒');
+    }
     if ((sim.fake || (sim.infoShown && sim.evs.every(e => e.infoDone))) && t > sim.endT) {
       sim.running = false;
       $('eewMini').hidden = true;
@@ -8276,7 +8473,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (!sim.tsuShown || sim.tsunami.regs[0].cat < 2) setStatus('idle', '終了・結果を表示中');
     }
     setClock(clockStr(t));
-    simDirty = true;
+    /* 地図の描き直しの要否は frame が決める（揺れの後は間引く）。シーク中だけここで立てる */
+    if (seeking) simDirty = true;
     return true;
   }
   /* ===== 時刻の移動（巻き戻し・先へワープ） ===== */
@@ -8372,15 +8570,37 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   };
   const MAP_LOWP =
     (window.devicePixelRatio || 1) >= 2.5 || Math.min(screen.width, screen.height) < 500 || matchMedia('(pointer: coarse)').matches;
+  function mapQuiet(t) {
+    if (sim.fake || t <= sim.shakeEnd + 3) return false;
+    for (const e of sim.evs) if (t >= e.t0 - 1 && t - e.t0 < (cfg.wavesKeep ? 905 : (e.waveEnd ?? 0) + 1)) return false;
+    return true;
+  }
   let simDirty = false,
     lastMapDraw = 0;
+  const vtEl = $('eewMini');
+  let vtOn = false,
+    vtAt = 0,
+    vtW = -1;
   function frame(now) {
-    const dt = Math.min(0.1, (now - last) / 1000);
+    /* 負の値にしない：時刻の移動（シーク）は終わった時点の時計を last に入れるので、その後の最初のコマでは now（コマの開始時刻）の方が古いことがある。
+       以前はここで時間が逆に進み、地図の自動ズームが反対向きに飛んで縮尺が壊れ、画面が固まることがあった（Version 130） */
+    const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
     {
-      const V = $('eewMini'),
-        on = !V.hidden;
-      $('tv').classList.toggle('vtl', on);
-      if (on) $('tv').style.setProperty('--vtw', V.offsetWidth + 'px');
+      /* 縦テロップの幅は毎コマ測らない（幅を読むたびに画面の配置計算が走る）。出た・消えたときと、出ている間は0.3秒ごとに測る（Version 131） */
+      const on = !vtEl.hidden;
+      if (on !== vtOn) {
+        vtOn = on;
+        vtAt = -1e9;
+        tv.classList.toggle('vtl', on);
+      }
+      if (on && now - vtAt > 300) {
+        vtAt = now;
+        const w = vtEl.offsetWidth;
+        if (w !== vtW) {
+          vtW = w;
+          tv.style.setProperty('--vtw', w + 'px');
+        }
+      }
     }
     last = now;
     if (sim && sim.running && !sim.paused) {
@@ -8388,7 +8608,16 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       sim.rt += dt;
       if (!simBody(now)) return requestAnimationFrame(frame);
       setClock(clockStr(sim.t));
-      simDirty = true;
+      /* 揺れと波の円が終わった後（津波の観測を待つ長い時間）は、地図で時間とともに変わるのは大津波警報の点滅（0.5秒ごと）と、
+         観測点の色がゆっくり戻る動き（「現在の揺れ」表示のとき）だけなので、描き直しをその刻みに減らす（Version 131）。
+         情報の発表・地図の操作などで絵が変わるときは、それぞれが dirty を立てるので従来どおりすぐ描く */
+      if (mapQuiet(sim.t)) {
+        const q = Math.floor(sim.t / (cfg.rt === 'max' ? 0.5 : 0.1));
+        if (q !== sim.qTick) {
+          sim.qTick = q;
+          simDirty = true;
+        }
+      } else simDirty = true;
     } else if (!sim) {
       const d = new Date();
       setClock(d.getHours() + '時' + String(d.getMinutes()).padStart(2, '0') + '分');
@@ -8784,15 +9013,16 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     g.receiveShadow = true;
     return g;
   }
-  /* ---- 手続き的なテクスチャ（Version 108）：木目・陶器・花びら。画像を埋め込まず、初めて使うときにcanvasで描いて使い回す ---- */
+  /* ---- 手続き的なテクスチャ（Version 108）：木目・陶器・花びら。画像を埋め込まず、初めて使うときにcanvasで描いて使い回す ----
+     乱数とノイズは texHash・texNoise（揺れのばらつき用の hash2・vnoise と同じ名前だと、後に書いた方で上書きされ、揺れのばらつきが0になっていた。Version 130） */
   const TEXC = {};
-  function hash2(x, y, sd) {
+  function texHash(x, y, sd) {
     let h = (x * 374761393 + y * 668265263 + sd * 2147483647) | 0;
     h = Math.imul(h ^ (h >>> 13), 1274126177);
     return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
   }
   /* 滑らかな値ノイズ（周期 px・py で繰り返す＝テクスチャの継ぎ目が出ない） */
-  function vnoise(x, y, px, py, sd) {
+  function texNoise(x, y, px, py, sd) {
     const xi = Math.floor(x),
       yi = Math.floor(y),
       fx = x - xi,
@@ -8803,11 +9033,34 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       y0 = ((yi % py) + py) % py,
       x1 = (x0 + 1) % px,
       y1 = (y0 + 1) % py;
-    const a = hash2(x0, y0, sd),
-      b = hash2(x1, y0, sd),
-      c = hash2(x0, y1, sd),
-      d = hash2(x1, y1, sd);
+    const a = texHash(x0, y0, sd),
+      b = texHash(x1, y0, sd),
+      c = texHash(x0, y1, sd),
+      d = texHash(x1, y1, sd);
     return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+  /* texNoise と同じ値を返す関数を作る（周期 px・py が整数のとき用）。格子の値は周期で繰り返すので先に表にしておき、
+     1点ごとの乱数計算（4回）を省く（Version 131。木目のテクスチャは1画素に5回ノイズを使うので、起動時の準備が速くなる） */
+  function texLat(px, py, sd) {
+    const L = new Float64Array(px * py);
+    for (let j = 0; j < py; j++) for (let i = 0; i < px; i++) L[j * px + i] = texHash(i, j, sd);
+    return (x, y) => {
+      const xi = Math.floor(x),
+        yi = Math.floor(y),
+        fx = x - xi,
+        fy = y - yi,
+        u = fx * fx * (3 - 2 * fx),
+        v = fy * fy * (3 - 2 * fy),
+        x0 = ((xi % px) + px) % px,
+        y0 = ((yi % py) + py) % py,
+        x1 = (x0 + 1) % px,
+        y1 = (y0 + 1) % py,
+        a = L[y0 * px + x0],
+        b = L[y0 * px + x1],
+        c = L[y1 * px + x0],
+        d = L[y1 * px + x1];
+      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    };
   }
   function mkTex(key, w, h, paint) {
     if (TEXC[key]) return TEXC[key];
@@ -8829,18 +9082,26 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function woodTex(key, c0, c1, sd, planks, vert) {
     return mkTex(key + (vert ? 'v' : 'h'), 256, 256, (D, W, H) => {
       const fib = new Float32Array(H);
-      for (let y = 0; y < H; y++) fib[y] = hash2(y, 7, sd);
+      for (let y = 0; y < H; y++) fib[y] = texHash(y, 7, sd);
+      const n0 = texLat(3, 5 + planks * 3, sd),
+        n1 = texLat(10, 14, sd + 1),
+        n2 = texLat(60, 256, sd + 2),
+        n3 = texLat(2, 3, sd + 3),
+        n4 = texLat(1, 40, sd + 4);
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++) {
           /* a＝木目に沿う向き、b＝木目を横切る向き（0〜1） */
           const a = (vert ? y : x) / W,
             b = (vert ? x : y) / H;
           const pl = planks ? Math.floor(b * planks) : 0,
-            warp = vnoise(a * 3, b * 5 + pl * 3, 3, 5 + planks * 3, sd) * 0.9 + vnoise(a * 10, b * 14, 10, 14, sd + 1) * 0.12;
+            warp = n0(a * 3, b * 5 + pl * 3) * 0.9 + n1(a * 10, b * 14) * 0.12;
           const ring = (b * 26 + pl * 0.37 + warp * 2.2) % 1,
-            r = Math.pow(Math.abs(Math.sin(ring * Math.PI)), 10);
-          const fb = fib[vert ? x : y] * 0.5 + vnoise(a * 60, b * 256, 60, 256, sd + 2) * 0.5;
-          let t = r * 0.42 + (fb > 0.8 ? 0.16 : 0) + vnoise(a * 2, b * 3, 2, 3, sd + 3) * 0.22 + vnoise(a * 1, b * 40, 1, 40, sd + 4) * 0.12;
+            sn = Math.sin(ring * Math.PI),
+            s2 = sn * sn,
+            s4 = s2 * s2,
+            r = s4 * s4 * s2;
+          const fb = fib[vert ? x : y] * 0.5 + n2(a * 60, b * 256) * 0.5;
+          let t = r * 0.42 + (fb > 0.8 ? 0.16 : 0) + n3(a * 2, b * 3) * 0.22 + n4(a * 1, b * 40) * 0.12;
           if (planks) {
             const e = (b * planks) % 1;
             if (e < 0.012 || e > 0.988) t = 1.15;
@@ -8865,10 +9126,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         for (let x = 0; x < W; x++) {
           const v = 1 - y / H,
             u = x / W;
-          const drip = vnoise(u * 14, 0, 14, 1, 31),
+          const drip = texNoise(u * 14, 0, 14, 1, 31),
             run = v > 0.95 - drip * 0.45 ? 1 : 0;
-          const sp = hash2(x, y, 33) > 0.985 ? 0.35 : 0,
-            n = vnoise(u * 8, v * 16, 8, 16, 32) * 0.12;
+          const sp = texHash(x, y, 33) > 0.985 ? 0.35 : 0,
+            n = texNoise(u * 8, v * 16, 8, 16, 32) * 0.12;
           /* 下は濃い青緑、上は淡い水色、流れた釉は白っぽい */
           let r = 40 + v * 30,
             g = 104 + v * 40,
@@ -8894,7 +9155,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         for (let x = 0; x < W; x++) {
           const u = x / W,
             v = y / H,
-            p = (u * 9 + v * 0.6 + vnoise(u * 9, v * 4, 9, 4, 41) * 0.25) % 1,
+            p = (u * 9 + v * 0.6 + texNoise(u * 9, v * 4, 9, 4, 41) * 0.25) % 1,
             edge = Math.abs(p - 0.5) * 2;
           let r = 214 + 30 * (1 - edge),
             g = 72 + 70 * (1 - edge) * v,
@@ -8906,7 +9167,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           }
           const cen = v < 0.16 ? 1 - v / 0.16 : 0;
           if (cen > 0) {
-            const sp = hash2(x, y, 42) > 0.6 ? 0.85 : 1;
+            const sp = texHash(x, y, 42) > 0.6 ? 0.85 : 1;
             r = r + (240 * sp - r) * cen;
             g = g + (196 * sp - g) * cen;
             b = b + (60 * sp - b) * cen;
@@ -9054,7 +9315,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++) {
           const th = (x % sp === 0 ? -0.025 : 0) + (y % sp === 0 ? -0.025 : 0);
-          const t = 1 + th + (vnoise(x / 5, y / 5, W / 5, H / 5, sd) - 0.5) * 0.09 + (vnoise(x / 24, y / 24, W / 24, H / 24, sd + 5) - 0.5) * 0.06 + (hash2(x, y, sd) - 0.5) * 0.07,
+          const t = 1 + th + (texNoise(x / 5, y / 5, W / 5, H / 5, sd) - 0.5) * 0.09 + (texNoise(x / 24, y / 24, W / 24, H / 24, sd + 5) - 0.5) * 0.06 + (texHash(x, y, sd) - 0.5) * 0.07,
             i = (y * W + x) * 4;
           D[i] = Math.min(255, c[0] * t);
           D[i + 1] = Math.min(255, c[1] * t);
@@ -9071,10 +9332,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function brushedTex() {
     return mkTex('brushed', 64, 256, (D, W, H) => {
       const row = new Float32Array(H);
-      for (let y = 0; y < H; y++) row[y] = hash2(y, 3, 61) * 0.6 + vnoise(0, y / 3, 1, H / 3, 62) * 0.4;
+      for (let y = 0; y < H; y++) row[y] = texHash(y, 3, 61) * 0.6 + texNoise(0, y / 3, 1, H / 3, 62) * 0.4;
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++) {
-          const t = 214 + (row[y] - 0.5) * 18 + (hash2(x, y, 63) - 0.5) * 6,
+          const t = 214 + (row[y] - 0.5) * 18 + (texHash(x, y, 63) - 0.5) * 6,
             i = (y * W + x) * 4;
           D[i] = t;
           D[i + 1] = t + 2;
@@ -9093,7 +9354,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     g.fillStyle = cs;
     g.fillRect(0, 0, W, H);
     for (let y = 0; y < H; y++) {
-      g.fillStyle = 'rgba(0,0,0,' + (hash2(y, col & 255, 71) * 0.08).toFixed(3) + ')';
+      g.fillStyle = 'rgba(0,0,0,' + (texHash(y, col & 255, 71) * 0.08).toFixed(3) + ')';
       g.fillRect(0, y, W, 1);
     }
     const lt = (col >> 16) + ((col >> 8) & 255) + (col & 255) > 420,
@@ -9132,7 +9393,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       g.fillStyle = '#efe7d3';
       g.fillRect(0, 384, 32, 64);
       for (let x = 0; x < 32; x++) {
-        g.fillStyle = 'rgba(120,100,70,' + (0.05 + hash2(x, 5, 73) * 0.1).toFixed(3) + ')';
+        g.fillStyle = 'rgba(120,100,70,' + (0.05 + texHash(x, 5, 73) * 0.1).toFixed(3) + ')';
         g.fillRect(x, 384, 1, 64);
       }
     });
@@ -9490,7 +9751,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         c.lineWidth = 1.2;
         c.stroke();
         tvBox(c, b);
-      } else c.rect(b.x - 30, b.y - 4, b.w + 40, b.h + 8);
+      } else {
+        c.beginPath();
+        c.rect(b.x - 30, b.y - 4, b.w + 40, b.h + 8);
+      }
       c.clip();
       c.setTransform(b.s, 0, 0, b.s, b.tx, b.ty);
       c.fillStyle = '#d9dadf';
@@ -9538,7 +9802,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     TVM.forEach((b, i) => {
       c.save();
       if (i) tvBox(c, b);
-      else c.rect(b.x - 30, b.y - 4, b.w + 40, b.h + 8);
+      else {
+        /* beginPath が無いと、前回の描画の枠（小笠原）が切り抜きの範囲に残る（Version 130） */
+        c.beginPath();
+        c.rect(b.x - 30, b.y - 4, b.w + 40, b.h + 8);
+      }
       c.clip();
       c.setTransform(b.s, 0, 0, b.s, b.tx, b.ty);
       c.lineCap = 'round';
@@ -10356,6 +10624,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
     /* 高解像度のスマホは1.25倍まで（描く画素を約3割減らす。Version 111） */
     renderer.setPixelRatio(Math.min(lowP ? 1.25 : 1.5, window.devicePixelRatio || 1));
+    /* シェーダーの準備のたびにエラー確認で待たされるのを省く（Version 131。描画結果は同じ） */
+    if (renderer.debug) renderer.debug.checkShaderErrors = false;
     renderer.shadowMap.enabled = true;
     /* 影：スマホ等は粗く軽い方式（512・落ちた物は影なし）、PCなどは細かく柔らかい方式（2048・PCFSoft）。同梱three.jsは定数 PCFSoftShadowMap を公開していないので値の2を指定（Version 118） */
     renderer.shadowMap.type = lowP ? THREE.PCFShadowMap : 2;
@@ -10410,7 +10680,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const plTex = mkTex('plaster', 128, 128, (D, W, H) => {
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++) {
-          const t = 1 + (vnoise(x / 6, y / 6, W / 6, H / 6, 91) - 0.5) * 0.05 + (hash2(x, y, 92) - 0.5) * 0.03,
+          const t = 1 + (texNoise(x / 6, y / 6, W / 6, H / 6, 91) - 0.5) * 0.05 + (texHash(x, y, 92) - 0.5) * 0.03,
             i = (y * W + x) * 4;
           D[i] = Math.min(255, 238 * t);
           D[i + 1] = Math.min(255, 233 * t);
@@ -10472,11 +10742,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       g.fillStyle = '#cfc4b1';
       g.fillRect(0, 0, W, H);
       for (let y = 0; y < H; y += 2) {
-        g.fillStyle = 'rgba(90,70,50,' + (0.04 + hash2(y, 1, 95) * 0.06).toFixed(3) + ')';
+        g.fillStyle = 'rgba(90,70,50,' + (0.04 + texHash(y, 1, 95) * 0.06).toFixed(3) + ')';
         g.fillRect(0, y, W, 1);
       }
       for (let x = 0; x < W; x += 2) {
-        g.fillStyle = 'rgba(255,255,255,' + (0.03 + hash2(x, 2, 96) * 0.05).toFixed(3) + ')';
+        g.fillStyle = 'rgba(255,255,255,' + (0.03 + texHash(x, 2, 96) * 0.05).toFixed(3) + ')';
         g.fillRect(x, 0, 1, H);
       }
       g.strokeStyle = '#6b5a48';
@@ -10530,7 +10800,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         g.fillStyle = cs[k];
         g.globalAlpha = 0.85;
         g.beginPath();
-        g.arc(30 + hash2(k, 1, 98) * 70, 30 + hash2(k, 2, 98) * 100, 18 + hash2(k, 3, 98) * 22, 0, Math.PI * 2);
+        g.arc(30 + texHash(k, 1, 98) * 70, 30 + texHash(k, 2, 98) * 100, 18 + texHash(k, 3, 98) * 22, 0, Math.PI * 2);
         g.fill();
       }
       g.globalAlpha = 1;
