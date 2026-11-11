@@ -10603,6 +10603,22 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     g.add(box(0.002, 0.006, 0.02, mat(0x0a2a12, { emissive: 0x18c050 }), 0.126, 0.12, 0.14));
     return g;
   }
+  /* 画面（テレビ・スマホ）の表示（Version 149）：画面は遠くで小さく縮小して描かれるため、ミップマップなし（LinearFilter）だと
+     揺れて画面が少し動くたびに文字や細い線の画素が拾われたり抜けたりしてチカチカ見えていた。ミップマップ（三線形 1008＝LinearMipmapLinearFilter）と
+     異方性フィルタで縮小をなめらかにする。描き直しは内容が変わったときだけなので、ミップマップを作る負荷は小さい */
+  function scrTexSet(tx) {
+    tx.generateMipmaps = true;
+    tx.minFilter = 1008;
+    tx.encoding = 3001;
+    if (RM.R3 && RM.R3.renderer) tx.anisotropy = Math.min(8, RM.R3.renderer.capabilities.getMaxAnisotropy());
+  }
+  /* 画面の板は本体・ガラスの面のすぐ前（0.2〜0.6mm）にあるので、深度の精度が低い端末で奥行きの取り合い（Zファイティング）でちらつかないよう、手前に寄せて描く */
+  function scrMat(m) {
+    m.polygonOffset = true;
+    m.polygonOffsetFactor = -1;
+    m.polygonOffsetUnits = -4;
+    return m;
+  }
   function buildTV(f) {
     /* 薄型テレビ：細い枠の画面、背面の出っ張り、首と台座 */
     const g = new THREE.Group(),
@@ -10615,7 +10631,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     g.add(rbox(0.03, 0.34, 0.6, 0.012, back, -0.02, 0.34, 0));
     const scr = new THREE.Mesh(
       new THREE.PlaneGeometry(f.d * 0.966, 0.53),
-      new THREE.MeshStandardMaterial({ color: 0x050506, emissive: 0x000000, roughness: 0.12, metalness: 0.3 })
+      scrMat(new THREE.MeshStandardMaterial({ color: 0x050506, emissive: 0x000000, roughness: 0.12, metalness: 0.3 }))
     );
     scr.rotation.y = Math.PI / 2;
     scr.position.set(0.0256, 0.387, 0);
@@ -10639,10 +10655,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       c.height = 180;
       RM.tvCv = c;
       RM.tvTex = new THREE.CanvasTexture(c);
-      RM.tvTex.minFilter = THREE.LinearFilter;
-      RM.tvTex.generateMipmaps = false;
-      RM.tvTex.encoding = 3001;
-      RM.tvMat = new THREE.MeshBasicMaterial({ map: RM.tvTex, toneMapped: false });
+      scrTexSet(RM.tvTex);
+      RM.tvMat = scrMat(new THREE.MeshBasicMaterial({ map: RM.tvTex, toneMapped: false }));
     }
     scr.material = on ? RM.tvMat : RM.tvOffMat;
     RM.tvKey = null;
@@ -10958,7 +10972,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const gl = rbox(f.w - 0.002, 0.001, f.d - 0.002, 0.0004, glass, 0, f.h - 0.0005, 0);
     gl.castShadow = false;
     g.add(gl);
-    const scr = new THREE.Mesh(new THREE.PlaneGeometry(f.w - 0.006, f.d - 0.008), mat(0x050506, { roughness: 0.1, metalness: 0.3 }));
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(f.w - 0.006, f.d - 0.008), scrMat(mat(0x050506, { roughness: 0.1, metalness: 0.3 })));
     scr.rotation.x = -Math.PI / 2;
     scr.position.y = f.h + 0.0002;
     g.add(scr);
@@ -10979,10 +10993,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         c.height = 640;
         RM.phCv = c;
         RM.phTex = new THREE.CanvasTexture(c);
-        RM.phTex.minFilter = THREE.LinearFilter;
-        RM.phTex.generateMipmaps = false;
-        RM.phTex.encoding = 3001;
-        RM.phMat = new THREE.MeshBasicMaterial({ map: RM.phTex, toneMapped: false });
+        scrTexSet(RM.phTex);
+        RM.phMat = scrMat(new THREE.MeshBasicMaterial({ map: RM.phTex, toneMapped: false }));
       }
       if (typeof key === 'string' && key[0] === 'T') phDrawTsu(+key.slice(1));
       else phDraw(name, /c$/.test(key));
