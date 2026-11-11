@@ -10823,7 +10823,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       x = Math.round((W - w) / 2),
       y = H - Math.round(W * 0.0585) - h,
       mw = Math.round(w * 0.268),
-      hh = 14,
+      hh = Math.round(w * 0.068),
       cancel = !!(sim && sim.canceled);
     c.save();
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -10858,30 +10858,85 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     c.textBaseline = 'middle';
     c.textAlign = 'center';
     c.fillStyle = '#fff';
-    c.font = 'bold 9.5px ' + F;
-    c.fillText(cancel ? '緊急地震速報（取消）' : '緊急地震速報（気象庁）', bx + bw / 2, y + hh / 2 + 0.5, bw - 6);
+    const head = $('tHead').firstChild ? $('tHead').firstChild.textContent.trim() : '';
+    c.font = 'bold ' + (w * 0.047).toFixed(2) + 'px ' + F;
+    if ('letterSpacing' in c) c.letterSpacing = (w * 0.047 * 0.12).toFixed(2) + 'px'; /* 地図の見出しと同じ字間 0.12em */
+    c.fillText(head || (cancel ? '緊急地震速報（取消）' : '緊急地震速報（気象庁）'), bx + bw / 2, y + hh / 2 + 0.5, bw - 6);
+    if ('letterSpacing' in c) c.letterSpacing = '0px';
     c.textAlign = 'left';
-    const src = ($('tSrc').textContent || $('eewSrc').textContent || '').trim();
+    /* 文字は地図のテロップ（#tHead・#tSrc・#tRegs）をそのまま使う（地方名へのまとめ方・並び・取消の文言も地図と同じになる。Version 150）。
+       大きさ・長体・折り返しは地図のCSSと同じ比率（テロップの幅 w に対して：震央 4.05%・横0.8、地域名 5.5%・横0.81、1行は 80%×0.81 まで） */
+    const t = tvTelopText(),
+      pad = w * 0.0135,
+      tx = bx + pad;
     c.fillStyle = '#fff23a';
-    c.font = '500 8px ' + F;
-    c.fillText(src || '強い揺れに警戒', bx + 4, y + hh + 7.5, bw - 8);
-    const regs = cancel ? ['揺れは観測されていません'] : shownRegs().map(r => REGNAME[r]).filter(Boolean);
-    c.fillStyle = '#fff';
-    c.font = 'bold 10.5px ' + F;
-    let line = '',
-      ly = y + hh + 21;
-    const lim = y + h - 5;
-    for (const r of regs) {
-      const t = line ? line + '　' + r : r;
-      if (c.measureText(t).width > bw - 8 && line) {
-        c.fillText(line, bx + 4, ly, bw - 8);
-        line = r;
-        ly += 13;
-        if (ly > lim) break;
-      } else line = t;
-    }
-    if (line && ly <= lim) c.fillText(line, bx + 4, ly, bw - 8);
+    c.font = '500 ' + (w * 0.0405).toFixed(2) + 'px ' + F;
+    c.save();
+    c.translate(tx, 0);
+    c.scale(0.8, 1);
+    c.fillText(t.src || '強い揺れに警戒', 0, y + hh + w * 0.004 + w * 0.0405 * 0.625, (bw - pad * 2) / 0.8);
     c.restore();
+    /* 地域名：1語ずつ並べ、入りきらなければ折り返す。あふれるときだけ文字を小さく（最小50%。地図の fitTelopText と同じ考え方） */
+    const top = y + hh + w * 0.004 + w * 0.0405 * 1.25 + w * 0.0175,
+      lim = y + h - w * 0.01,
+      maxW = w * 0.8,
+      sx = 0.81;
+    let fs = w * 0.055,
+      L = null;
+    for (let k = 0; k < 6; k++) {
+      c.font = 'bold ' + fs.toFixed(2) + 'px ' + F;
+      const gap = fs,
+        lines = [[]];
+      let cur = 0;
+      for (const n of t.regs) {
+        const nw = c.measureText(n).width,
+          ln = lines[lines.length - 1];
+        if (ln.length && cur + gap + nw > maxW) {
+          lines.push([n]);
+          cur = nw;
+        } else {
+          cur += (ln.length ? gap : 0) + nw;
+          ln.push(n);
+        }
+      }
+      L = { lines, gap };
+      if (top + lines.length * fs * 1.25 <= lim || fs <= w * 0.055 * 0.5) break;
+      fs = Math.max(w * 0.055 * 0.5, fs * 0.88);
+    }
+    c.fillStyle = '#fff';
+    c.save();
+    c.beginPath();
+    c.rect(bx, y + hh, bw, h - hh);
+    c.clip();
+    c.translate(tx, 0);
+    c.scale(sx, 1);
+    L.lines.forEach((ln, i) => {
+      const ly = top + fs * 1.25 * i + fs * 0.625;
+      let lx = 0;
+      ln.forEach(n => {
+        c.fillText(n, lx, ly);
+        lx += c.measureText(n).width + L.gap;
+      });
+    });
+    c.restore();
+    c.restore();
+  }
+  /* テレビのテロップの文字：地図に出ているテロップの中身をそのまま読む（NHK風でない表示 #eew のときは #eewSrc・#prefs） */
+  function tvTelopText() {
+    const T = $('tRegs'),
+      P = $('prefs'),
+      useT = !$('telop').hidden || !$('eew').hidden ? $('eew').hidden : true;
+    const pick = el => {
+      if (!el) return [];
+      const sp = [...el.children].map(x => x.textContent.trim()).filter(Boolean);
+      return sp.length ? sp : el.textContent.trim() ? [el.textContent.trim()] : [];
+    };
+    let regs = useT ? pick(T) : pick(P);
+    if (!regs.length) regs = pick(useT ? P : T);
+    if (!regs.length) regs = shownRegs().map(r => REGNAME[r]).filter(Boolean);
+    const src = ((useT ? $('tSrc') : $('eewSrc')).textContent || '').trim();
+    const hd = $('tHead').firstChild ? $('tHead').firstChild.textContent.trim() : '';
+    return { regs, src: src && !useT ? src + '　強い揺れに警戒' : src, head: hd };
   }
   function tvDraw() {
     const TL = tvTsuRegs();
@@ -10893,52 +10948,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       return;
     }
-    const c = RM.tvCv.getContext('2d'),
-      W = 320,
-      H = 180,
-      F = '"Zen Kaku Gothic New","BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif';
-    /* 背景は黒（地図には追従させない）。警報の対象地域にいるときだけ、下半分に緊急地震速報のテロップを出す */
+    /* 背景は黒（地図には追従させない）。テロップは地図のものと同じ（tvDrawTelop。Version 150 で統一） */
+    const c = RM.tvCv.getContext('2d');
+    c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = '#000';
-    c.fillRect(0, 0, W, H);
-    /* 下半分：NHK風の警報テロップ（左に対象地域の地図、右に文字） */
-    const y0 = 92;
-    c.fillStyle = '#e60012';
-    c.fillRect(0, y0, W, 18);
-    c.fillStyle = '#fff';
-    c.font = 'bold 13px ' + F;
-    c.textBaseline = 'middle';
-    c.fillText(sim && sim.canceled ? '緊急地震速報（取消）' : '緊急地震速報（気象庁）', 6, y0 + 9.5);
-    c.fillStyle = '#10204a';
-    c.fillRect(0, y0 + 18, W, H - y0 - 18);
-    const tm = $('tmap');
-    let x0 = 6;
-    try {
-      if (tm && tm.width && tm.height) {
-        const h = H - y0 - 24,
-          w = Math.min(110, (h * tm.width) / tm.height);
-        c.drawImage(tm, 4, y0 + 21, w, h);
-        x0 = w + 10;
-      }
-    } catch (e) {}
-    const src = ($('tSrc').textContent || $('eewSrc').textContent || '').trim();
-    c.fillStyle = '#fff';
-    c.font = 'bold 14px ' + F;
-    c.fillText(src || '強い揺れに警戒', x0, y0 + 32, W - x0 - 6);
-    const regs = shownRegs().map(r => REGNAME[r]).filter(Boolean);
-    c.fillStyle = '#ffe600';
-    c.font = 'bold 13px ' + F;
-    let line = '',
-      y = y0 + 54;
-    for (const r of regs) {
-      const t = line ? line + '　' + r : r;
-      if (c.measureText(t).width > W - x0 - 6 && line) {
-        c.fillText(line, x0, y);
-        line = r;
-        y += 17;
-        if (y > H - 8) break;
-      } else line = t;
-    }
-    if (line && y <= H - 8) c.fillText(line, x0, y);
+    c.fillRect(0, 0, 320, 180);
+    tvDrawTelop(c);
     RM.tvTex.needsUpdate = true;
   }
   /* テレビが倒れた・台から離れたか（テレビ台の座標で見たテレビの重心）。リセットまで消したまま（Version 113） */
@@ -11243,7 +11258,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const tk = tvTsuKey();
     if (tk && !siteEew()) return tk;
     const ev = sim && sim.evs ? sim.evs.find(v => v.k === sim.shown) : null;
-    const src = ($('tSrc').textContent || $('eewSrc').textContent || '').trim();
+    const tt = tvTelopText(),
+      src = tt.head + '/' + tt.src + '/' + tt.regs.join(',');
     return [
       tk || '',
       sim && sim.canceled ? 1 : 0,
