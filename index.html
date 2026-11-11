@@ -6286,8 +6286,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (Math.hypot(dx, dy) > 6) gesture.moved = true;
     if (gesture.moved) autoView.on = false;
     if (gesture.moved && !gesture.multi) {
-      view.cx = gesture.cx - dx / view.s;
-      view.cy = gesture.cy - dy / view.s;
+      [view.cx, view.cy] = panTo(view.cx, view.cy, gesture.cx - dx / view.s, gesture.cy - dy / view.s);
       dirty = true;
     }
   });
@@ -6318,11 +6317,49 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   tv.addEventListener('pointerup', endPtr);
   tv.addEventListener('pointercancel', endPtr);
+  /* 地図を動かせる範囲（Version 158）：手で動かすとき（ドラッグ・ズーム）、画面の中心は日本の陸・島（市区町村と南鳥島・沖ノ鳥島）から2000km以内。
+     縮小の限度は変えない。自動で震央へ寄せるとき（遠地地震など）は制限しない。範囲の外にいるときは、近づく向きには動かせる */
+  const PAN_KM = 2000;
+  let panPts = null;
+  function panDist(cx, cy) {
+    if (!panPts) {
+      panPts = CITIES.map(c => [c.lon, c.lat]);
+      panPts.push([153.98, 24.29], [136.08, 20.42]);
+    }
+    const lon = cx / K,
+      lat = Math.max(-89, Math.min(89, -cy));
+    let d = 1e9;
+    for (const q of panPts) {
+      const v = gcKm(lon, lat, q[0], q[1]);
+      if (v < d) d = v;
+    }
+    return d;
+  }
+  /* 中心を (ox, oy) から (nx, ny) へ動かす。範囲を越えるなら、横だけ・縦だけの動きを試し、だめなら境目まで */
+  function panTo(ox, oy, nx, ny) {
+    const d0 = panDist(ox, oy),
+      ok = (x, y) => {
+        const d = panDist(x, y);
+        return d <= PAN_KM || d <= d0;
+      };
+    if (ok(nx, ny)) return [nx, ny];
+    if (ok(nx, oy)) return [nx, oy];
+    if (ok(ox, ny)) return [ox, ny];
+    let lo = 0,
+      hi = 1;
+    for (let n = 0; n < 12; n++) {
+      const m = (lo + hi) / 2;
+      if (ok(ox + (nx - ox) * m, oy + (ny - oy) * m)) lo = m;
+      else hi = m;
+    }
+    return [ox + (nx - ox) * lo, oy + (ny - oy) * lo];
+  }
   function zoomAt(x, y, f) {
-    const [X, Y] = toWorld(x, y);
+    const [X, Y] = toWorld(x, y),
+      ox = view.cx,
+      oy = view.cy;
     view.s = Math.max(W / (40 * K), Math.min(W / 0.4, view.s * f));
-    view.cx = X - (x - W / 2) / view.s;
-    view.cy = Y - (y - H / 2) / view.s;
+    [view.cx, view.cy] = panTo(ox, oy, X - (x - W / 2) / view.s, Y - (y - H / 2) / view.s);
     dirty = true;
   }
   tv.addEventListener(
@@ -8108,6 +8145,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     ['マニラ（フィリピン）', 120.97, 14.58],
     ['シトカ（米国アラスカ州）', -135.34, 57.05]
   ];
+  const FAR_NEAR_KM = 2500;
   function farSched(e) {
     const rt = rng(runSeed + e.k * 7919 + 2718);
     rt();
@@ -8142,7 +8180,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.farFor = best;
     }
     if (chk) {
-      let b = e.t0 + 1200 + 1200 * rt();
+      /* 第1報の時刻（Version 158）：比較的近い遠地地震（第1報の推定震央が日本の陸から2500km未満。千島・カムチャツカ・アリューシャン西部・マリアナ・フィリピン付近など）は
+         発生から10〜15分（2025年7月のカムチャツカ半島付近の地震では約12分で津波注意報）、それより遠い地震は20〜40分 */
+      const u = rt(),
+        nr = nearCity(e.farRep[0].lon, e.farRep[0].lat).d < FAR_NEAR_KM;
+      let b = nr ? e.t0 + 600 + 300 * u : e.t0 + 1200 + 1200 * u;
       if (gen) b = Math.min(b, Math.min(...T.regs.map(r => r.arr)) - 1200);
       e.tsT = Math.max(b, e.farT[0] + 120);
     } else e.tsT = e.farT[0];
