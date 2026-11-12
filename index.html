@@ -1228,6 +1228,7 @@ input[type="range"] {
   font-family: var(--tv);
   font-size: 1.02rem;
 }
+.recl button small { white-space: nowrap; }
 .presets {
   display: flex;
   flex-wrap: wrap;
@@ -2260,7 +2261,10 @@ html, body { overflow-x: hidden; overflow-x: clip; }
           <div class="presets" id="presets"></div>
           <div class="sublab">連続・同時発生のシナリオ<small>地震の一覧ごと置き換え</small></div>
           <div class="presets" id="scen"></div>
-          <p class="note">時間差の大きい実例は、見やすいように間隔を縮めています。</p>
+          <div class="sublab">直近の震度3以上の地震<small id="recAt"></small></div>
+          <div class="qlist recl" id="recl"></div>
+          <div class="qbtns"><button id="recGo">選んだ地震を続けて再現</button></div>
+          <p class="note">時間差の大きい実例は、見やすいように間隔を縮めています（直近の地震は最大90秒）。</p>
         </div></details>
         <div class="sec">
           <h2>この震源での予想</h2>
@@ -5058,13 +5062,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       ]
     ],
     [
-      '東日本大震災 本震から60分（M9.0＋主な余震4）',
+      '東日本大震災 本震から40分（M9.0＋余震7）',
       [
-        { lon: 142.86, lat: 38.1, depth: 24, M: 9.0, strike: 200, type: 'inter', dt: 0 },
-        { lon: 142.3, lat: 37.4, depth: 30, M: 6.8, strike: 200, type: 'inter', dt: 300 },
-        { lon: 142.8, lat: 39.8, depth: 32, M: 7.4, strike: 200, type: 'inter', dt: 755 },
-        { lon: 141.27, lat: 36.12, depth: 43, M: 7.6, strike: 200, type: 'inter', dt: 1756 },
-        { lon: 144.6, lat: 38.0, depth: 30, M: 7.5, strike: 200, type: 'intra', dt: 2366 }
+        /* 2011/3/11 14:46:18.1 の本震からの秒数。震源要素は気象庁（災害時地震・津波速報、CMT解のページ）による。
+           14:54 の福島県沖 M5.8 は地震の数の上限（8つ）のため省いた */
+        { lon: 142.86, lat: 38.103, depth: 24, M: 9.0, strike: 200, type: 'inter', dt: 0 },
+        { lon: 142.028, lat: 36.733, depth: 11, M: 6.8, strike: 200, type: 'inter', dt: 309 },
+        { lon: 141.91, lat: 37.675, depth: 23, M: 6.4, strike: 200, type: 'inter', dt: 707 },
+        { lon: 142.397, lat: 39.042, depth: 27, M: 6.4, strike: 200, type: 'inter', dt: 1192 },
+        { lon: 142.767, lat: 39.82, depth: 32, M: 7.4, strike: 203, type: 'inter', dt: 1355 },
+        { lon: 141.66, lat: 37.203, depth: 27, M: 6.1, strike: 200, type: 'inter', dt: 1600 },
+        { lon: 141.265, lat: 36.108, depth: 43, M: 7.6, strike: 200, type: 'inter', dt: 1756 },
+        { lon: 144.75, lat: 37.913, depth: 11, M: 7.5, strike: 202, type: 'intra', dt: 2366 }
       ]
     ],
     [
@@ -5075,11 +5084,24 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       ]
     ],
     [
-      '能登 本震＋余震2回',
+      '能登半島地震 16:06の地震から51分（M7.6＋4）',
       [
-        { lon: 137.27, lat: 37.5, depth: 15, M: 7.6, strike: 55, type: 'crustal', dt: 0 },
-        { lon: 136.9, lat: 37.18, depth: 10, M: 6.0, strike: 55, type: 'crustal', dt: 45 },
-        { lon: 137.45, lat: 37.62, depth: 12, M: 5.8, strike: 55, type: 'crustal', dt: 100 }
+        /* 2024/1/1 16:06:06.1 の地震（M5.5）からの秒数。震源要素は気象庁（緊急地震速報の内容・強震観測のページ）による。
+           本震の走向・傾斜は気象庁CMT解（47°・37°）、ほかは本震に合わせた */
+        { lon: 137.245, lat: 37.51, depth: 12, M: 5.5, strike: 47, type: 'crustal', dip: 37, dt: 0 },
+        { lon: 137.27, lat: 37.495, depth: 16, M: 7.6, strike: 47, type: 'crustal', dip: 37, dt: 256 },
+        { lon: 136.658, lat: 37.155, depth: 9, M: 5.7, strike: 47, type: 'crustal', dip: 37, dt: 371 },
+        { lon: 136.818, lat: 37.198, depth: 11, M: 6.1, strike: 47, type: 'crustal', dip: 37, dt: 757 },
+        { lon: 136.857, lat: 37.262, depth: 14, M: 5.8, strike: 47, type: 'crustal', dip: 37, dt: 3043 }
+      ]
+    ],
+    [
+      '福島県沖 2022（M6.1→2分後にM7.4）',
+      [
+        /* 2022/3/16 23:34:27.0 の M6.1 からの秒数。震源要素は気象庁（緊急地震速報の内容・仙台管区気象台の報告書）、
+           走向・傾斜は防災科研の解析の設定（AQUA-CMT 17°・45°） */
+        { lon: 141.605, lat: 37.68, depth: 57, M: 6.1, strike: 17, type: 'intra', dip: 45, dt: 0 },
+        { lon: 141.622, lat: 37.697, depth: 57, M: 7.4, strike: 17, type: 'intra', dip: 45, dt: 126 }
       ]
     ]
   ];
@@ -5099,6 +5121,88 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     };
     $('scen').appendChild(b);
   });
+  /* ===== Version 174: 直近の震度3以上の地震（新しい順に REC_N 件）。選んだ地震を発生順に続けて再現（間隔は実際の時間差、最大 REC_GAP 秒）。
+     出典: P2P地震情報 API（気象庁の地震情報）。アーティファクトは外部と通信できないので埋め込み、公開版（github.io）は開くたびに最新を取得 */
+  const REC_N = 3,
+    REC_GAP = 90;
+  let RECENT = [
+    { t: '2026/11/09 13:52', name: '茨城県沖', lat: 36.2, lon: 142.2, depth: 10, M: 5.9, mx: 30 },
+    { t: '2026/11/09 05:16', name: '宮城県沖', lat: 38.3, lon: 141.9, depth: 50, M: 4.5, mx: 30 },
+    { t: '2026/11/08 10:53', name: '熊本県天草・芦北地方', lat: 32.6, lon: 130.6, depth: 10, M: 4.3, mx: 40 }
+  ];
+  let recAt = '2026/11/12 時点';
+  const recSel = new Set(RECENT.map((r, i) => i));
+  const REC_SC = { 10: '1', 20: '2', 30: '3', 40: '4', 45: '5弱', 50: '5強', 55: '6弱', 60: '6強', 70: '7' };
+  const recMs = s => Date.parse(s.replace(/\//g, '-').replace(' ', 'T') + ':00+09:00');
+  function recQuake(r) {
+    const sea = /沖|灘|近海|海|湾|海峡|水道/.test(r.name);
+    const type = r.depth >= 80 ? 'intra' : sea ? (r.depth <= 60 ? 'inter' : 'intra') : r.depth <= 25 ? 'crustal' : 'intra';
+    const strike = type === 'crustal' ? 45 : r.lon < 138 && r.lat < 34.5 ? 240 : 200;
+    return { lon: r.lon, lat: r.lat, depth: r.depth, M: r.M, strike, type };
+  }
+  function renderRec() {
+    const L = $('recl');
+    L.innerHTML = '';
+    $('recAt').textContent = recAt;
+    RECENT.forEach((r, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('aria-pressed', recSel.has(i));
+      b.innerHTML = '<b></b><span></span><small></small>';
+      b.querySelector('b').textContent = recSel.has(i) ? '✓' : '';
+      b.querySelector('span').textContent = r.name + '　M' + r.M.toFixed(1) + '　深さ' + (r.depth ? r.depth + 'km' : 'ごく浅い') + '　最大震度' + (REC_SC[r.mx] || '?');
+      b.querySelector('small').textContent = r.t.slice(5).replace('/', '月').replace(' ', '日 ');
+      b.onclick = () => {
+        if (recSel.has(i)) recSel.delete(i);
+        else recSel.add(i);
+        renderRec();
+      };
+      L.appendChild(b);
+    });
+    $('recGo').disabled = !recSel.size;
+  }
+  $('recGo').onclick = () => {
+    const pick = [...recSel].map(i => RECENT[i]).filter(Boolean).sort((a, b) => recMs(a.t) - recMs(b.t));
+    if (!pick.length) return;
+    if (sim) reset();
+    EQS.length = 0;
+    let dt = 0;
+    pick.forEach((r, k) => {
+      if (k) dt += Math.min(REC_GAP, Math.max(0, (recMs(r.t) - recMs(pick[k - 1].t)) / 1000));
+      EQS.push(Object.assign({ dip: null, rup: 'bi' }, recQuake(r), { dt: Math.round(dt) }));
+    });
+    fixRate(EQS);
+    selQ = 0;
+    P = EQS[0];
+    syncCfgUI();
+    preview();
+  };
+  renderRec();
+  if (/\.github\.io$/.test(location.hostname) && window.fetch)
+    fetch('https://api.p2pquake.net/v2/history?codes=551&limit=100')
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(js => {
+        const out = [],
+          seen = new Set();
+        for (const it of js || []) {
+          const q = it && it.earthquake,
+            h = q && q.hypocenter;
+          if (!h || !(q.maxScale >= 30) || !(h.magnitude >= 2) || !(h.depth >= 0) || !(h.latitude > 20 && h.latitude < 50) || !(h.longitude > 120 && h.longitude < 155)) continue;
+          const t = String(q.time || '').slice(0, 16);
+          if (!/^\d{4}\/\d\d\/\d\d \d\d:\d\d$/.test(t) || seen.has(t)) continue;
+          seen.add(t);
+          out.push({ t, name: String(h.name || ''), lat: +h.latitude, lon: +h.longitude, depth: Math.min(700, Math.round(h.depth)), M: Math.min(10, +h.magnitude), mx: q.maxScale });
+          if (out.length >= REC_N) break;
+        }
+        if (!out.length) return;
+        RECENT = out;
+        recSel.clear();
+        out.forEach((r, i) => recSel.add(i));
+        const d = new Date();
+        recAt = '最新（' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0') + ' 取得）';
+        renderRec();
+      })
+      .catch(() => {});
   function setLayer(key, on) {
     layers[key] = on;
     const id = { heat: 'Lheat', amp: 'Lamp', st: 'Lst', flt: 'Lflt', lp: 'Llp', name: 'Lname' }[key];
