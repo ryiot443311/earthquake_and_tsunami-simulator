@@ -2130,6 +2130,10 @@ details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
   .stage > .tv + .bar button { padding: 9px 5px; font-size: 0.8rem; }
   .stage > .tv + .bar button.go { padding: 9px 7px; font-size: 0.88rem; }
 }
+/* ===== Version 166：地図（震度速報・津波警報の表示、切替ボタン、地図そのもの）をタップしたときにスマホで出る青い反応（タップのハイライト）を出さない。
+   キーボード操作のときの枠（:focus-visible）は残し、タップ・クリックでついた枠だけ消す */
+.tv, .tv * { -webkit-tap-highlight-color: transparent; }
+.tv :focus:not(:focus-visible), .tv:focus:not(:focus-visible) { outline: none; }
 </style>
 
 <div class="app">
@@ -4465,15 +4469,38 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const TSU_COL = [null, '#4fc3ff', '#ffe600', '#ff2020', '#c03cff'],
     TSU_NAME = [null, '津波予報（若干の海面変動）', '津波注意報', '津波警報', '大津波警報'];
   /* 津波予報区（気象庁の66区分に近い分け方。県の中を海岸の向きで分ける） */
+  /* 海岸の点が面している海の位置：最も近い海の格子の中心（約8km以内。無ければその点のまま）。細い半島の両側を分けるのに使う（Version 164） */
+  function seaPt(lon, lat) {
+    if (isSeaCell(lon, lat)) return [lon, lat];
+    let bd = 1e9,
+      b = [lon, lat];
+    const c0 = Math.floor((lon - G.lon0) / G.dx),
+      r0 = Math.floor((G.lat1 - lat) / G.dy),
+      kx = Math.cos(lat * D2R);
+    for (let dr = -4; dr <= 4; dr++)
+      for (let dc = -4; dc <= 4; dc++) {
+        const x = G.lon0 + (c0 + dc + 0.5) * G.dx,
+          y = G.lat1 - (r0 + dr + 0.5) * G.dy;
+        if (!isSeaCell(x, y)) continue;
+        const d = ((x - lon) * kx) ** 2 + (y - lat) ** 2;
+        if (d < bd) {
+          bd = d;
+          b = [x, y];
+        }
+      }
+    return b;
+  }
   function tsuSplit(p, lon, lat) {
     switch (p) {
-      case 2:
-        /* 下北半島の津軽海峡側（大間・風間浦など）も太平洋沿岸 */
-        return lon >= 141.2 || (lat >= 41.3 && lon >= 140.75)
-          ? '青森県太平洋沿岸'
-          : lat > 40.8 && lat < 41.3 && lon >= 140.6
-            ? '陸奥湾'
-            : '青森県日本海沿岸';
+      case 2: {
+        /* 陸地の位置ではなく「その海岸が面している海」（最も近い海の格子）で決める（Version 164）。
+           以前は東経141.2度以東をすべて太平洋沿岸にしていたので、陸奥湾の東岸（横浜町・むつ市の湾側など）が太平洋沿岸になっていた。
+           陸奥湾＝北緯40.8〜41.3度・東経140.6〜141.32度の海（湾口の北、平舘海峡より北の津軽海峡は除く）。
+           下北半島の津軽海峡側（大間・風間浦・佐井）は太平洋沿岸、津軽半島の津軽海峡側（今別・三厩）は日本海沿岸 */
+        const [sl, sa] = seaPt(lon, lat);
+        if (sa > 40.8 && sa < 41.3 && sl > 140.6 && sl < 141.32 && !(sa > 41.17 && sl < 140.87)) return '陸奥湾';
+        return sl >= 141.2 || (sa >= 41.1 && sl >= 140.72) ? '青森県太平洋沿岸' : '青森県日本海沿岸';
+      }
       case 12:
         return lon >= 140.25 || lat < 34.95
           ? '千葉県九十九里・外房'
@@ -4575,12 +4602,24 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         return r === 'k-a' ? '奄美群島・トカラ列島' : r === 't-o' ? '小笠原諸島' : REGNAME[r];
       return tsuSplit(area.pref, lon, lat) || prefName[area.pref];
     }
+    /* 内浦湾（噴火湾）に面する海岸は太平洋沿岸西部（湾の奥の長万部・静狩付近が日本海沿岸になっていた。面している海の位置で判定。Version 164） */
+    {
+      const [sl, sa] = seaPt(lon, lat);
+      if (sl > 140.24 && sl < 141.0 && sa > 41.95 && sa < 42.62 && lon > 140.2) return '北海道太平洋沿岸西部';
+    }
     if (lat >= 44.5) return lon < 142.0 ? '北海道日本海沿岸北部' : 'オホーツク海沿岸';
-    /* 知床半島の根室海峡側（羅臼）は太平洋沿岸東部 */
-    if (lat >= 43.75 && lat < 44.45 && lon > 144.95 + (lat - 43.95) * 0.95) return '北海道太平洋沿岸東部';
+    /* 知床半島：根室海峡側（羅臼）は太平洋沿岸東部、オホーツク海側（斜里・ウトロ）はオホーツク海沿岸。
+       半島の軸（北緯43.95度・東経144.95度から北東へ）に対して、面している海がどちら側かで決める（Version 165。以前は陸の点の位置の線引きで、先端や中ほどのオホーツク海側が太平洋沿岸東部になっていた） */
+    if (lat >= 43.75 && lat < 44.45 && lon > 144.75) {
+      const [sl, sa] = seaPt(lon, lat);
+      return sa < 43.95 + (sl - 144.95) * 1.05 ? '北海道太平洋沿岸東部' : 'オホーツク海沿岸';
+    }
     if (lat >= 43.75 && lon >= 141.9) return 'オホーツク海沿岸';
     /* 石狩湾の東側〜留萌（東経141.4〜142度、北緯43度以北）も日本海側。以前は太平洋沿岸中部・西部になり、北海道の太平洋側に孤立した大津波警報が出ていた（Version 125） */
-    if ((lon < 141.4 && lat >= 42.6) || (lat >= 43.0 && lon < 142.2)) return lat > 43.2 ? '北海道日本海沿岸北部' : '北海道日本海沿岸南部';
+    /* 日本海側の北部と南部の境は振興局で分ける（後志・檜山・渡島・奥尻＝南部、石狩・留萌・宗谷・利尻礼文＝北部。Version 165。
+       以前は北緯43.2度で分けていたので、積丹半島の先と小樽の一部が北部になり、南部と北部が入り組んでいた） */
+    if ((lon < 141.4 && lat >= 42.6) || (lat >= 43.0 && lon < 142.2))
+      return lat < 43.0 || /^(後志|檜山|渡島|北海道奥尻)/.test(area.name || '') ? '北海道日本海沿岸南部' : '北海道日本海沿岸北部';
     if (lon < 140.9 && lat < 42.6) return lon < 140.3 ? '北海道日本海沿岸南部' : '北海道太平洋沿岸西部';
     return lon >= 143.3
       ? '北海道太平洋沿岸東部'
@@ -5980,7 +6019,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (!GS) {
       const S0 = tsuSource(P);
       GS = { S: S0, SP: S0 ? seaPath(S0.src) : null };
-      if (tsuGeo.size >= 8) tsuGeo.clear();
+      if (tsuGeo.size >= 24) tsuGeo.clear();
       tsuGeo.set(gk, GS);
     }
     const S = GS.S;
@@ -6165,7 +6204,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       tsWait = false;
     if (cfg.tsu) {
       tsuNoBuild = true;
-      const raw = EQS.map(q => computeTsunami(q));
+      /* 予想も、発表と同じ津波予報データベース方式の値（震央・深さ・Mは設定どおり、深さは10km単位。Version 161）。
+         実際の津波がこれより高ければ、地震発生後に観測を受けて上の区分へ引き上げることがある */
+      const raw = EQS.map(q =>
+        nearCity(q.lon, q.lat).d >= FAR_KM
+          ? computeTsunami(q)
+          : tsuDb({ q, t0: 0, offR: 0, ang: 0, infoDep: Math.max(10, Math.round((q.depth || 10) / 10) * 10) }, q.M, false)
+      );
       tsuNoBuild = false;
       tsWait = raw.some(x => x && x.pending);
       if (tsWait) {
@@ -6179,7 +6224,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
             }
           );
         }
-      } else ts = mergeTsu(raw);
+      } else {
+        ts = mergeTsu(raw);
+        if (ts && ts.gen) {
+          tsuNeighbors(ts.regs, null);
+          ts.regs.sort((a, b) => b.cat - a.cat || b.H - a.H);
+        }
+      }
     }
     const c = cls(mx);
     const chip = (t, bg, fg) =>
@@ -6728,6 +6779,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         e.tsuQ = [];
         e.tsT = tRec + e.tsOff;
         e.tsQual = qual;
+        /* 予報（データベース）で津波が予想されるかは、推定の震央・深さ（e.offR・e.ang・e.infoDep）が決まった後で判定する（下の tsDbGen） */
+        e.tsDbGen = null;
+        if (qual) e.tsT2 = tRec + e.tsOff2;
         if (e.tsunami && e.tsunami.gen) {
           e.endT = Math.max(e.endT, e.tsT + 25);
           if (qual) {
@@ -6803,6 +6857,20 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       );
       if (e.farEew) e.tauConv = 12;
       e.ang = (q.lon * 97 + q.lat * 31 + e.k * 1.7) % 6.283;
+      /* 予報（データベース）でも津波が予想されるか（Version 160）。Mは発表時点の見込み（M8超は最大級を見込む）。
+         実際の津波が無くても予報が出る地震は、発表の時刻までシミュレーションを続ける */
+      if (e.tsDbGen === null) {
+        e.tsDbGen = false;
+        if (!e.farQ) {
+          const db = tsuDb(e, e.tsQual ? tsuQualM(e, q.M) : q.M, e.tsQual);
+          e.tsDbGen = !!(db && db.gen);
+        }
+        if (e.tsDbGen && !(e.tsunami && e.tsunami.gen)) {
+          const x = Math.max(e.tsT + 25, e.tsT2 ? e.tsT2 + 20 : 0);
+          e.endT = Math.max(e.endT, x);
+          e.endT0 = Math.max(e.endT0, x);
+        }
+      }
       e.firstDet = e.det.length ? e.det[0] : null;
       e.nextTick = e.det.length ? e.det[0] + cfg.delay : 0;
       e.eewDone = !e.det.length;
@@ -7267,7 +7335,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (e.reports.length === 1 && e.tsT != null && !e.tsuDone && !s.fake && !e.farQ) {
       e.tsT = t + (e.tsOff || 180);
       if (e.tsQual) e.tsT2 = t + (e.tsOff2 || 900);
-      if (e.tsunami && e.tsunami.gen) {
+      if (tsuWill(e)) {
         e.endT = Math.max(e.endT, e.tsT + 25, e.tsT2 ? e.tsT2 + 20 : 0);
         s.endT = Math.min(SIM_MAX, Math.max(s.endT, e.endT));
       }
@@ -8441,7 +8509,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const ph = phase.slice().sort((a, b) => b.q.M - a.q.M),
       main = ph[0].q,
       multi = EQS.length > 1;
-    const noTsu = cfg.tsu && !s.tsunami && ph.every(e => e.tsunami && !e.tsunami.gen);
+    const noTsu = cfg.tsu && !s.tsunami && ph.every(e => e.tsunami && !tsuWill(e));
     $('infoMeta').innerHTML =
       ph
         .slice(0, 3)
@@ -8541,11 +8609,24 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function issueTsunami(t, e, upd) {
     const s = sim;
     if (upd === true) {
-      const ts = computeTsunami(e.q, false);
-      if (ts) ts.regs.forEach(r => (r.arr += e.t0));
-      e.tsunami = ts;
-      e.tsFc = ts;
+      /* M8超の数値への更新：最大級の見込みをやめ、その時点のM（速報値の更新を含む）でデータベースを引き直す（Version 160）。
+         ただし区分は下げない（Version 163。ユーザー決定。気象庁の「不確定性の幅の中で安全サイド」の考え方と2011年の実際に合わせた）。
+         新しい予想の方が低い予報区は区分をそのまま残し、高さはその区分の最低の数値（大津波警報なら5m、津波警報なら3m、注意報なら1m）で出す */
       e.tsuUpd = true;
+      e.tsQual = false;
+      const old = new Map(((e.tsFc && e.tsFc.regs) || []).map(r => [r.name, r])),
+        nw = tsuFc(e, infoM(e, t)),
+        FL = [0, 0.1, 0.5, 1.5, 4],
+        regs = ((nw && nw.regs) || []).map(r => Object.assign({}, r));
+      for (const r of regs) {
+        const o = old.get(r.name);
+        if (o && o.cat > r.cat) Object.assign(r, { cat: o.cat, H: Math.max(r.H, FL[o.cat]), lab: tsuLabelJ(o.cat, Math.max(r.H, FL[o.cat]), false) });
+        old.delete(r.name);
+      }
+      for (const o of old.values())
+        regs.push(Object.assign({}, o, { H: FL[o.cat], lab: tsuLabelJ(o.cat, FL[o.cat], false) }));
+      regs.sort((a, b) => b.cat - a.cat || b.H - a.H);
+      e.tsFc = { gen: regs.length > 0, regs, raw: (nw && nw.raw) || (e.tsunami && e.tsunami.raw) };
     } else if (!upd) {
       e.tsuDone = true;
       /* 第1報は、その時点で分かっているMで予想する（実際のMとずれていれば、後の情報や観測で見直す） */
@@ -8554,6 +8635,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const prev = s.tsunami,
       ts = tsuAdjApply(mergeTsu(s.evs.filter(v => v.tsuDone).map(v => v.tsFc || v.tsunami)));
     if (!ts || !ts.gen) return;
+    /* 複数の地震・観測による引き上げを重ねた後にも、周辺の予報区の決まりを当てる（Version 162） */
+    tsuNeighbors(ts.regs, null);
+    ts.regs.sort((a, b) => b.cat - a.cat || b.H - a.H);
     const up = ts.regs.filter(r => {
       const o = prev && prev.regs.find(x => x.name === r.name);
       return !o || r.cat > o.cat;
@@ -8689,8 +8773,158 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      ・Mの更新（M7.5超の地震）で大きくなったら、30秒〜2分半後に予報を見直し、引き上げ・追加があれば「津波警報・注意報の切り替え・追加」を出す。
      ・観測：沿岸の観測点の最大波×1.4（予報区内の高い所への換算）、沖合の観測点は沿岸の推定値が、その予報区の今の区分を超えたら、1〜4分後に引き上げる・追加する。
        判断にはばらつきがある（観測点ごとに、比べる値に0.8〜1.2倍を掛け、約15%は引き上げに使わない）。下げる（解除・引き下げ）は扱わない */
+  /* ---- 津波予報データベース方式（Version 160）----
+     気象庁は、あらかじめ多数の断層で計算した津波をデータベースに入れておき、地震のときは「推定した震源・深さ・M」で検索する。
+     ・断層の位置：震央を囲む緯度・経度0.5度の格子の4点（海の点だけ）。4点の結果のうち予報区ごとに最も高い・早い値を採る（最大危険度法）
+     ・断層の形：傾斜45度・すべり角90度（逆断層）に統一（走向は地震の設定のもの）。横ずれ型の地震でも逆断層として見積もるので、実際より高めに出やすい
+     ・震源が陸の奥（4点とも陸で、震央も陸）なら津波は予想しない
+     ・M8を超える巨大地震の第1報は、Mの過小評価を見込み、その海域の最大級（海溝型M9.0、それ以外M8.5）で見積もる（定性表現で発表）
+     このため、発表の範囲は実際の津波（e.tsunami。観測の元）より広く・高めになりやすい。観測で引き上げる仕組みはそのまま */
+  const TSU_DB_STEP = 0.5;
+  function tsuDbSrc(e) {
+    /* 発表時の推定震央：実際の震央から、緊急地震速報の最後まで残る誤差（e.offR、向き e.ang）だけずらす */
+    const q = e.q,
+      r = e.offR || 0,
+      a = e.ang || 0,
+      kx = 111.32 * Math.cos(q.lat * D2R);
+    return {
+      lon: q.lon + (r * Math.cos(a)) / kx,
+      lat: q.lat + (r * Math.sin(a)) / 110.57,
+      depth: e.infoDep || q.depth || 10
+    };
+  }
+  function tsuDb(e, M, qual) {
+    const q = e.q,
+      E = tsuDbSrc(e),
+      st = TSU_DB_STEP,
+      x0 = Math.floor(E.lon / st) * st,
+      y0 = Math.floor(E.lat / st) * st,
+      pts = [];
+    /* 震央が陸なら、格子の点は使わず震央そのものに断層を置く（陸の下の部分は津波を起こさないので、海にかかる分だけの津波になる） */
+    if (!isSeaCell(E.lon, E.lat)) pts.push([E.lon, E.lat]);
+    else for (const dx of [0, st]) for (const dy of [0, st]) if (isSeaCell(x0 + dx, y0 + dy)) pts.push([x0 + dx, y0 + dy]);
+    if (!pts.length) pts.push([E.lon, E.lat]);
+    const by = new Map();
+    let raw = null;
+    for (const [lon, lat] of pts) {
+      const P = { lon, lat, M, depth: E.depth, strike: q.strike, type: q.type, dip: 45, rup: 'bi' };
+      const T = computeTsunami(P, false);
+      if (T && T.pending) return T;
+      if (!T || !T.gen) continue;
+      raw = raw || T.raw;
+      for (const r of T.regs) {
+        const o = by.get(r.name);
+        if (!o) by.set(r.name, r);
+        else {
+          if (r.H > o.H) o.H = r.H;
+          if (r.arr < o.arr) o.arr = r.arr;
+        }
+      }
+    }
+    const regs = [];
+    for (const r of by.values()) {
+      r.arr += e.t0;
+      r.cat = tsuCatJ(r.H);
+      if (r.cat >= 1) {
+        r.lab = tsuLabelJ(r.cat, r.H, qual);
+        regs.push(r);
+      }
+    }
+    tsuNeighbors(regs, qual);
+    regs.sort((a, b) => b.cat - a.cat || b.H - a.H);
+    return { gen: regs.length > 0, regs, raw };
+  }
+  /* 巨大地震の第1報で見込むM */
+  function tsuQualM(e, M) {
+    return Math.max(M, e.q.type === 'inter' ? 9.0 : 8.5);
+  }
+  /* 予報区の隣どうし（海岸の点が25km以内で接する予報区。日本海側と太平洋側などはまたがない） */
+  let tsuAdjM = null;
+  function tsuAdj() {
+    if (tsuAdjM) return tsuAdjM;
+    tsuAdjM = new Map();
+    const bin = new Map(),
+      B = 0.25,
+      key = (i, j) => i * 4096 + j;
+    COAST.forEach(c => {
+      if (!c.reg) return;
+      const k = key(Math.floor(c.lon / B), Math.floor(c.lat / B));
+      let a = bin.get(k);
+      if (!a) bin.set(k, (a = []));
+      a.push(c);
+    });
+    /* 値：隣の予報区 → 同じ側（日本海側どうし・それ以外どうし）なら true、海峡などで側をまたぐなら false（Version 162） */
+    const add = (a, b) => {
+      if (a === b) return;
+      if (!tsuAdjM.has(a)) tsuAdjM.set(a, new Map());
+      tsuAdjM.get(a).set(b, JSEA_REGS.has(a) === JSEA_REGS.has(b));
+    };
+    COAST.forEach(c => {
+      if (!c.reg) return;
+      const i = Math.floor(c.lon / B),
+        j = Math.floor(c.lat / B),
+        kx = 111.32 * Math.cos(c.lat * D2R);
+      for (let di = -1; di <= 1; di++)
+        for (let dj = -1; dj <= 1; dj++)
+          for (const d of bin.get(key(i + di, j + dj)) || [])
+            if (d.reg !== c.reg && Math.hypot((d.lon - c.lon) * kx, (d.lat - c.lat) * 110.57) < 25) add(c.reg, d.reg);
+    });
+    /* 海岸の点が粗く25kmでは拾えない、境を接する・狭い海峡を挟む予報区（Version 162） */
+    for (const [a, b] of [
+      ['兵庫県瀬戸内海沿岸', '岡山県'],
+      ['和歌山県', '徳島県'],
+      ['大分県豊後水道沿岸', '愛媛県宇和海沿岸'],
+      ['大分県瀬戸内海沿岸', '山口県瀬戸内海沿岸'],
+      ['佐渡', '新潟県上中下越'],
+      ['種子島・屋久島地方', '鹿児島県東部'],
+      ['北海道太平洋沿岸西部', '陸奥湾'],
+      ['北海道太平洋沿岸西部', '青森県日本海沿岸']
+    ])
+      if (COAST.regPath.has(a) && COAST.regPath.has(b)) {
+        add(a, b);
+        add(b, a);
+      }
+    return tsuAdjM;
+  }
+  /* 周辺の予報区（Version 160・162）：区分が隣どうしで2段以上離れないようにする（推定の誤差を見込んだ余裕。実際の発表の傾向に合わせた簡略化）。
+     ・大津波警報の隣は、少なくとも津波警報（瀬戸内海・津軽海峡など入り組んだ所で、大津波警報と注意報・発表なしが隣り合わないように。海峡で日本海側をまたいでも適用）
+     ・津波警報の隣は、少なくとも津波注意報（日本海側とそれ以外はまたがない）
+     引き上げた予報区が警報になれば、その隣にも広がる。予報区は高さ・到達時刻・地図の線（path）も持たせる */
+  function tsuNeighbors(regs, qual) {
+    const A = tsuAdj(),
+      by = new Map(regs.map(r => [r.name, r])),
+      q = qual != null ? qual : regs.some(r => r.lab === '巨大' || r.lab === '高い'),
+      HC = [0, 0.1, 0.5, 1.5, 4];
+    let ch = true,
+      n = 0;
+    while (ch && n++ < 20) {
+      ch = false;
+      for (const r of regs.slice()) {
+        if (r.cat < 3) continue;
+        for (const [nb, same] of A.get(r.name) || []) {
+          const need = r.cat === 4 ? 3 : same ? 2 : 0;
+          if (!need) continue;
+          const o = by.get(nb);
+          if (o && o.cat >= need) continue;
+          if (o) Object.assign(o, { cat: need, H: Math.max(o.H, HC[need]), lab: tsuLabelJ(need, HC[need], q), nb: true });
+          else {
+            const x = { name: nb, H: HC[need], arr: r.arr + 300, cat: need, lab: tsuLabelJ(need, HC[need], q), nb: true, path: COAST.regPath.get(nb) };
+            regs.push(x);
+            by.set(nb, x);
+          }
+          ch = true;
+        }
+      }
+    }
+    return regs;
+  }
+  /* その地震に津波の予報（注意報・若干の海面変動）を出すか。予報（データベース）か実際の津波のどちらかがあれば発表の流れに乗せる */
+  function tsuWill(e) {
+    return !!((e.tsunami && e.tsunami.gen) || e.tsDbGen);
+  }
   function tsuFc(e, M) {
     const T = e.tsunami;
+    if (!e.farQ && e.q) return tsuDb(e, e.tsQual ? tsuQualM(e, M) : M, !!e.tsQual);
     if (!T || !T.gen || e.tsQual) return T;
     const dM = M - e.q.M,
       g = rng(e.tsSeed),
@@ -9389,7 +9623,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           );
           notifyLog();
         }
-        if (!e.tsunami || !e.tsunami.gen) continue;
+        if (!tsuWill(e)) continue;
         if (!e.tsuDone) {
           if (t >= e.tsT) issueTsunami(t, e, false);
         } else if (e.tsT2 && !e.tsuUpd && t >= e.tsT2) issueTsunami(t, e, true);
@@ -12833,7 +13067,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       pb.e = 0.15;
       pb.rr = 1;
       /* 家具の天板と同じ速さで、少し手前へ倒れ込む向きに回す */
-      addPartBody(pb, r.g, pos, q, [b.v[0], b.v[1] + 0.1, b.v[2] + 0.15], [(Math.random() - 0.5) * 2, 0, 1.5 + Math.random()]);
+      addPartBody(pb, r.g, pos, q, [b.v[0], b.v[1] + 0.1, b.v[2] + 0.15], [b.w[0] + 1.5 + Math.random(), b.w[1], b.w[2] + (Math.random() - 0.5) * 1.5]);
       pb.ign = b;
       pb.ignT = 0.3;
       r.b = pb;
@@ -14111,10 +14345,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      床の揺れは、室内の座標系での見かけの力（−床の加速度）として全物体に加える。上下動が上向きに1Gを超えると物は浮き上がる。
      これで、前後左右どちらにも傾く・滑りながら傾く・脚のガタつき・物どうしの積み重なりが自然に出る。
      止まった物は計算を止め（眠らせ）、その物が動き出せる強さの揺れや、ぶつかってきた物で再開する */
-  const PHY = { dt: 1 / 120, it: 6, slop: 0.003, beta: 0.2, maxBias: 0.5, sleepV: 0.0009, sleepW: 0.1, sleepT: 0.35, maxParts: 220 };
+  const PHY = { dt: 1 / 120, it: 6, slop: 0.003, beta: 0.2, maxBias: 0.5, deep: 0.025, sleepV: 0.0009, sleepW: 0.1, sleepT: 0.35, maxParts: 220 };
   const RUG = [-1.65, -0.05, -0.7, 1.5]; /* じゅうたんの範囲（割れにくい） */
   const PLANE_ID = 990; /* 床・壁の番号（接触の識別用） */
-  let BID = 100;
+  const FURN_VUP = 0.6;
+  let BID = 100,
+    PHY_N = 1; /* stepBodies の回数（奥まで入り込んだ小物の印。Version 159） */
   /* 角（c=1 の印）は床・壁との接触にも使う。辺の中点・面の中心は物どうしの接触だけに使う（床に平らに置かれた物の接触点を減らして軽くする） */
   function boxPts(c, h, out) {
     for (const a of [-1, 1])
@@ -14724,6 +14960,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         b.ignT -= dt;
         if (b.ignT <= 0) b.ign = null;
       }
+      /* 外接の箱が離れたら、棚とぶつけない扱いを終える（あとで倒れてきた棚には当たる） */
+      if (b.ign) {
+        const A = b.aab,
+          G = b.ign.aab;
+        if (A[0] > G[3] || A[3] < G[0] || A[1] > G[4] || A[4] < G[1] || A[2] > G[5] || A[5] < G[2]) b.ign = null;
+      }
     }
     for (const b of B) {
       if (b.sleep) continue;
@@ -14817,6 +15059,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         Bo = c.B;
       c.dA = !A.sleep && !(Bo && Bo.noHit && !A.part);
       c.dB = !!Bo && !Bo.sleep && !(A.noHit && !Bo.part);
+      /* 小物が家具の形の奥まで入り込んでいるとき（棚から出た本が棚の外形の中に残った・倒れた家具の下に挟まったなど。Version 159）は、
+         小物だけを押し出し、家具は動かさない。以前は押し出す力で本棚が数mも跳ね上がることがあった */
+      c.deep = !!Bo && A.part !== !!Bo.part && c.pen > PHY.deep;
+      if (c.deep) {
+        const p = A.part ? A : Bo;
+        p.dpF = A.part ? Bo : A;
+        p.dpS = PHY_N;
+      }
       if (!c.dA && !c.dB) continue;
       if (nk !== k) {
         CT[k] = CT[nk];
@@ -14825,6 +15075,39 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       nk++;
     }
     nCT = nk;
+    /* 奥まで入り込んだ小物と、その家具との接触はすべて（浅い点も）小物だけを動かす。
+       包み込まれた小物が反対向きの接触で挟まれ、浅い点の力で家具を弾き飛ばすのを防ぐ（Version 159）。
+       また、床に置かれた小物の上に家具が乗る（上下向きの接触）ときは、小物を床の一部として扱い家具だけを動かす。
+       小物を重く扱う計算（sA）のまま床と家具に挟むと、力が釣り合わずに家具が跳ね上がるため */
+    for (let k = 0; k < nCT; k++) {
+      const c = CT[k];
+      if (!c.B && c.A.part && c.n[1] > 0.7) c.A.plS = PHY_N;
+    }
+    nk = 0;
+    for (let k = 0; k < nCT; k++) {
+      const c = CT[k],
+        A = c.A,
+        Bo = c.B;
+      if (Bo && A.part !== !!Bo.part) {
+        const p = A.part ? A : Bo,
+          f = A.part ? Bo : A;
+        if (p.dpS === PHY_N && p.dpF === f) {
+          if (A.part) c.dB = false;
+          else c.dA = false;
+        } else if (p.plS === PHY_N && Math.abs(c.n[1]) > 0.7) {
+          if (A.part) c.dA = false;
+          else c.dB = false;
+        }
+        if (!c.dA && !c.dB) continue;
+      }
+      if (nk !== k) {
+        CT[k] = CT[nk];
+        CT[nk] = c;
+      }
+      nk++;
+    }
+    nCT = nk;
+    PHY_N++;
     cableCt();
     fixCt();
     /* 解く準備（前回の力積から始める） */
@@ -14995,6 +15278,26 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         v[2] *= fv;
       }
       /* 小物の速さは7m/s（天井から落ちたときの速さ）まで。挟まれて弾き出されたときに、床や壁を突き抜けるほど速くならないように（Version 151） */
+      /* 家具（5kg以上）の速さの上限（Version 159）。床に対して上向きに速く動くことは、ロッキングや着地の跳ね返りでもほとんどないので、
+         上向きは毎秒1m、全体は毎秒6m（1.8mの高さから落ちた速さ）、回る速さは毎秒10ラジアン（台から落ちるテレビなども含め、倒れる速さより十分大きい値）まで。
+         挟まれた小物などとの計算の行き違いで、家具が跳ね上がったり激しく回ったりするのを防ぐ安全策 */
+      if (!b.part && b.m >= 5) {
+        if (v[1] > FURN_VUP) v[1] = FURN_VUP;
+        const v2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+        if (v2 > 36) {
+          const k = 6 / Math.sqrt(v2);
+          v[0] *= k;
+          v[1] *= k;
+          v[2] *= k;
+        }
+        const w2 = w[0] * w[0] + w[1] * w[1] + w[2] * w[2];
+        if (w2 > 100) {
+          const k = 10 / Math.sqrt(w2);
+          w[0] *= k;
+          w[1] *= k;
+          w[2] *= k;
+        }
+      }
       if (b.part) {
         const v2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
         if (v2 > 49) {
@@ -15002,6 +15305,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           v[0] *= k;
           v[1] *= k;
           v[2] *= k;
+        }
+        /* 回る速さも毎秒40ラジアン（約6回転）まで。薄い本が挟まれて激しく回り、周りの物を弾き飛ばさないように（Version 159） */
+        const w2 = w[0] * w[0] + w[1] * w[1] + w[2] * w[2];
+        if (w2 > 1600) {
+          const k = 40 / Math.sqrt(w2);
+          w[0] *= k;
+          w[1] *= k;
+          w[2] *= k;
         }
       }
       b.p[0] += v[0] * dt;
@@ -15206,6 +15517,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         hh = o.cyl[1];
       S = [{ t: 1, c: [0, 0, 0], r, hh }];
       pts = cylPts([0, 0, 0], r, r, hh, []);
+      /* 長い棒（外れた突っ張り棒など）は途中にも点を置く。両端だけだと、棒の中ほどが家具の中へ埋まっても気づけない（Version 159） */
+      if (hh > 0.08) {
+        const n = Math.min(10, Math.ceil((2 * hh) / 0.08) - 1);
+        for (let k = 1; k <= n; k++) {
+          const y = -hh + (2 * hh * k) / (n + 1);
+          for (let a = 0; a < 4; a++) pts.push([r * Math.cos((a * Math.PI) / 2 + k), y, r * Math.sin((a * Math.PI) / 2 + k)]);
+        }
+      }
       /* カップの取っ手など、筒に付いた小さな箱（Version 110） */
       if (o.xS)
         for (const [c, h] of o.xS) {
@@ -15296,7 +15615,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     it.mesh.traverse(m => (m.castShadow = !RM.lowP));
     pb.ref = { it, o };
     pb.ign = b;
-    pb.ignT = 1.0;
+    /* 棚から出た物は、棚の外形（中が空いた箱を1つの箱として扱っている）から出きるまで棚とはぶつけない。
+       以前は1秒で打ち切っていたので、棚の中に残った本が「箱の中に埋まった」扱いになり、押し出す力で棚が跳ね上がった（Version 159） */
+    pb.ignT = 1e9;
     addPartBody(pb, it.mesh, it.mesh.position, it.mesh.quaternion, v, wv);
   }
   /* 割れる：元の物を隠し、三角の破片をいくつか飛ばす */
