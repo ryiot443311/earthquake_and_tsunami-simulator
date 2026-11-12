@@ -606,17 +606,40 @@ header.top h1 {
   background: #fff;
   color: #b81d45;
 }
-.telop.cancel .thead {
-  background: linear-gradient(180deg, #8a95a8, #5d6b82);
-}
 .telop .tmain {
   background: linear-gradient(180deg, #2e66b6 0%, #306fc9 5%, #306ec9 85%, #2864b2 100%);
   padding: 0.4cqw 1.35cqw 0;
   min-height: 0;
   overflow: hidden;
 }
-.telop.cancel .tmain {
-  background: linear-gradient(180deg, #46526a, #323c50);
+/* 取消報（Version 177。NHKの実際の画面に合わせた）：小地図を出さず、本文の枠だけを同じ位置に置く。見出しの帯は文字なし、
+   青地に白い文字で「気象庁は／先程の緊急地震速報を／取り消しました」の3行 */
+.telop.cancel {
+  border-color: transparent;
+  box-shadow: none;
+}
+.telop.cancel canvas {
+  visibility: hidden;
+}
+.telop.cancel .tbody {
+  border-left: 0;
+  border-radius: 0.6cqw;
+  box-shadow: 0 0 0 0.57cqw #fff, 0 0.6cqw 2cqw rgba(0, 0, 0, 0.5);
+}
+.telop.cancel .tsrc {
+  color: #fff;
+  font-weight: 700;
+  font-size: calc(4.5cqw * var(--tk, 1));
+  line-height: 7.1cqw;
+  white-space: pre-line;
+  width: auto;
+  transform: none;
+  padding: 1.2cqw 0 0 10.85cqw;
+  letter-spacing: 0.03em;
+  text-shadow: 0 0 0.07em #13284f, 0 0 0.07em #13284f, 0 0.05em 0.1em rgba(0, 0, 0, 0.6);
+}
+.telop.cancel .tregs {
+  display: none;
 }
 /* 実際のテロップの文字は横に詰めた（長体の）字形なので、幅を広げてから横に縮めて同じ比率にする */
 .telop .tsrc {
@@ -1228,7 +1251,14 @@ input[type="range"] {
   font-family: var(--tv);
   font-size: 1.02rem;
 }
-.recl button small { white-space: nowrap; }
+/* Version 176: 地震の一覧（複数の地震・直近の地震）が長い地名で画面の幅を押し広げないように。直近の地震の文字は折り返す */
+.qlist { grid-template-columns: minmax(0, 1fr); }
+.qlist.recl button { flex-wrap: wrap; row-gap: 2px; }
+.qlist.recl button b { display: none; }
+.qlist.recl button span { white-space: normal; overflow: visible; display: flex; flex-wrap: wrap; column-gap: 0.8em; }
+.qlist.recl button span i { font-style: normal; white-space: nowrap; }
+.qlist.recl button small { margin-left: auto; }
+.qlist.recl button small { white-space: nowrap; }
 .presets {
   display: flex;
   flex-wrap: wrap;
@@ -2263,8 +2293,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
           <div class="presets" id="scen"></div>
           <div class="sublab">直近の震度3以上の地震<small id="recAt"></small></div>
           <div class="qlist recl" id="recl"></div>
-          <div class="qbtns"><button id="recGo">選んだ地震を続けて再現</button></div>
-          <p class="note">時間差の大きい実例は、見やすいように間隔を縮めています（直近の地震は最大90秒）。</p>
+          <p class="note">時間差の大きい実例は、見やすいように間隔を縮めています。直近の地震はタップでその地震だけに置き換えます。</p>
         </div></details>
         <div class="sec">
           <h2>この震源での予想</h2>
@@ -2640,6 +2669,37 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           }
         }
     return 0;
+  }
+  /* 揺れを見る地点の陸・海（Version 178）：地図に描いている陸（都道府県の形）の中だけを陸とする。
+     以前は arvAt が周り2格子（約4〜5km）まで地盤の値を探していたため、海岸から数kmの海も陸（増幅率あり）になっていた。
+     また地盤の格子（約2km）は海岸の格子が海にはみ出すので、格子だけでも決めない。湖など陸の中で格子が無い所は近くの陸の値を使う */
+  let landCtx = null;
+  function onMapLand(lon, lat) {
+    /* 地図の陸の塗り（prefPaths）と同じ判定にするため、同じ形で点が中にあるかを調べる */
+    if (!landClip) {
+      landClip = new Path2D();
+      for (const p of prefPaths) landClip.addPath(p);
+    }
+    if (!landCtx) landCtx = document.createElement('canvas').getContext('2d');
+    return landCtx.isPointInPath(landClip, lon * K, -lat);
+  }
+  function siteArv(lon, lat) {
+    if (!onMapLand(lon, lat)) return 0;
+    if (!gridVal) return 1;
+    const c = Math.floor((lon - G.lon0) / G.dx),
+      r = Math.floor((G.lat1 - lat) / G.dy);
+    for (let d = 0; d <= 12; d++)
+      for (let di = -d; di <= d; di++)
+        for (let dj = -d; dj <= d; dj++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== d) continue;
+          const R = r + di,
+            C = c + dj;
+          if (R >= 0 && R < G.h && C >= 0 && C < G.w) {
+            const v = gridVal[R * G.w + C];
+            if (v) return v / 60 + 0.4;
+          }
+        }
+    return 1;
   }
   function ampColor(a) {
     const t = Math.max(0, Math.min(1, (Math.log(a) - Math.log(0.5)) / (Math.log(3.2) - Math.log(0.5))));
@@ -3164,6 +3224,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const toWorld = (x, y) => [(x - W / 2) / view.s + view.cx, (y - H / 2) / view.s + view.cy];
   let dirty = true,
     baseKey = '';
+  let landClip = null;
   const baseCv = document.createElement('canvas'),
     lineCv = document.createElement('canvas');
 
@@ -3394,7 +3455,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       b.fillStyle = '#4b585f';
       for (const p of prefPaths) b.fill(p);
       b.imageSmoothingEnabled = false;
-      if (layers.amp) b.drawImage(ampCv, gx, gy, gw, gh);
+      if (layers.amp) {
+        /* 地盤の格子は海岸で海にはみ出すので、地図の陸（都道府県の形）の中だけに描く（Version 178。揺れを見る地点の陸・海と合わせる） */
+        onMapLand(0, 0);
+        b.save();
+        b.clip(landClip);
+        b.drawImage(ampCv, gx, gy, gw, gh);
+        b.restore();
+      }
       const l = lineCv.getContext('2d');
       l.setTransform(1, 0, 0, 1, 0, 0);
       l.clearRect(0, 0, cv.width, cv.height);
@@ -4834,12 +4902,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const e = epiArea(lon, lat);
     if (e) return e;
     const n = nearestArea(lon, lat);
-    return arvAt(lon, lat) > 0 ? n.area.name : prefName[n.area.pref] + '沖';
+    return onMapLand(lon, lat) ? n.area.name : prefName[n.area.pref] + '沖';
   }
   /* 緊急地震速報の「○○で地震」：陸は都道府県名、海は気象庁の震央地名 */
   function eewName(lon, lat) {
     /* 陸の地震は都道府県名（「熊本県で地震」）、海は震央地名 */
-    if (arvAt(lon, lat) > 0) return prefName[nearestArea(lon, lat).area.pref];
+    /* 陸・海は地図の陸（都道府県の形）で決める（Version 180。以前は地盤の値を周り2格子まで探す arvAt で、海岸から約4〜5km沖の震源も「○○県で地震」になっていた） */
+    if (onMapLand(lon, lat)) return prefName[nearestArea(lon, lat).area.pref];
     return epiName(lon, lat);
   }
   function fmtLL(lon, lat) {
@@ -5121,19 +5190,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     };
     $('scen').appendChild(b);
   });
-  /* ===== Version 174: 直近の震度3以上の地震（新しい順に REC_N 件）。選んだ地震を発生順に続けて再現（間隔は実際の時間差、最大 REC_GAP 秒）。
+  /* ===== Version 174・175: 直近の震度3以上の地震（新しい順に REC_N 件）。[v175] タップでその地震1つに置き換える（続けて再現は廃止）。
      出典: P2P地震情報 API（気象庁の地震情報）。アーティファクトは外部と通信できないので埋め込み、公開版（github.io）は開くたびに最新を取得 */
-  const REC_N = 3,
-    REC_GAP = 90;
+  const REC_N = 3;
   let RECENT = [
     { t: '2026/11/09 13:52', name: '茨城県沖', lat: 36.2, lon: 142.2, depth: 10, M: 5.9, mx: 30 },
     { t: '2026/11/09 05:16', name: '宮城県沖', lat: 38.3, lon: 141.9, depth: 50, M: 4.5, mx: 30 },
     { t: '2026/11/08 10:53', name: '熊本県天草・芦北地方', lat: 32.6, lon: 130.6, depth: 10, M: 4.3, mx: 40 }
   ];
   let recAt = '2026/11/12 時点';
-  const recSel = new Set(RECENT.map((r, i) => i));
+  let recCur = -1;
   const REC_SC = { 10: '1', 20: '2', 30: '3', 40: '4', 45: '5弱', 50: '5強', 55: '6弱', 60: '6強', 70: '7' };
-  const recMs = s => Date.parse(s.replace(/\//g, '-').replace(' ', 'T') + ':00+09:00');
   function recQuake(r) {
     const sea = /沖|灘|近海|海|湾|海峡|水道/.test(r.name);
     const type = r.depth >= 80 ? 'intra' : sea ? (r.depth <= 60 ? 'inter' : 'intra') : r.depth <= 25 ? 'crustal' : 'intra';
@@ -5147,36 +5214,28 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     RECENT.forEach((r, i) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.setAttribute('aria-pressed', recSel.has(i));
+      b.setAttribute('aria-pressed', recCur === i);
       b.innerHTML = '<b></b><span></span><small></small>';
-      b.querySelector('b').textContent = recSel.has(i) ? '✓' : '';
-      b.querySelector('span').textContent = r.name + '　M' + r.M.toFixed(1) + '　深さ' + (r.depth ? r.depth + 'km' : 'ごく浅い') + '　最大震度' + (REC_SC[r.mx] || '?');
+      [r.name, 'M' + r.M.toFixed(1), '深さ' + (r.depth ? r.depth + 'km' : 'ごく浅い'), '最大震度' + (REC_SC[r.mx] || '?')].forEach(x => {
+        const it = document.createElement('i');
+        it.textContent = x;
+        b.querySelector('span').appendChild(it);
+      });
       b.querySelector('small').textContent = r.t.slice(5).replace('/', '月').replace(' ', '日 ');
       b.onclick = () => {
-        if (recSel.has(i)) recSel.delete(i);
-        else recSel.add(i);
+        if (sim) reset();
+        EQS.length = 0;
+        EQS.push(Object.assign({ dip: null, rup: 'bi' }, recQuake(r), { dt: 0 }));
+        selQ = 0;
+        P = EQS[0];
+        recCur = i;
+        syncCfgUI();
+        preview();
         renderRec();
       };
       L.appendChild(b);
     });
-    $('recGo').disabled = !recSel.size;
   }
-  $('recGo').onclick = () => {
-    const pick = [...recSel].map(i => RECENT[i]).filter(Boolean).sort((a, b) => recMs(a.t) - recMs(b.t));
-    if (!pick.length) return;
-    if (sim) reset();
-    EQS.length = 0;
-    let dt = 0;
-    pick.forEach((r, k) => {
-      if (k) dt += Math.min(REC_GAP, Math.max(0, (recMs(r.t) - recMs(pick[k - 1].t)) / 1000));
-      EQS.push(Object.assign({ dip: null, rup: 'bi' }, recQuake(r), { dt: Math.round(dt) }));
-    });
-    fixRate(EQS);
-    selQ = 0;
-    P = EQS[0];
-    syncCfgUI();
-    preview();
-  };
   renderRec();
   if (/\.github\.io$/.test(location.hostname) && window.fetch)
     fetch('https://api.p2pquake.net/v2/history?codes=551&limit=100')
@@ -5196,8 +5255,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         }
         if (!out.length) return;
         RECENT = out;
-        recSel.clear();
-        out.forEach((r, i) => recSel.add(i));
+        recCur = -1;
         const d = new Date();
         recAt = '最新（' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0') + ' 取得）';
         renderRec();
@@ -5641,7 +5699,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     TLC = 18;
   let seaG = null,
     coastNode = null,
-    seaPen = null;
+    seaPen = null,
+    seaX = null,
+    seaMv = null,
+    seaSh = null,
+    seaLk = null;
   const SKY = SG.d * 110.57,
     SK = new Float64Array(SG.h),
     SKD = new Float64Array(SG.h);
@@ -5676,12 +5738,23 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       [156.4, 50.7],
       [156.8, 51.3]
     ],
-    /* 津軽海峡・宗谷海峡：太平洋側の波が日本海側へ回り込む所。海格子の幅だけでは弱まりが足りないので、横切ると大きく弱める */
-    STRAIT = [
-      [[140.4, 41.15], [140.4, 41.55]],
-      [[141.5, 45.52], [142.3, 45.52]]
+    /* 津軽海峡・宗谷海峡：太平洋側の波が日本海側へ回り込む所。海峡の全長にわたって少しずつ弱める（Version 179。
+       以前は海峡の途中の1本の線を横切ると約1/80に弱め、線の両側の海岸で高さが数十倍違っていた）。[西, 東, 南, 北, 1kmあたり] */
+    SEA_LINK = [
+      [
+        [133.84, 34.44],
+        [134.06, 34.45]
+      ],
+      [
+        [129.9, 33.0],
+        [129.82, 33.1],
+        [129.7, 33.13]
+      ]
     ],
-    STRAIT_PEN = 0.2,
+    STRAIT_BAND = [
+      [139.95, 141.3, 41.1, 41.62, 0.022],
+      [141.55, 142.25, 45.25, 45.8, 0.03]
+    ],
     KURIL_PEN = 0.075; /* 1kmあたりの減衰。列島を横切ると約1/4〜1/8に弱まる */
   function markLine(pts, fn) {
     for (let i = 1; i < pts.length; i++) {
@@ -5714,6 +5787,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
     markLine(SAKHALIN, n => (seaG[n] = 0));
     markLine(KUNASHIRI, n => (seaG[n] = 0));
+    /* 0.1度の格子では陸にふさがれる狭い水道を海としてつなぐ（Version 179）：備讃瀬戸（以前は岡山県西部・香川県西部へ豊後水道から約400km回り込んでいた）、
+       大村湾の入口（針尾瀬戸。以前は大村湾が外とつながらず津波が届かなかった）。幅が狭いので狭い海の弱まり（seaPen）は大きくかかる */
+    seaLk = new Uint8Array(SG.w * SG.h);
+    for (const ln of SEA_LINK)
+      markLine(ln, n => {
+        seaG[n] = 1;
+        seaLk[n] = 1;
+      });
     /* 海の幅：4方向に続く海の長さの最小（海峡・湾の奥ほど小さい）。狭い所を通るほど津波は弱まる */
     seaPen = new Float32Array(SG.w * SG.h);
     const DIR = [
@@ -5755,18 +5836,119 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       for (let n = 0; n < N; n++) if (seaG[n]) seaPen[n] = Math.max(0, 1 - wm[n] / TW0) / TLC;
     }
+    /* 列島・海峡の弱まり（seaX）は、狭い海の弱まり（seaPen）とは別に数える。狭い海の弱まりは内海・湾の奥で頭打ちにするが、こちらは頭打ちにしない */
+    seaX = new Float32Array(SG.w * SG.h);
     markLine(KURIL, n => {
-      if (seaG[n]) seaPen[n] = Math.max(seaPen[n], KURIL_PEN);
+      if (seaG[n]) seaX[n] = KURIL_PEN;
     });
-    STRAIT.forEach(ln =>
-      markLine(ln, n => {
-        if (seaG[n]) seaPen[n] = Math.max(seaPen[n], STRAIT_PEN);
-      })
-    );
+    for (const [w, e, so, no, pen] of STRAIT_BAND)
+      for (let r = Math.floor((so - SG.lat0) / SG.d); r <= Math.floor((no - SG.lat0) / SG.d); r++)
+        for (let c = Math.floor((w - SG.lon0) / SG.d); c <= Math.floor((e - SG.lon0) / SG.d); c++) {
+          const n = r * SG.w + c;
+          if (seaG[n]) seaX[n] = Math.max(seaX[n], pen);
+        }
+    /* 隣の格子へ進めるか（Version 179）：格子の中心どうしを結ぶ線が陸を MV_LAND 以上続けて横切るなら通さない。
+       0.1度の格子では渥美半島など幅数kmの半島が海の格子にまたがり、津波が半島を突き抜けて湾の奥へ直接届いていた。
+       狭い海峡は線が海の上を通るので通れる。ビット＝(dr+1)*3+(dc+1) */
+    /* 浅い海（瀬戸内海・九州西岸の大陸棚）の格子。到達時間はこの中を通る道のりだけ浅い海の速さで数える（Version 179） */
+    seaSh = new Uint8Array(SG.w * SG.h);
+    for (let r = 0; r < SG.h; r++)
+      for (let c = 0; c < SG.w; c++)
+        if (seaG[r * SG.w + c] && tsuHmax(SG.lon0 + (c + 0.5) * SG.d, SG.lat0 + (r + 0.5) * SG.d) < 3000) seaSh[r * SG.w + c] = 1;
+    seaMv = new Uint16Array(SG.w * SG.h);
+    for (let r = 0; r < SG.h; r++)
+      for (let c = 0; c < SG.w; c++) {
+        const n = r * SG.w + c;
+        if (!seaG[n]) continue;
+        const lo = SG.lon0 + (c + 0.5) * SG.d,
+          la = SG.lat0 + (r + 0.5) * SG.d;
+        for (let dr = -1; dr <= 1; dr++)
+          for (let dc = -1; dc <= 1; dc++) {
+            if (!dr && !dc) continue;
+            const rr = r + dr,
+              cc = c + dc,
+              bit = 1 << ((dr + 1) * 3 + dc + 1);
+            if (rr < 0 || cc < 0 || rr >= SG.h || cc >= SG.w || !seaG[rr * SG.w + cc]) continue;
+            /* 逆向きを既に調べていればそれを使う */
+            if (dr < 0 || (dr === 0 && dc < 0)) {
+              const m = rr * SG.w + cc,
+                back = 1 << ((-dr + 1) * 3 - dc + 1);
+              if (seaMv[m] & back) seaMv[n] |= bit;
+              continue;
+            }
+            const km = dr ? (dc ? SKD[r] : SKY) : SK[r],
+              k = Math.max(4, Math.ceil(km / 1));
+            let run = 0,
+              ok = true;
+            for (let i = 1; i < k; i++) {
+              if (isSeaCell(lo + (dc * SG.d * i) / k, la + (dr * SG.d * i) / k)) run = 0;
+              else if ((run += km / k) > MV_LAND) {
+                ok = false;
+                break;
+              }
+            }
+            if (ok) seaMv[n] |= bit;
+          }
+      }
     coastNode = new Int32Array(COAST.length).fill(-1);
     COAST.forEach((p, i) => {
       coastNode[i] = coastSeaNode(p.lon, p.lat);
     });
+    coastShape();
+  }
+  /* 海岸の点ごとの地形（Version 179。津波を起こす地震で海の格子と一緒に1回だけ作る）
+     bg：湾の形による増幅。半径20kmと6kmの中の海の割合の比（湾の奥・V字湾ほど6km以内の海が狭い）の平方根を1.3で割る（予報区の最大はもともと「高い所」として1.4倍を見込んでいるので、
+       予報区の中で湾の奥を高く・まっすぐな海岸を低く配り直す。まっすぐな海岸は約0.86）。0.75〜1.35倍
+     enc：囲まれ具合（0〜1）。24方向に60km以内で陸に当たる割合が75%以上で増え、100%（内湾・内海）で1。湾の中の反射で最大波が遅れ、長く続く
+     nb：15km以内の海岸の点（[番号, 距離km]） */
+  function coastShape() {
+    if (COAST.shaped) return;
+    COAST.shaped = true;
+    const frac = (lo, la, rad, kx, st) => {
+      let n = 0,
+        sN = 0;
+      for (let y = -rad; y <= rad; y += st)
+        for (let x = -rad; x <= rad; x += st) {
+          if (x * x + y * y > rad * rad) continue;
+          n++;
+          if (isSeaCell(lo + x / kx, la + y / 110.57)) sN++;
+        }
+      return sN / n;
+    };
+    const N = COAST.length;
+    COAST.forEach(p => {
+      const kx = 111.32 * Math.cos(p.lat * D2R),
+        f6 = Math.max(0.05, frac(p.lon, p.lat, 6, kx, 1)),
+        f20 = Math.max(0.05, frac(p.lon, p.lat, 20, kx, 2));
+      p.bg = Math.max(0.75, Math.min(1.35, Math.sqrt(f20 / f6) / 1.3));
+      let h = 0;
+      for (let k = 0; k < 24; k++) {
+        const a = (k * Math.PI) / 12,
+          ca = Math.cos(a) / kx,
+          sa = Math.sin(a) / 110.57;
+        for (let d = 4; d <= 60; d += 2)
+          if (!isSeaCell(p.lon + d * ca, p.lat + d * sa)) {
+            h++;
+            break;
+          }
+      }
+      p.enc = Math.max(0, Math.min(1, (h / 24 - 0.75) / 0.25));
+      p.nb = [];
+    });
+    for (let i = 0; i < N; i++) {
+      const a = COAST[i],
+        kx = 111.32 * Math.cos(a.lat * D2R);
+      for (let j = i + 1; j < N; j++) {
+        const b = COAST[j],
+          dy = (b.lat - a.lat) * 110.57;
+        if (dy > 15 || dy < -15) continue;
+        const d = Math.hypot((b.lon - a.lon) * kx, dy);
+        if (d < 15) {
+          a.nb.push([j, d]);
+          b.nb.push([i, d]);
+        }
+      }
+    }
   }
   /* 海岸の点に対応する海の格子：陸（半島など）を越えた反対側の海を選ばないよう、海岸から格子まで海でつながるものを近い順に探す */
   function coastSeaNode(lon, lat) {
@@ -5821,6 +6003,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       dist = new Float64Array(N).fill(1e9),
       lab = new Int32Array(N).fill(-1),
       loss = new Float32Array(N),
+      lossX = new Float32Array(N),
+      shL = new Float32Array(N),
       /* 経路を選ぶ値。近い地震は道のり（dist）と同じ。遠地（格子の外の波源）は「道のり＋150×減衰」で選び、
          千島列島などを横切るより少し遠回りでも太平洋側を通る経路を選ぶ（Version 144） */
       cs = new Float64Array(N).fill(1e9);
@@ -5935,18 +6119,38 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           if (rr < 0 || cc < 0 || rr >= SG.h || cc >= SG.w) continue;
           const m = rr * SG.w + cc;
           if (!seaG[m]) continue;
-          const st = dr ? (dc ? kd : SKY) : kx,
-            nd = d + st + PW * st * seaPen[m];
+          /* 陸をまたぐ移動（seaMv）は禁止せず、遠回り40km相当と弱まりを足す。近くに海の回り道があればそちらを通り、
+             島の多い海（備讃瀬戸・八代海の入口など、格子では陸に見える狭い水道しかない所）は従来どおり通れる */
+          const blk = !(seaMv[n] & (1 << ((dr + 1) * 3 + dc + 1))) && !seaLk[n] && !seaLk[m],
+            st = dr ? (dc ? kd : SKY) : kx,
+            nd = d + st + PW * st * (seaPen[m] + seaX[m]) + (blk ? MV_KM : 0);
           if (nd < cs[m]) {
             cs[m] = nd;
             dist[m] = dist[n] + st;
             lab[m] = lab[n];
-            loss[m] = loss[n] + st * seaPen[m];
+            loss[m] = loss[n] + st * seaPen[m] + (blk ? MV_LOSS : 0);
+            lossX[m] = lossX[n] + st * seaX[m];
+            shL[m] = shL[n] + (seaSh[m] ? st : 0);
             push(nd, m);
           }
         }
     }
-    return { dist, lab, loss };
+    return { dist, lab, loss, lossX, shL };
+  }
+  /* 海の経路による弱まり（高さの対数で何割減るか）。Version 179：
+     ①海岸の格子そのものの狭さは数えない（陸に接する格子は狭く見え、どの格子に結びつくかで隣の海岸の値が数倍ばらついていた）
+     ②狭い海を進むほど弱める量は、内海・湾の中では頭打ちにする（LOSS_SAT。湾や内海に入った波は出口が狭いため反射を繰り返して残り、奥へ行っても弱まり続けない）
+     ③列島・海峡（seaX）はそのまま足す */
+  /* 隣の格子へ進めない陸の長さ（km）。地盤の格子は海岸で約1〜2km陸側に太るので、幅4km程度の海峡は通し、幅5km以上の半島は通さない */
+  const MV_LAND = 4.5,
+    MV_KM = 40,
+    MV_LOSS = 0.3;
+  const LOSS_SAT = 2.0,
+    DIR_MIN = 0.25;
+  function pathLoss(SP, nd) {
+    /* 海岸の格子そのものの狭さ（陸に接するので狭く見える）は数えない */
+    const v = Math.max(0, SP.loss[nd] - SG.d * 111 * seaPen[nd]);
+    return LOSS_SAT * (1 - Math.exp(-v / LOSS_SAT)) + SP.lossX[nd];
   }
   /* 同じ震源・規模なら計算結果を使い回す（つまみを動かすたびの再計算を減らす）。呼び出し側が到達時刻を書き換えるので複製して返す */
   const tsuMemo = new Map(),
@@ -6171,11 +6375,29 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       srcJS.set(q, JSEA_REGS.has(br));
     }
+    /* 長い断層の指向性（Version 179）：断層の端より先（走向の延長方向）の海岸は、端から見た角度が大きいほど弱める。
+       長さが波長（100〜200km）より十分長い断層ほど、津波は断層に直交する向きに集中して伝わる（2011年は静岡・相模湾・北海道で1〜4m）。
+       断層の長さが120km以下（約M8以下）は効かず、370km以上（約M8.9以上）で最大 */
+    /* 遠地（日本の陸から800km以上）は使わない（海溝沿いに伝わる分もあり、2025年カムチャツカM8.8でも日本で約1.3m） */
+    const wDir = farK ? 0 : Math.max(0, Math.min(1, (Lf - 120) / 250)),
+      dirAt = (lon, lat) => {
+        if (!wDir) return 1;
+        const xx = (lon - P.lon) * kf,
+          yy = (lat - P.lat) * 110.57,
+          s = xx * Math.sin(az) + yy * Math.cos(az),
+          u = xx * Math.cos(az) - yy * Math.sin(az),
+          e = Math.max(0, s - sr[1], sr[0] - s);
+        if (!e) return 1;
+        const c = Math.cos(Math.atan2(e, Math.abs(u) + Wh)),
+          c2 = c * c;
+        return 1 - wDir * (1 - (DIR_MIN + (1 - DIR_MIN) * c2 * c2));
+      };
     const by = new Map(),
       SP = GS.SP,
       ptH = new Float32Array(COAST.length),
       ptA = new Float32Array(COAST.length),
-      ptS = new Int8Array(COAST.length);
+      ptS = new Int8Array(COAST.length),
+      jsCap = new Uint8Array(COAST.length);
     COAST.forEach((c, ci) => {
       /* 海岸から最も近い波源 */
       let D = 1e9,
@@ -6206,7 +6428,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           const q = src[SP.lab[nd]],
             Dq = Math.hypot((c.lon - q[0]) * kx, (c.lat - q[1]) * 110.57);
           Dp = Math.max(D, SP.dist[nd]);
-          ex = Math.max(0, Dp - Dq) + 150 * SP.loss[nd];
+          /* 浅い内海（瀬戸内海など）の中の遠回りは、半島の陰への回り込みではなく水道に沿って導かれる分なので半分だけ数える（Version 179） */
+          ex = Math.max(0, Dp - Dq) * (1 - (0.5 * SP.shL[nd]) / Math.max(1, SP.dist[nd])) + 150 * pathLoss(SP, nd);
           fl = q[0];
           fa = q[1];
           fsrc = q;
@@ -6216,7 +6439,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const dif = Math.exp(-ex / 150);
       const HA0 = Math.min(Hcap, Math.pow(10, Mw - Math.log10(Math.max(Dp, 20)) - 5.8 + tA)) * dF * amp * dif;
       if (HA0 < 0.02) return;
-      let tDelay = nd >= 0 && D > 12 ? Math.min(1800, 300 * SP.loss[nd]) : 0;
+      /* 回り込みの遅れは海の道のり（Dp）の時間に含まれるので、別に足さない（Version 179。以前は弱まりに比例して最大30分を足し、二重に数えていた） */
+      let tDelay = 0;
       let HA = HA0,
         fLand = 1;
       if (D > 12) {
@@ -6252,10 +6476,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           v = (aq * Math.sqrt(Math.sqrt(Hs / 50)) * Math.sqrt(S.a / (S.a + r))) / (1 + r / 800);
         if (v > HF) HF = v;
       }
-      HF *= 1.4 * dif * fLand;
+      const fDir = dirAt(c.lon, c.lat);
+      HA *= fDir;
+      HF *= 1.4 * dif * fLand * fDir;
       let H = Math.max(0.35 * HA, Math.min(2.2 * HA, HF));
       /* 太平洋側の波源から来る津波は、津軽・宗谷海峡や半島の細い部分を回り込んで弱まるため、日本海側の予報区では津波注意報までにとどめる。日本海側にも断層がある場合はそのまま */
-      if (JSEA_REGS.has(c.reg) && !srcJS.get(fsrc)) H = Math.min(H, 0.95);
+      /* 湾の形による増幅（V字湾・湾の奥。Version 179） */
+      H *= c.bg || 1;
+      if (JSEA_REGS.has(c.reg) && !srcJS.get(fsrc)) {
+        H = Math.min(H, 0.95);
+        jsCap[ci] = 1;
+      }
       if (H < 0.02) return;
       /* 到達時間：海岸で0.2m以上になる波が、最初に届く時間 */
       let bestR = Dp,
@@ -6270,20 +6501,49 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         }
       }
       /* 遠地の波源は外洋（太平洋の深い所）を長く渡るので、外洋の水深を4500mとする（Version 144） */
-      const arr = tsuTime(bestR, farK && hm > 3000 ? 4500 : hm) + tDelay;
+      /* 浅い海に面した海岸（瀬戸内海など）は、浅い海の中の道のりだけを浅い海の速さで、残り（外洋）は外洋の速さで数える（Version 179。
+         以前は外洋の部分も浅い海の速さで数え、南海トラフの地震で岡山・広島などが4時間を超えて扱われなくなっていた） */
+      const shF = hm < 3000 && nd >= 0 && D > 12 && SP.dist[nd] > 0 ? Math.min(1, SP.shL[nd] / SP.dist[nd]) : 1,
+        /* 浅い海の中は、波源からの直線ではなく海の道のりで数える（断層の深い側が瀬戸内海の下まで届くと、直線では近すぎる） */
+        arr =
+          (shF < 1 ? tsuTime(Dp * shF, hm) + (Dp * (1 - shF) * 1000) / Math.sqrt(9.8 * 3500) : tsuTime(bestR, farK && hm > 3000 ? 4500 : hm)) +
+          tDelay;
       /* シミュレーションは最大240分。それより後に届く海岸は扱わない（Version 144） */
       if (arr > SIM_MAX) return;
       /* 津波観測点用：この海岸の点の高さ・到達時間・押し引き（最初に届く波の波源が隆起なら押し） */
       ptH[ci] = Math.min(H, 30);
       ptA[ci] = arr;
       ptS[ci] = bestQ && bestQ[2] < 0 ? -1 : 1;
+    });
+    /* 近くの海岸どうしをなだらかにする（Version 179）：海峡・岬の先で回り込んだ波は数kmで広がるので、近くの点の高さ×exp(−距離/5km)より低くしない（上げるだけ）。
+       以前は海峡の内と外で6km離れただけの点が5倍以上違うことがあった。到達時刻は近くの点＋距離÷30m/秒 */
+    const anyJS = [...srcJS.values()].some(Boolean),
+      H0 = ptH.slice(),
+      A0 = ptA.slice();
+    COAST.forEach((c, i) => {
+      for (const [j, d] of c.nb || []) {
+        if (!(H0[j] > 0)) continue;
+        let v = H0[j] * Math.exp(-d / 5);
+        if (jsCap[i] || (JSEA_REGS.has(c.reg) && !anyJS)) v = Math.min(v, 0.95);
+        if (v > ptH[i] && v >= 0.02) {
+          const a = A0[j] + (d * 1000) / 30;
+          if (a > SIM_MAX) continue;
+          ptH[i] = v;
+          if (!(H0[i] > 0) || a < ptA[i]) ptA[i] = H0[i] > 0 ? Math.min(ptA[i], a) : a;
+          if (!(H0[i] > 0)) ptS[i] = ptS[j];
+        }
+      }
+    });
+    COAST.forEach((c, i) => {
+      const H = ptH[i];
+      if (!(H > 0)) return;
       let r = by.get(c.reg);
       if (!r) {
         r = { name: c.reg, H: 0, arr: 1e9 };
         by.set(c.reg, r);
       }
       if (H > r.H) r.H = H;
-      if (arr < r.arr) r.arr = arr;
+      if (ptA[i] < r.arr) r.arr = ptA[i];
     });
     const regs = [...by.values()]
       .map(r => {
@@ -6874,7 +7134,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         CITIES.forEach(c => {
           if (c.Iq[e.k] >= 0.5) en = Math.max(en, c.tSq[e.k] - e.t0 + 10);
         });
-        const sr = trueAt(SITE.lon, SITE.lat, arvAt(SITE.lon, SITE.lat) || 1, q);
+        const sr = trueAt(SITE.lon, SITE.lat, siteArv(SITE.lon, SITE.lat) || 1, q);
         en = Math.max(en, sr.m.tS + Math.min(240, sr.dur || 30) + 5);
       }
       en = Math.min(en, 900) * SIM_LEN_MUL + (cfg.extra || 0);
@@ -6997,7 +7257,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.endT = Math.min(e.endT, SIM_MAX);
     }
     if (!fake) setMis(evs);
-    const sarv = arvAt(SITE.lon, SITE.lat) || 1;
+    const sarv = siteArv(SITE.lon, SITE.lat) || 1;
     const sites = fake
       ? null
       : evs.map(e => {
@@ -7320,9 +7580,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     $('yohou').hidden = true;
     $('telop').hidden = false;
     $('telop').classList.add('cancel');
-    $('tHead').firstChild.textContent = '緊急地震速報（取消）';
-    $('tSrc').textContent = '先ほどの緊急地震速報を取り消します';
-    $('tRegs').textContent = '揺れは観測されていません';
+    $('tHead').firstChild.textContent = '';
+    $('tSrc').textContent = '気象庁は\n先程の緊急地震速報を\n取り消しました';
+    $('tRegs').textContent = '';
     fitTelopText();
     queueInset();
     alarm(1);
@@ -9312,7 +9572,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         Dq = Math.hypot((st.lon - q0[0]) * kx, (st.lat - q0[1]) * 110.57),
         Dp = Math.max(D, SP.dist[nd]);
       const detour = Dp / Math.max(D, 1),
-        dif = Math.exp(-(Math.max(0, Dp - Dq) + 150 * SP.loss[nd]) / 150),
+        dif = Math.exp(-(Math.max(0, Dp - Dq) + 150 * pathLoss(SP, nd)) / 150),
         hm = tsuHmax(st.lon, st.lat),
         hs = Math.min(hm, 30 + 25 * st.dC),
         gmax = Math.sqrt(Math.sqrt(hm / hs));
@@ -9344,7 +9604,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       oH[j] = H;
       const ha = farK && hm > 3000 ? 4500 : hm;
-      oA[j] = tsuTime(bestR + st.dC, ha) - tsuTime(st.dC, ha) + Math.min(1800, 300 * SP.loss[nd]);
+      oA[j] = tsuTime(bestR + st.dC, ha) - tsuTime(st.dC, ha);
       if (oA[j] > SIM_MAX) oH[j] = 0;
       oS[j] = bq[2] < 0 ? -1 : 1;
     });
@@ -9352,20 +9612,23 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   const gauss = g => Math.sqrt(-2 * Math.log(Math.max(1e-9, g()))) * Math.cos(2 * Math.PI * g());
   /* 1つの観測点の波の並び。乱数は分岐に関係なく同じ数だけ使う（時刻を戻したときに同じ結果になるように） */
-  function tWave(t0, H, sg, T, g, coast) {
+  function tWave(t0, H, sg, T, g, coast, enc) {
     const r1 = g(),
       r2 = g(),
       r3 = g(),
       r4 = g();
-    const kMax = H < 0.3 ? Math.floor(r1 * 2) : Math.floor(r1 * (T > 1800 ? 2 : 4)),
+    /* 湾・内海の中（enc：囲まれ具合 0〜1）は、湾の中の反射が重なって最大波が後ろの波になりやすく、減り方も遅い（Version 179） */
+    const en = enc || 0,
+      kMax = (H < 0.3 ? Math.floor(r1 * 2) : Math.floor(r1 * (T > 1800 ? 2 : 4))) + (H < 0.3 ? 0 : Math.round(en * 2)),
+      dec = 0.8 + 0.1 * en,
       w = { t0, H, sg, T, kMax, off: sg > 0 ? 0.25 : 0.75 };
-    w.amp = j => (j <= kMax ? H * (kMax ? 0.4 + (0.6 * j) / kMax : 1) : H * Math.pow(0.8, j - kMax));
+    w.amp = j => (j <= kMax ? H * (kMax ? 0.4 + (0.6 * j) / kMax : 1) : H * Math.pow(dec, j - kMax));
     const A0 = w.amp(0);
     w.unclear = A0 < 0.05 || (A0 < 0.1 && r2 < 0.5);
     /* 測定範囲を超える（「以上」）：沿岸で3mを超える津波のとき。高いほど起こりやすい（3mで35%、10m以上で70〜80%） */
     w.sat = coast && H > 3 && r3 < Math.min(0.8, 0.2 + 0.05 * H) ? 2.5 + r4 * Math.max(0.5, H * 0.8 - 2.5) : 0;
     w.miss = g() < 0.02;
-    w.end = t0 + T * (kMax + 4);
+    w.end = t0 + T * (kMax + 4 + Math.round(en * 3));
     return w;
   }
   /* 時刻 tau までに観測された値：第1波の有無、最大波（高さ・時刻）、上昇中か */
@@ -9421,7 +9684,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (st.far || st.ci < 0) return null;
       const H0 = R.ptH[st.ci],
         H = Math.min(30, (H0 / 1.4) * Math.exp(0.3 * e1));
-      const w = tWave(e.t0 + R.ptA[st.ci], H, R.ptS[st.ci], per * (0.85 + 0.3 * g()), g, true);
+      const w = tWave(e.t0 + R.ptA[st.ci], H, R.ptS[st.ci], per * (0.85 + 0.3 * g()), g, true, COAST[st.ci].enc);
       if (!(H0 > 0.02) || H < 0.03) return null;
       end = Math.max(end, w.end);
       return w;
@@ -10110,7 +10373,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     };
   }
   function siteInfo() {
-    const arv = arvAt(SITE.lon, SITE.lat);
+    const arv = siteArv(SITE.lon, SITE.lat);
     const r = trueAll(SITE.lon, SITE.lat, arv || 1);
     return { arv, I: r.I, lp: r.lp };
   }
@@ -10190,7 +10453,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return out;
   }
   function buildMotionQ(P, qk) {
-    const arv = arvAt(SITE.lon, SITE.lat),
+    const arv = siteArv(SITE.lon, SITE.lat),
       tr0 = trueAt(SITE.lon, SITE.lat, arv || 1, P),
       m = tr0.m,
       I = tr0.I;
@@ -11535,6 +11798,30 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     c.shadowColor = 'rgba(0,0,0,.5)';
     c.shadowBlur = 4;
     c.fillStyle = '#fff';
+    if (cancel) {
+      /* 取消報（Version 177）：地図のテロップと同じく、小地図なしで本文の枠だけ。見出しの帯は文字なし、青地に白い3行 */
+      const bx = x + mw + 1,
+        bw = w - mw - 1;
+      c.fillRect(bx - 1.5, y - 1.5, bw + 3, h + 3);
+      c.shadowBlur = 0;
+      const g = c.createLinearGradient(0, y, 0, y + hh);
+      g.addColorStop(0, '#e67a94');
+      g.addColorStop(0.3, '#ec5579');
+      g.addColorStop(1, '#b83b58');
+      c.fillStyle = g;
+      c.fillRect(bx, y, bw, hh);
+      c.fillStyle = '#306ec9';
+      c.fillRect(bx, y + hh, bw, h - hh);
+      c.fillStyle = '#fff';
+      c.textAlign = 'left';
+      c.textBaseline = 'middle';
+      c.font = 'bold ' + (w * 0.045).toFixed(2) + 'px ' + F;
+      ['気象庁は', '先程の緊急地震速報を', '取り消しました'].forEach((s, i) =>
+        c.fillText(s, bx + w * 0.122, y + hh + w * (0.016 + 0.0355 + 0.071 * i), bw - w * 0.13)
+      );
+      c.restore();
+      return;
+    }
     c.fillRect(x - 1.5, y - 1.5, w + 3, h + 3);
     c.shadowBlur = 0;
     /* 左：対象地域の小地図 */
@@ -16308,7 +16595,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     $('siteLp').textContent = k ? '階級' + k : 'なし';
     const c = cls(I);
     const n = nearestArea(SITE.lon, SITE.lat);
-    $('siteName').textContent = n.area.name + '付近';
+    $('siteName').textContent = arv ? n.area.name + '付近' : (epiArea(SITE.lon, SITE.lat) || prefName[n.area.pref] + '沖') + '（海上）';
     $('siteLL').textContent = fmtLL(SITE.lon, SITE.lat);
     $('siteArv').textContent = arv ? arv.toFixed(2) + '倍' : 'データなし（海域）';
     const ch = $('siteI');
