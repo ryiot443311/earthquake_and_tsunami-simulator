@@ -7347,18 +7347,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       playSound('eew', 3);
       setStatus('warn', '緊急地震速報（警報）発表中');
     } else if (added.length && last && last.warn) playSound('eew', 1);
-    /* Version 157：対象地域は実際の緊急地震速報と同じく予測震度の大きい順。報ごとに最新の予測で全体を並べ直す（同じ値なら前の順） */
+    /* Version 157：対象地域は実際の緊急地震速報と同じく予測震度の大きい順。
+       Version 169（ユーザーの依頼）：最初の警報は予測震度の大きい順に並べ、その後の報では既に出ている地域・地方の順番を変えない。
+       新しく加わった府県だけを、加わった中での予測震度の大きい順に後ろへ足す。府県で表せないほど広くなったら地方名で表す（eewRegNames）が、
+       地方の順番もこの並び（初めて出た順）から決まるので、既に出ている地方の順番は変わらない */
     if (warnNow && e.warnAreas.size) {
       const byReg = new Map();
       e.warnAreas.forEach((v0, i) => {
         const rg = AREAS[i].reg;
         byReg.set(rg, Math.max(byReg.has(rg) ? byReg.get(rg) : -9, pr[i].v));
       });
-      const old = e.warnRegs.slice(),
-        oi = rg => (old.includes(rg) ? old.indexOf(rg) : 1e9);
-      const ord = [...byReg.entries()].sort((a, b) => b[1] - a[1] || oi(a[0]) - oi(b[0]));
-      e.warnRegs.length = 0;
-      ord.forEach(([rg]) => {
+      const nw = [...byReg.entries()].filter(([rg]) => !e.warnRegs.includes(rg)).sort((a, b) => b[1] - a[1]);
+      nw.forEach(([rg]) => {
         e.warnRegs.push(rg);
         if (!s.warnRegs.includes(rg)) s.warnRegs.push(rg);
       });
@@ -7546,8 +7546,32 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     else if (!e.warn && !s.warn) showEEW(e, rep, added);
     else renderSw();
   }
+  /* 地域名を横テロップに並べたときの行数（1行は約14.5字分、名前どうしの間は1字分。名前の途中では折り返さない） */
+  function telLines(names) {
+    let n = names.length ? 1 : 0,
+      w = 0;
+    for (const t of names) {
+      const L = t.length;
+      if (w && w + 1 + L > 14.5) {
+        n++;
+        w = L;
+      } else w = w ? w + 1 + L : L;
+    }
+    return n;
+  }
   function eewRegNames(e) {
-    if (e.warnRegs.length <= 10) return e.warnRegs.map(rg => REGNAME[rg]);
+    if (e.warnRegs.length <= 10) {
+      const names = e.warnRegs.map(rg => REGNAME[rg]);
+      if (telLines(names) <= 2) return names;
+      /* 2行に収まらないとき（Version 167。ユーザーの依頼）：北海道の地域（道東・道南・道央・道北など）を「北海道」1つにまとめる（最初に出た位置に置く）。
+         それでも3行以上になる広い範囲は、地方名の一覧にする */
+      const m = [];
+      for (const t of names) {
+        const h = t.startsWith('北海道') ? '北海道' : t;
+        if (!m.includes(h)) m.push(h);
+      }
+      if (telLines(m) <= 2) return m;
+    }
     const ch = new Map();
     e.warnAreas.forEach((v, i) => {
       const a = AREAS[i];
