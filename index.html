@@ -8043,6 +8043,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     clearWarnFill();
     ['info', 'tsu', 'eew', 'band', 'yohou', 'telop', 'eewMini', 'ivSw'].forEach(i => ($(i).hidden = true));
     s.ivView = null;
+    s.ivAuto = false;
     $('tv').classList.remove('ivs', 'tsuv');
     tsuOpen(false);
     $('info').classList.remove('short');
@@ -8810,7 +8811,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   $('ivSw').addEventListener('click', ev => {
     const b = ev.target.closest('button');
     ev.stopPropagation();
-    if (b && sim) ivView(b.dataset.v);
+    if (b && sim) {
+      /* 自分で選んだ後は自動で切り替えない */
+      sim.ivAuto = false;
+      ivView(b.dataset.v);
+    }
   });
   /* 震度速報・震源に関する情報。phase＝今回まとめて発表する地震。震度はこれまでに発生した地震の揺れを重ねたもの */
   const EEW_AFTER_S = 30 /* 対象地域のすべての市町村にS波が届いてから、テロップを出し続ける秒数（シミュレーター内の時間） */,
@@ -9400,7 +9405,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     infoFoldT = setTimeout(() => $('info').classList.add('fold'), 8000);
     $('info').hidden = false;
     showLegend(layers.lp ? 'lp' : 'int');
-    if (s.tsunami && s.tsunami.gen) {
+    if (s.tsuShown && s.tsunami && s.tsunami.gen && s.tsunami.regs[0].cat >= 1) {
+      /* 津波情報の発表中に出た震度速報（余震など）は、震度速報だけを単独で出さず「震度｜津波」の切替の震度側で出す
+         （津波側を見ていても震度側へ切り替える）。INFO_TO_TSU 秒後に津波側へ戻す（Version 197） */
+      ivView('int');
+      s.ivAuto = true;
+    } else if (s.tsunami && s.tsunami.gen) {
       $('tsu').hidden = false;
       $('info').classList.add('short');
     }
@@ -11018,13 +11028,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (
       !sim.fake &&
       sim.infoShown &&
-      !sim.ivView &&
+      ((!sim.ivView && !$('tsu').hidden) || (sim.ivView === 'int' && sim.ivAuto)) &&
       sim.tsuShown &&
       sim.tsunami.regs[0].cat >= 1 &&
-      !$('tsu').hidden &&
       t >= Math.max(sim.infoAt, sim.tsuAt || 0) + INFO_TO_TSU
-    )
+    ) {
+      sim.ivAuto = false;
       ivView('tsu');
+    }
     /* 津波注意報以上の発表中は、震度速報がまだ出ていない間（緊急地震速報の表示が終わってから震度速報まで、次の地震で画面が切り替わった後）も、
        緊急地震速報を表示していなければ津波の表示を出し、状態表示も津波のままにする（Version 130。以前は大津波警報の発表中でも画面に何も出ない時間があった） */
     const tsuCat = !sim.fake && sim.tsuShown && sim.tsunami ? sim.tsunami.regs[0].cat : 0;
@@ -12372,58 +12383,206 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       leaf.add(rbox(0.012, 0.1, 0.012, 0.005, brass, -sd * (dw / 2 - 0.02), -0.18, 0.015));
       o.doors.push({ hinge, sd, dw, phi: 0, om: 0, latched: true });
     });
+    /* 食器（Version 196 で種類を増やした）：下の段は洋食器（大皿・中皿・小皿の重ね、ティーポット、カップ、マグ、グラス、ワイングラス）、
+       上の段は和食器（茶碗、汁椀、湯呑み、小鉢、急須）。柄は回転体の uv（u＝周、v＝断面の点の順＝外側の底→口→内側の底）に描く。
+       割れ物は割れる（frag＝割れる衝突の強さ。ガラスは割れやすく、木の汁椀は割れない）。数は以前とほぼ同じ（36→40個） */
     const r = rng(91);
     o.items = [];
-    const pm = mat(0xf7f5ef, { roughness: 0.22 }),
-      plateGeo = latheGeo(PLATE_PROF, 14),
-      cupGeo = latheGeo(CUP_PROF, 12),
-      cms = [mat(0xf2eee5, { roughness: 0.25 }), mat(0x8fae9a, { roughness: 0.3 }), mat(0x3c5776, { roughness: 0.3 })];
-    /* 磁器の釉薬のつや（Version 141）：部屋の映り込みを弱く付ける */
-    for (const m of [pm, ...cms]) m.userData.env = 0.45;
     const doorOf = x => (x < -0.02 ? [0] : x > 0.02 ? [1] : [0, 1]);
-    [0.86, 1.31].forEach((y, row) => {
-      for (let s = 0; s < 3; s++) {
-        const cx = -hw + 0.18 + s * 0.32;
-        for (let k = 0; k < 5; k++) {
-          const plate = new THREE.Mesh(plateGeo, pm);
-          plate.receiveShadow = true;
-          plate.position.set(cx, y + 0.0075 + k * 0.014, 0.06);
-          g.add(plate);
-          o.items.push({
-            mesh: plate,
-            half: [0.1, 0.007, 0.1],
-            cyl: [0.1, 0.007],
-            m: 0.35,
-            frag: 3.5,
-            mu: k === 0 ? 0.36 : 0.22 + r() * 0.06,
-            door: doorOf(cx),
-            home: plate.position.clone(),
-            homeQ: plate.quaternion.clone()
-          });
+    const glaze = (c, o2) => {
+      const m = mat(c, Object.assign({ roughness: 0.25 }, o2 || {}));
+      m.userData.env = 0.45;
+      return m;
+    };
+    /* 断面の点の順 v（0〜1）に沿った帯と、周方向の縦縞（十草）を描いた模様 */
+    const patTex = (key, base, bands, stripe) =>
+      cvTex('dish_' + key, 128, 64, (g, W, H) => {
+        g.fillStyle = base;
+        g.fillRect(0, 0, W, H);
+        for (const [v0, v1, c] of bands) {
+          g.fillStyle = c;
+          g.fillRect(0, (1 - v1) * H, W, (v1 - v0) * H);
         }
-        /* カップ（取っ手は右向き。当たり判定は筒＋取っ手の箱） */
-        const cm = cms[(s + row) % 3],
-          cup = new THREE.Mesh(cupGeo, cm);
-        cup.receiveShadow = true;
-        const hdl = arcTube(0.034, 0.02, 0.0045, -1.5, 1.5, cm);
-        hdl.castShadow = false;
-        cup.add(hdl);
-        cup.position.set(cx + 0.12, y + 0.05, 0.1);
-        g.add(cup);
-        o.items.push({
-          mesh: cup,
-          half: [0.04, 0.04, 0.04],
-          cyl: [0.04, 0.04],
-          xS: [[[0.0505, 0, 0], [0.009, 0.0245, 0.005]]],
-          m: 0.25,
-          frag: 3.8,
-          mu: 0.3 + r() * 0.1,
-          door: doorOf(cx + 0.12),
-          home: cup.position.clone(),
-          homeQ: cup.quaternion.clone()
+        if (stripe) {
+          const [v0, v1, c, n, w] = stripe;
+          g.fillStyle = c;
+          for (let i = 0; i < n; i++) g.fillRect((i / n) * W, (1 - v1) * H, w, (v1 - v0) * H);
+        }
+      });
+    const pmat = (key, base, bands, stripe, o2) => glaze(0xffffff, Object.assign({ map: patTex(key, base, bands, stripe) }, o2 || {}));
+    const sc = (P, sr, sy) => P.map(([a, b]) => [a * sr, b * sy]);
+    const put = (mesh, x, y, z, it) => {
+      mesh.receiveShadow = true;
+      mesh.position.set(x, y, z);
+      g.add(mesh);
+      o.items.push(
+        Object.assign(
+          { mesh, door: doorOf(x + (it.dx || 0)), home: mesh.position.clone(), homeQ: mesh.quaternion.clone(), mu: 0.3 + r() * 0.08 },
+          it
+        )
+      );
+    };
+    /* ---- 下の段（洋食器） ---- */
+    const y1 = 0.86;
+    /* 重ねた皿：大皿（濃紺の縁）3枚、中皿（白）5枚、小皿（藍の縁取りと見込みの輪）6枚 */
+    const plates = [
+      [sc(PLATE_PROF, 1.3, 1.4), 0.13, 0.0098, 3, pmat('pl', '#f5f2ea', [[0.5, 0.74, '#2f4a6e'], [0.8, 0.82, '#2f4a6e']]), -0.33, -0.055, 0.6, 3.3],
+      [PLATE_PROF, 0.1, 0.007, 5, glaze(0xf7f5ef, { roughness: 0.22 }), -0.06, -0.085, 0.35, 3.5],
+      [sc(PLATE_PROF, 0.7, 0.9), 0.07, 0.0063, 6, pmat('ps', '#f6f4ee', [[0.52, 0.7, '#3b5d8c'], [0.92, 0.95, '#3b5d8c']]), 0.15, -0.115, 0.15, 3.7]
+    ];
+    for (const [prof, rr, hh, n, m, x, z, ms, fr] of plates) {
+      const geo = latheGeo(prof, 16);
+      for (let k = 0; k < n; k++)
+        put(new THREE.Mesh(geo, m), x, y1 + hh + 0.0005 + k * (2 * hh + 0.0002), z, {
+          half: [rr, hh, rr],
+          cyl: [rr, hh],
+          m: ms,
+          frag: fr,
+          mu: k === 0 ? 0.36 : 0.22 + r() * 0.06
         });
-      }
+    }
+    /* ティーポット（白磁・注ぎ口は右、取っ手は左）。断面は当たり判定の筒（半径0.07・高さの半分0.0675）の中心に合わせる */
+    {
+      const pm = glaze(0xf3f1ea, { roughness: 0.2 }),
+        prof = [
+          [0, -0.0675], [0.045, -0.0675], [0.05, -0.0625], [0.065, -0.0375], [0.07, -0.0075], [0.064, 0.0225], [0.05, 0.0375], [0.035, 0.0425],
+          [0.036, 0.0465], [0.012, 0.0505], [0.008, 0.0565], [0.013, 0.0625], [0, 0.0675]
+        ],
+        pot = new THREE.Mesh(latheGeo(prof, 18), pm),
+        sp = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.014, 0.07, 10, 1, true), pm);
+      sp.position.set(0.085, 0.0, 0);
+      sp.rotation.z = -0.95;
+      pot.add(sp);
+      pot.add(arcTube(-0.07, 0.03, 0.006, Math.PI * 0.55, Math.PI * 1.45, pm));
+      put(pot, 0.345, y1 + 0.0675 + 0.0005, -0.09, {
+        half: [0.07, 0.0675, 0.07],
+        cyl: [0.07, 0.0675],
+        xS: [[[0.1, 0.02, 0], [0.025, 0.012, 0.01]], [[-0.105, 0, 0], [0.012, 0.028, 0.006]]],
+        m: 0.6,
+        frag: 3.2,
+        mu: 0.38
+      });
+    }
+    /* コーヒーカップ3客（以前からのもの。取っ手は右向き） */
+    const cupGeo = latheGeo(CUP_PROF, 12),
+      cms = [glaze(0xf2eee5), glaze(0x8fae9a, { roughness: 0.3 }), glaze(0x3c5776, { roughness: 0.3 })];
+    [-0.425, -0.32, -0.215].forEach((x, i) => {
+      const cm = cms[i],
+        cup = new THREE.Mesh(cupGeo, cm),
+        hdl = arcTube(0.034, 0.02, 0.0045, -1.5, 1.5, cm);
+      hdl.castShadow = false;
+      cup.add(hdl);
+      put(cup, x, y1 + 0.04 + 0.0005, 0.135, { half: [0.04, 0.04, 0.04], cyl: [0.04, 0.04], xS: [[[0.0505, 0, 0], [0.009, 0.0245, 0.005]]], m: 0.25, frag: 3.8, dx: 0.012 });
     });
+    /* ガラス：薄い色の透明な層＋映り込みだけの層（加算）の2層（テーブルのコップと同じ描き方） */
+    const gT = mat(0x9fb6b0, { transparent: true, opacity: 0.12, roughness: 0.05, metalness: 0, depthWrite: false }),
+      gR = mat(0x000000, { transparent: true, blending: 2, roughness: 0.03, metalness: 0, depthWrite: false });
+    gT.userData.env = 0.01;
+    gR.userData.env = 0.35;
+    const glassMesh = geo => {
+      const t = new THREE.Mesh(geo, gT),
+        rf = new THREE.Mesh(geo, gR);
+      t.renderOrder = 3;
+      rf.renderOrder = 4;
+      t.add(rf);
+      return t;
+    };
+    /* タンブラー3個（厚い底） */
+    const tumGeo = latheGeo(
+      [[0, -0.05], [0.029, -0.05], [0.031, -0.047], [0.033, 0.05], [0.031, 0.05], [0.0295, -0.038], [0.027, -0.04], [0, -0.04]],
+      RM.lowP ? 18 : 28
+    );
+    [-0.115, -0.04, 0.035].forEach(x =>
+      put(glassMesh(tumGeo), x, y1 + 0.05 + 0.0005, 0.135, { half: [0.033, 0.05, 0.03], cyl: [0.033, 0.05], m: 0.2, frag: 2.8, tp: true, mu: 0.3 })
+    );
+    /* ワイングラス2脚（脚が細く倒れやすい・割れやすい）：台→脚→ボウル→口→内側 */
+    const wineGeo = latheGeo(
+      [
+        [0, -0.09], [0.031, -0.09], [0.032, -0.0885], [0.004, -0.085], [0.003, -0.03], [0.012, -0.022], [0.034, 0.01], [0.036, 0.04],
+        [0.033, 0.09], [0.0315, 0.09], [0.0345, 0.04], [0.0325, 0.01], [0.011, -0.019], [0, -0.022]
+      ],
+      RM.lowP ? 18 : 28
+    );
+    [0.115, 0.19].forEach(x =>
+      put(glassMesh(wineGeo), x, y1 + 0.09 + 0.0005, 0.135, { half: [0.034, 0.09, 0.028], cyl: [0.034, 0.09], m: 0.15, frag: 2.2, tp: true, mu: 0.3 })
+    );
+    /* マグカップ2個（からし色・白に紺の帯） */
+    const mugProf = [[0, -0.0475], [0.036, -0.0475], [0.04, -0.044], [0.041, 0.0], [0.042, 0.0475], [0.038, 0.0475], [0.037, 0.0], [0.035, -0.04], [0, -0.041]],
+      mugGeo = latheGeo(mugProf, 14);
+    [
+      [0.275, glaze(0xc99a2e, { roughness: 0.35 })],
+      [0.395, pmat('mug', '#f2efe6', [[0.24, 0.34, '#2c4466']])]
+    ].forEach(([x, m]) => {
+      const mug = new THREE.Mesh(mugGeo, m),
+        hdl = arcTube(0.041, 0.026, 0.006, -1.45, 1.45, m);
+      hdl.castShadow = false;
+      mug.add(hdl);
+      put(mug, x, y1 + 0.0475 + 0.0005, 0.13, { half: [0.042, 0.0475, 0.042], cyl: [0.042, 0.0475], xS: [[[0.06, 0, 0], [0.008, 0.03, 0.006]]], m: 0.32, frag: 3.6, tp: true, dx: 0.015 });
+    });
+    /* ---- 上の段（和食器） ---- */
+    const y2 = 1.31;
+    /* 茶碗4つ：白地に藍の十草、飴釉、青磁、天目（口の縁が明るい） */
+    const chawan = [
+        [0, -0.03], [0.026, -0.03], [0.027, -0.022], [0.031, -0.021], [0.045, -0.01], [0.055, 0.012], [0.058, 0.03], [0.055, 0.03],
+        [0.052, 0.012], [0.042, -0.008], [0.025, -0.017], [0, -0.019]
+      ],
+      chGeo = latheGeo(chawan, 18);
+    [
+      pmat('ch1', '#f1eee4', [], [0.27, 0.55, '#33507a', 18, 2]),
+      pmat('ch2', '#8a4f26', [[0, 0.24, '#b8a088']], null, { roughness: 0.18 }),
+      pmat('ch3', '#a9c2ad', [[0, 0.24, '#c9c3b2']], null, { roughness: 0.15 }),
+      pmat('ch4', '#2a1e18', [[0, 0.24, '#9b8a76'], [0.52, 0.6, '#7a5232']], null, { roughness: 0.15 })
+    ].forEach((m, i) => put(new THREE.Mesh(chGeo, m), -0.4 + i * 0.13, y2 + 0.03 + 0.0005, -0.1, { half: [0.058, 0.03, 0.058], cyl: [0.058, 0.03], m: 0.2, frag: 3.6 }));
+    /* 小鉢3つ（織部の緑、黄瀬戸、藍の縁） */
+    const kobachi = [[0, -0.0225], [0.022, -0.0225], [0.023, -0.016], [0.03, -0.014], [0.046, 0.008], [0.05, 0.0225], [0.046, 0.0225], [0.042, 0.008], [0.027, -0.01], [0, -0.012]],
+      kbGeo = latheGeo(kobachi, 16);
+    [
+      [0.12, -0.1, pmat('kb1', '#4f7a52', [[0, 0.22, '#c8bda6'], [0.55, 0.62, '#d8d0bc']], null, { roughness: 0.2 })],
+      [0.23, -0.1, pmat('kb2', '#c9a85a', [[0, 0.22, '#b49a6c']], null, { roughness: 0.3 })],
+      [0.355, 0.12, pmat('kb3', '#f2efe6', [[0.48, 0.6, '#2f4a74']])]
+    ].forEach(([x, z, m]) => put(new THREE.Mesh(kbGeo, m), x, y2 + 0.0225 + 0.0005, z, { half: [0.05, 0.0225, 0.05], cyl: [0.05, 0.0225], m: 0.15, frag: 3.6 }));
+    /* 急須（朱泥。注ぎ口は右、横手の取っ手は手前） */
+    {
+      const km = glaze(0x9a4a2e, { roughness: 0.45 }),
+        prof = [
+          [0, -0.05], [0.04, -0.05], [0.046, -0.045], [0.055, -0.02], [0.054, 0.01], [0.044, 0.028], [0.03, 0.032], [0.031, 0.036],
+          [0.01, 0.04], [0.007, 0.045], [0.011, 0.05], [0, 0.05]
+        ],
+        ks = new THREE.Mesh(latheGeo(prof, 18), km),
+        sp = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.011, 0.05, 10, 1, true), km),
+        hd2 = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.011, 0.07, 10), km);
+      sp.position.set(0.068, 0.0, 0);
+      sp.rotation.z = -1.0;
+      hd2.position.set(0, -0.005, 0.085);
+      hd2.rotation.x = Math.PI / 2 - 0.25;
+      ks.add(sp, hd2);
+      put(ks, 0.37, y2 + 0.05 + 0.0005, -0.1, {
+        half: [0.055, 0.05, 0.055],
+        cyl: [0.055, 0.05],
+        xS: [[[0.075, 0.012, 0], [0.02, 0.01, 0.009]], [[0, -0.005, 0.085], [0.011, 0.012, 0.035]]],
+        m: 0.4,
+        frag: 3.2,
+        mu: 0.4
+      });
+    }
+    /* 汁椀3つ（木の漆塗り：外は黒・内は朱、1つは外も朱。割れない） */
+    const wan = [
+        [0, -0.0325], [0.028, -0.0325], [0.029, -0.022], [0.033, -0.021], [0.05, -0.005], [0.058, 0.018], [0.06, 0.0325], [0.056, 0.0325],
+        [0.054, 0.018], [0.046, -0.005], [0.03, -0.016], [0, -0.018]
+      ],
+      wnGeo = latheGeo(wan, 18),
+      wk = pmat('wan1', '#1b1412', [[0.6, 1, '#9e2a1c']], null, { roughness: 0.28 }),
+      wr = pmat('wan2', '#9e2a1c', [[0.56, 0.6, '#1b1412']], null, { roughness: 0.28 });
+    [wk, wk, wr].forEach((m, i) => put(new THREE.Mesh(wnGeo, m), -0.345 + i * 0.125, y2 + 0.0325 + 0.0005, 0.12, { half: [0.06, 0.0325, 0.06], cyl: [0.06, 0.0325], m: 0.08, frag: 0, mu: 0.32 }));
+    /* 湯呑み4つ（十草・灰釉・青の縞・粉引） */
+    const yuno = [[0, -0.0425], [0.028, -0.0425], [0.029, -0.036], [0.032, -0.035], [0.034, 0.0], [0.036, 0.0425], [0.0325, 0.0425], [0.031, 0.0], [0.029, -0.03], [0, -0.032]],
+      ynGeo = latheGeo(yuno, 16);
+    [
+      pmat('yn1', '#ece7da', [], [0.3, 0.56, '#3a2a22', 14, 2]),
+      pmat('yn2', '#9aa08a', [[0, 0.22, '#b59b78']], null, { roughness: 0.18 }),
+      pmat('yn3', '#e9ecef', [], [0.3, 0.56, '#4a6f9e', 10, 4]),
+      pmat('yn4', '#e8e1d2', [[0, 0.3, '#b9a88c']], null, { roughness: 0.4 })
+    ].forEach((m, i) => put(new THREE.Mesh(ynGeo, m), 0.0 + i * 0.085, y2 + 0.0425 + 0.0005, 0.12, { half: [0.036, 0.0425, 0.036], cyl: [0.036, 0.0425], m: 0.2, frag: 3.4, tp: true }));
     return g;
   }
   function buildFridge(f) {
@@ -15530,72 +15689,246 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       b = p(c1);
     return 'rgb(' + a.map((v, j) => Math.round(v + (b[j] - v) * k)).join(',') + ')';
   }
-  /* 窓の外の街並み（決まった乱数で作る）：奥の列と手前の列のビル、窓の灯り */
+  /* 窓の外の街並み（Version 195 で作り直し。決まった乱数で作る）
+     奥・中のビル、手前の低い建物（ビルの間から空が地面まで見えないように）、手前のビルの4列。ビルごとに「事務所」（横に連なる窓の帯。夜は階ごとにまとめて点く・白い光）と
+     「住宅」（1つずつの窓。夜はまばらに点く・暖かい色、カーテンで色が少し違う）に分ける。
+     窓は階の高さと柱の間隔にそろえて並べ、遠い列ほど小さく霞ませる。
+     夕方は窓ごとに点く時刻をずらして少しずつ灯りが増える。夜は灯りのにじみ、地平の街明かり、高いビルの屋上の赤い航空障害灯、手前の街灯 */
   let DN_CITY = null;
+  const DN_HEX = x => [1, 3, 5].map(j => parseInt(x.substr(j, 2), 16));
+  const dnLerp = (a, b, k) => a.map((v, j) => v + (b[j] - v) * k);
+  const dnCss = (c, a) => 'rgba(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ',' + (a == null ? 1 : a) + ')';
   function dnCity(W, H) {
-    if (DN_CITY) return DN_CITY;
+    if (DN_CITY && DN_CITY.W === W && DN_CITY.H === H) return DN_CITY;
     const rnd = rng(20261113),
+      s = W / 512,
       rows = [];
-    for (const [base, hMin, hMax, wMin, wMax] of [
-      [0.62, 0.1, 0.3, 14, 34],
-      [0.74, 0.08, 0.36, 20, 48]
-    ]) {
+    /* 列：地面の高さ・ビルの高さ・幅・階の高さ・窓の大きさ・霞み（昼・夜）・ビルの間の空きの確率 */
+    const ROWS = [
+      { base: 0.7, hMin: 0.05, hMax: 0.24, wMin: 16, wMax: 42, fl: 4, haze: [0.5, 0.35], gap: 0.05 },
+      { base: 0.81, hMin: 0.1, hMax: 0.38, wMin: 30, wMax: 74, fl: 7, haze: [0.22, 0.14], gap: 0.12 },
+      { base: 0.93, hMin: 0.04, hMax: 0.13, wMin: 22, wMax: 46, fl: 8, haze: [0.12, 0.08], gap: 0 },
+      { base: 0.93, hMin: 0.12, hMax: 0.42, wMin: 56, wMax: 120, fl: 11, haze: [0.04, 0.03], gap: 0.45 }
+    ];
+    const WALL = ['#b9bec4', '#c9c1b2', '#a7b0ba', '#d3d0c8', '#9aa3ad', '#bfb3a3'];
+    ROWS.forEach((R, ri) => {
       const bl = [];
-      let x = -10;
-      while (x < W + 10) {
-        const w = wMin + rnd() * (wMax - wMin),
-          top = H * (base - (hMin + rnd() * (hMax - hMin))),
+      let x = -8 * s - rnd() * 20 * s;
+      while (x < W + 8 * s) {
+        const w = (R.wMin + rnd() * (R.wMax - R.wMin)) * s;
+        if (rnd() < R.gap) {
+          x += w * 0.6;
+          continue;
+        }
+        const top = Math.round(H * (R.base - (R.hMin + rnd() * (R.hMax - R.hMin)))),
+          bot = Math.round(H * R.base),
+          x0 = Math.round(x),
+          x1 = Math.round(x + w),
+          fl = Math.max(3, Math.round(R.fl * s * (0.9 + rnd() * 0.25))),
+          office = ri === 2 ? rnd() < 0.15 : rnd() < (ri === 0 ? 0.5 : 0.45),
+          wall = (f => DN_HEX(WALL[(rnd() * WALL.length) | 0]).map(v => v * f))(0.88 + rnd() * 0.16),
           lights = [];
-        for (let yy = top + 5; yy < H * base + H * 0.3; yy += 7)
-          for (let xx = x + 3; xx < x + w - 4; xx += 6) if (rnd() < 0.42) lights.push([xx, yy, 0.55 + rnd() * 0.45, rnd() < 0.25]);
-        bl.push({ x, w, top, lights });
-        x += w + rnd() * 6;
+        const mar = Math.max(1, Math.round(fl * 0.35)),
+          roof = top + Math.max(2, Math.round(fl * 0.6));
+        if (office) {
+          /* 事務所：階ごとの窓の帯。柱で数か所に区切る。点く・消えるは階（区切り）ごと */
+          const seg = Math.max(1, Math.round((x1 - x0) / (fl * (3 + rnd() * 3)))),
+            sw = (x1 - x0 - mar * 2) / seg,
+            wh = Math.max(1, Math.round(fl * 0.55)),
+            cool = rnd() < 0.85;
+          let floorOn = rnd() < 0.4;
+          for (let y = roof; y + wh <= bot - fl * 0.5; y += fl) {
+            if (rnd() < 0.35) floorOn = !floorOn && rnd() < 0.8;
+            for (let k = 0; k < seg; k++) {
+              const on = floorOn ? rnd() < 0.75 : rnd() < 0.06;
+              lights.push({
+                x: Math.round(x0 + mar + k * sw + (k ? 0.5 : 0)),
+                y,
+                w: Math.max(1, Math.round(sw - 1)),
+                h: wh,
+                on: on ? 0.32 + rnd() * 0.35 : 9,
+                v: 0.75 + rnd() * 0.25,
+                c: cool ? (rnd() < 0.8 ? [236, 243, 255] : [255, 246, 226]) : [255, 236, 200]
+              });
+            }
+          }
+        } else {
+          /* 住宅：1つずつの窓（ベランダ側）。窓の幅と間隔は階の高さに合わせる */
+          const ww = Math.max(1, Math.round(fl * 0.5)),
+            wh = Math.max(1, Math.round(fl * 0.55)),
+            pitch = Math.max(ww + 1, Math.round(fl * 0.95)),
+            n = Math.max(1, Math.floor((x1 - x0 - mar * 2 + (pitch - ww)) / pitch)),
+            off = Math.round((x1 - x0 - (n * pitch - (pitch - ww))) / 2);
+          for (let y = roof; y + wh <= bot - fl * 0.4; y += fl)
+            for (let k = 0; k < n; k++) {
+              const on = rnd() < 0.42,
+                r = rnd();
+              lights.push({
+                x: x0 + off + k * pitch,
+                y,
+                w: ww,
+                h: wh,
+                on: on ? 0.3 + rnd() * 0.45 : 9,
+                v: 0.55 + rnd() * 0.45,
+                c: r < 0.55 ? [255, 214, 150] : r < 0.8 ? [255, 228, 186] : r < 0.92 ? [246, 240, 228] : [255, 196, 160]
+              });
+            }
+        }
+        const tall = ri !== 2 && bot - top > H * 0.27;
+        bl.push({
+          x0,
+          x1,
+          top,
+          bot,
+          fl,
+          office,
+          wall,
+          lights,
+          /* 屋上の設備（四角い塔屋）と航空障害灯 */
+          ph: tall && rnd() < 0.6 ? [Math.round(x0 + (x1 - x0) * (0.2 + rnd() * 0.4)), Math.round((x1 - x0) * (0.2 + rnd() * 0.2)), Math.max(2, Math.round(fl * 0.8))] : null,
+          red: tall && ri > 0 && rnd() < 0.7
+        });
+        x += w + (ri === 3 ? rnd() * 10 : ri === 2 ? 0 : rnd() * 3) * s;
       }
-      rows.push(bl);
-    }
-    DN_CITY = rows;
-    return rows;
+      rows.push({ R, bl });
+    });
+    /* 手前の街灯 */
+    const st = [];
+    for (let x = rnd() * 30 * s; x < W; x += (36 + rnd() * 30) * s) st.push(Math.round(x));
+    DN_CITY = { W, H, rows, st };
+    return DN_CITY;
   }
   function dnSky(g, W, H, n) {
     const S = DN.sky,
       k = n < 0.5 ? n * 2 : (n - 0.5) * 2,
       a = n < 0.5 ? S[0] : S[1],
       b = n < 0.5 ? S[1] : S[2],
-      gr = g.createLinearGradient(0, 0, 0, H * 0.75);
+      skyTop = dnLerp(DN_HEX(a[0]), DN_HEX(b[0]), k),
+      skyHor = dnLerp(DN_HEX(a[2]), DN_HEX(b[2]), k),
+      gr = g.createLinearGradient(0, 0, 0, H * 0.9);
     gr.addColorStop(0, dnMix(a[0], b[0], k));
-    gr.addColorStop(0.7, dnMix(a[1], b[1], k));
+    gr.addColorStop(0.62, dnMix(a[1], b[1], k));
     gr.addColorStop(1, dnMix(a[2], b[2], k));
     g.fillStyle = gr;
     g.fillRect(0, 0, W, H);
-    /* 夜空の星（少しだけ） */
+    /* 夜空の星（街の明かりで少しだけ） */
     if (n > 0.7) {
       const rs = rng(77);
-      g.fillStyle = 'rgba(220,230,255,' + (n - 0.7) * 2 + ')';
-      for (let i = 0; i < 18; i++) g.fillRect(rs() * W, rs() * H * 0.35, 1, 1);
+      for (let i = 0; i < 26; i++) {
+        g.fillStyle = 'rgba(220,230,255,' + (n - 0.7) * (1.2 + rs() * 1.5) + ')';
+        g.fillRect(rs() * W, rs() * H * 0.32, 1, 1);
+      }
     }
-    const rows = dnCity(W, H),
-      body = [
-        ['#a9b6c4', '#0c1424'],
-        ['#7f8b98', '#070c16']
-      ];
-    rows.forEach((bl, ri) => {
-      g.fillStyle = dnMix(body[ri][0], body[ri][1], n);
-      for (const q of bl) g.fillRect(q.x, q.top, q.w, H - q.top);
-      /* 昼：窓のガラスの反射（明るい縦の筋）、夜：灯り */
-      for (const q of bl)
-        for (const [x, y, v, warm] of q.lights) {
-          if (n > 0.25) {
-            g.fillStyle = warm ? 'rgba(255,214,150,' + v * (n - 0.25) * 1.33 + ')' : 'rgba(255,240,205,' + v * (n - 0.25) * 1.33 + ')';
-            g.fillRect(x, y, 3, 3);
-          } else if (ri === 1) {
-            g.fillStyle = 'rgba(220,232,245,' + 0.22 * (1 - n * 4) + ')';
-            g.fillRect(x, y, 3, 3);
-          }
+    /* 地平の街明かり（光害）：夜は地平近くの空が街の灯りでぼんやり明るい */
+    const glow = smooth01(0.3, 0.9, n);
+    if (glow > 0) {
+      const lg = g.createLinearGradient(0, H * 0.4, 0, H * 0.75);
+      lg.addColorStop(0, 'rgba(255,160,100,0)');
+      lg.addColorStop(1, 'rgba(210,140,100,' + 0.22 * glow + ')');
+      g.fillStyle = lg;
+      g.fillRect(0, H * 0.4, W, H * 0.35);
+    }
+    const C = dnCity(W, H),
+      nightWall = [
+        [22, 28, 40],
+        [14, 19, 30],
+        [12, 15, 22],
+        [9, 12, 20]
+      ],
+      glass = dnLerp([44, 58, 76], skyTop, 0.2);
+    C.rows.forEach(({ R, bl }, ri) => {
+      /* 霞み：遠い列ほど空（地平）の色に寄せる */
+      const hz = R.haze[0] + (R.haze[1] - R.haze[0]) * n,
+        far = ri === 0 ? 0.65 : ri === 3 ? 1 : 0.85;
+      for (const q of bl) {
+        const wl = dnLerp(dnLerp(q.wall, nightWall[ri], smooth01(0.1, 0.75, n)), skyHor, hz),
+          bw = q.x1 - q.x0;
+        g.fillStyle = dnCss(wl);
+        /* 壁は地面まで（遠いビルの足元が手前の建物の隙間から空になって見えないように） */
+        g.fillRect(q.x0, q.top, bw, Math.round(H * 0.93) - q.top);
+        if (q.ph) g.fillRect(q.ph[0], q.top - q.ph[2], q.ph[1], q.ph[2]);
+        /* 昼：日の当たる側（左の面）をわずかに明るく、右端に細い影。夜はほぼ見えない */
+        if (ri > 0) {
+          g.fillStyle = 'rgba(255,255,255,' + 0.07 * (1 - n) + ')';
+          g.fillRect(q.x0, q.top, Math.max(1, Math.round(bw * 0.08)), q.bot - q.top);
+          g.fillStyle = 'rgba(0,0,0,' + (0.12 - 0.08 * n) + ')';
+          g.fillRect(q.x1 - Math.max(1, Math.round(bw * 0.06)), q.top, Math.max(1, Math.round(bw * 0.06)), q.bot - q.top);
+          /* 屋上の縁（パラペット） */
+          g.fillStyle = 'rgba(0,0,0,' + (0.18 - 0.1 * n) + ')';
+          g.fillRect(q.x0, q.top + 1, bw, 1);
         }
+        /* 消えている窓：昼は空を映すガラス、夜は暗いガラス（壁より少し暗い） */
+        const off = dnLerp(dnLerp(glass, [6, 9, 15], smooth01(0.15, 0.7, n)), skyHor, hz * 0.8);
+        g.fillStyle = dnCss(off, q.office ? 0.85 : 0.7);
+        for (const L of q.lights) g.fillRect(L.x, L.y, L.w, L.h);
+        /* 昼の事務所：ガラスの帯に空の映り込みの筋 */
+        if (q.office && n < 0.5 && ri > 0) {
+          g.fillStyle = 'rgba(210,228,245,' + 0.16 * (1 - n * 2) + ')';
+          for (const L of q.lights) g.fillRect(L.x, L.y, Math.max(1, Math.round(L.w * 0.3)), 1);
+        }
+      }
+      /* 灯り：窓ごとに点く時刻（夜の度合い）をずらす */
+      if (n > 0.25) {
+        g.globalCompositeOperation = 'lighter';
+        for (const q of bl)
+          for (const L of q.lights) {
+            if (L.on > 1) continue;
+            const v = smooth01(L.on - 0.06, L.on + 0.06, n) * L.v * far;
+            if (v <= 0.01) continue;
+            /* にじみ（手前の2列だけ）：窓より少し大きい淡い光 */
+            if (ri > 0) {
+              g.fillStyle = dnCss(L.c, 0.1 * v);
+              g.fillRect(L.x - 1, L.y - 1, L.w + 2, L.h + 2);
+            }
+            g.fillStyle = dnCss(L.c, 0.9 * v);
+            g.fillRect(L.x, L.y, L.w, L.h);
+            /* 住宅の窓は上の方を少し明るく（天井の照明）・事務所は下に窓枠の暗い線 */
+            if (L.h >= 3) {
+              g.fillStyle = dnCss(L.c, 0.25 * v);
+              g.fillRect(L.x, L.y, L.w, 1);
+            }
+          }
+        g.globalCompositeOperation = 'source-over';
+        for (const q of bl)
+          if (q.office)
+            for (const L of q.lights) {
+              if (L.on > 1 || L.h < 3) continue;
+              const v = smooth01(L.on - 0.06, L.on + 0.06, n);
+              if (v <= 0.01) continue;
+              g.fillStyle = 'rgba(0,0,0,' + 0.22 * v + ')';
+              for (let xx = L.x + 3; xx < L.x + L.w - 1; xx += 4) g.fillRect(xx, L.y, 1, L.h);
+            }
+      }
+      /* 航空障害灯（赤） */
+      if (n > 0.35) {
+        const v = smooth01(0.35, 0.6, n);
+        for (const q of bl)
+          if (q.red) {
+            const tx = q.ph ? q.ph[0] + (q.ph[1] >> 1) : (q.x0 + q.x1) >> 1,
+              ty = (q.ph ? q.top - q.ph[2] : q.top) - 2;
+            g.fillStyle = 'rgba(255,40,30,' + 0.25 * v + ')';
+            g.fillRect(tx - 2, ty - 1, 5, 4);
+            g.fillStyle = 'rgba(255,70,50,' + v + ')';
+            g.fillRect(tx - 1, ty, 2, 2);
+          }
+      }
     });
-    /* 手前の地面（ベランダの手すりの影のように暗い帯） */
+    /* 手前の地面（ベランダの手すりの影のように暗い帯）と街灯 */
     g.fillStyle = dnMix('#5c6670', '#05080e', n);
     g.fillRect(0, H * 0.93, W, H * 0.07);
+    if (n > 0.3) {
+      const v = smooth01(0.3, 0.55, n),
+        y = Math.round(H * 0.93);
+      for (const x of C.st) {
+        const lg = g.createRadialGradient(x, y + 1, 0, x, y + 1, 9);
+        lg.addColorStop(0, 'rgba(255,200,130,' + 0.55 * v + ')');
+        lg.addColorStop(1, 'rgba(255,200,130,0)');
+        g.fillStyle = lg;
+        g.fillRect(x - 9, y - 8, 18, 18);
+        g.fillStyle = 'rgba(255,225,170,' + v + ')';
+        g.fillRect(x - 1, y, 2, 2);
+      }
+    }
   }
   /* 0.5秒ごとに時刻を見て、変わったときだけ光・空を直す（光の数は変えない＝シェーダーは作り直さない） */
   function dnApply(force) {
@@ -15662,9 +15995,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           }
         }
     }
-    const cv = D.skyTex.image;
-    dnSky(cv.getContext('2d'), cv.width, cv.height, n);
-    D.skyTex.needsUpdate = true;
+    /* 窓の外の景色は夜の度合いだけで決まるので、変わったときだけ描き直す */
+    if (n !== D.skyN) {
+      D.skyN = n;
+      const cv = D.skyTex.image;
+      dnSky(cv.getContext('2d'), cv.width, cv.height, n);
+      D.skyTex.needsUpdate = true;
+    }
     RM.need = RM.shDirty = true;
     if (R.renderer.shadowMap) R.renderer.shadowMap.needsUpdate = true;
   }
@@ -15798,7 +16135,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     room.add(box(0.012, 0.07, RD * 2, trim, -RW + 0.006, 0.035, 0));
     /* 窓：空のグラデーション、白い枠と中央の縦の框、窓台。左右にリネンのカーテン（腰までの丈） */
     /* 窓の外の景色（Version 191）：空と街並み。時刻で描き直す（dnSky）。窓は景色の画像そのまま光らせ（室内の光は当てない）、夜はガラスに室内が映る */
-    const skyTex = cvTex('sky', 256, 232, (g, W, H) => dnSky(g, W, H, 0));
+    const skyTex = cvTex('sky', 512, 464, (g, W, H) => dnSky(g, W, H, 0));
     const win = new THREE.Mesh(
       new THREE.PlaneGeometry(1.1, 1.0),
       new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveMap: skyTex, emissiveIntensity: DN.winI[0], roughness: 0.06, userData: { env: 0.01 } })
@@ -17403,7 +17740,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       sr = (Math.random() - 0.5) * 0.6;
     const wv = [w[0] + Rm[0] * spin + Rm[1] * sr, w[1] + Rm[3] * spin + Rm[4] * sr, w[2] + Rm[6] * spin + Rm[7] * sr];
     const pb = partBody({ m: it.m || 0.4, half: it.half, cyl: it.cyl, xS: it.xS, mu: it.mu, frag: it.frag || 0 });
-    it.mesh.traverse(m => (m.castShadow = !RM.lowP));
+    /* 透明なガラスは影を落とさない（Version 196） */
+    it.mesh.traverse(m => (m.castShadow = !RM.lowP && !(m.material && m.material.transparent)));
     pb.ref = { it, o };
     pb.pbOk = true;
     pb.ign = b;
@@ -17596,7 +17934,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
             imu = fixOn ? Math.max(GRIP, it.mu) : it.mu * RCAL.itemMu;
           /* 前へ倒れる（背の高い本など。Version 152）：棚の前の縁に立つ物は、前向きの揺れ×重心の高さが重さ×奥行きの半分を超えると
              前の下の角を支点に傾き（1自由度の転がり）、倒れ切る角度を越えたら落下物になる。戻ったときは止まる（後ろへは傾かない） */
-          if (it.tp && !frontDown) {
+          /* 閉じた扉（食器棚のガラス扉）の前の物は扉に支えられて倒れない（Version 196。開くと倒れる） */
+          const held = o.doors && it.door && !it.door.every(open);
+          if (it.tp && held && it.th > 0) {
+            it.th = it.om = 0;
+            it.mesh.rotation.set(0, 0, 0);
+            it.mesh.position.set(it.home.x, it.home.y, it.home.z + (it.s || 0));
+          }
+          if (it.tp && !frontDown && !held) {
             const hh = it.half[1],
               hz = it.half[2],
               atFront = it.home.z + hz + (it.s || 0) > hd - 0.025;
