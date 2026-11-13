@@ -3503,7 +3503,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       tsuBlink = top === 4 && blink;
     }
     /* 津波の波の広がりは「震度｜津波」で津波を選んでいる間だけ（Version 184） */
-    const wvOn = tsuView && wvPaint(t);
+    /* SG の外は、画面に SG の外が見えているときだけ描く（Version 193） */
+    const wvOut =
+        tsuView &&
+        (view.cx - W / (2 * view.s) < SG.lon0 * K ||
+          view.cx + W / (2 * view.s) > (SG.lon0 + SG.w * SG.d) * K ||
+          -(view.cy + H / (2 * view.s)) < SG.lat0 ||
+          -(view.cy - H / (2 * view.s)) > SG.lat0 + SG.h * SG.d),
+      wvOn = tsuView && wvPaint(t, wvOut);
     const paintStatic = () => {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(baseCv, 0, 0);
@@ -3533,7 +3540,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         ctx.drawImage(wc, 0, 0);
         ctx.restore();
       }
-      if (wvOn) {
+      if (wvOn && wvOut && wvAnyO) {
+        ctx.save();
+        ctx.clip(wvClipO(0.5 / (view.s * DPR)), 'evenodd');
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(wvCvO, WVO.lon0 * K, -(WVO.lat0 + WVO.h * WVO.d), WVO.w * WVO.d * K, WVO.h * WVO.d);
+        ctx.restore();
+      }
+      if (wvOn && wvAny) {
         ctx.save();
         ctx.clip(wvClip(), 'evenodd');
         ctx.imageSmoothingEnabled = true;
@@ -3567,7 +3581,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           (warnOn ? warnVer + ',' + nhkLive : '') +
           '|' +
           tsuSig +
-          (wvOn ? '|w' + wvT : '');
+          (wvOn ? '|w' + wvT + (wvOut ? 'o' + wvTO : '') : '');
       const bi = tsuBlink ? 1 : 0;
       if (vk !== mapStView) {
         mapStView = vk;
@@ -5391,6 +5405,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   });
   /* 複数地震のシナリオ（dt＝最初の地震からの秒数） */
   const SLIP_U = { k: 0, x0: 0 };
+  let scenAt = 0,
+    scenSig = '';
+  /* 今の地震の組がシナリオのままなら、その最初の地震の発生時刻（ミリ秒）。違えば0 */
+  const scenNow = () => (scenAt && JSON.stringify(EQS) === scenSig ? scenAt : 0);
   const SCEN = [
     [
       '熊本地震 本震から64分（M7.3＋余震7）',
@@ -5405,7 +5423,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         { lon: 130.8, lat: 32.8, depth: 5, M: 4.9, strike: 50, type: 'crustal', dt: 2350 },
         { lon: 130.9, lat: 32.9, depth: 5, M: 3.9, strike: 50, type: 'crustal', dt: 3132 },
         { lon: 131.45, lat: 33.28, depth: 10, M: 3.6, strike: 80, type: 'crustal', dt: 3841 }
-      ]
+      ],
+      '2016-04-16T01:25:05+09:00' /* 最初の地震の発生時刻（室内の昼・夜に使う） */
     ],
     [
       '南海トラフ 東側→西側（半割れ）',
@@ -5427,7 +5446,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         { lon: 141.66, lat: 37.203, depth: 27, M: 6.1, strike: 200, type: 'inter', dt: 1600 },
         { lon: 141.265, lat: 36.108, depth: 43, M: 7.6, strike: 200, type: 'inter', dt: 1756 },
         { lon: 144.75, lat: 37.913, depth: 11, M: 7.5, strike: 202, type: 'intra', dt: 2366 }
-      ]
+      ],
+      '2011-03-11T14:46:18+09:00' /* 最初の地震の発生時刻（室内の昼・夜に使う） */
     ],
     [
       'ほぼ同時（茨城県南部＋千葉県北西部）',
@@ -5446,7 +5466,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         { lon: 136.658, lat: 37.155, depth: 9, M: 5.7, strike: 47, type: 'crustal', dip: 37, dt: 371 },
         { lon: 136.818, lat: 37.198, depth: 11, M: 6.1, strike: 47, type: 'crustal', dip: 37, dt: 757 },
         { lon: 136.857, lat: 37.262, depth: 14, M: 5.8, strike: 47, type: 'crustal', dip: 37, dt: 3043 }
-      ]
+      ],
+      '2024-01-01T16:06:06+09:00' /* 最初の地震の発生時刻（室内の昼・夜に使う） */
     ],
     [
       '福島県沖 2022（M6.1→2分後にM7.4）',
@@ -5455,12 +5476,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
            走向・傾斜は防災科研の解析の設定（AQUA-CMT 17°・45°） */
         { lon: 141.605, lat: 37.68, depth: 57, M: 6.1, strike: 17, type: 'intra', dip: 45, dt: 0 },
         { lon: 141.622, lat: 37.697, depth: 57, M: 7.4, strike: 17, type: 'intra', dip: 45, dt: 126 }
-      ]
+      ],
+      '2022-03-16T23:34:27+09:00' /* 最初の地震の発生時刻（室内の昼・夜に使う） */
     ]
   ];
   SCEN.forEach(([, list]) => fixRate(list));
   $('pastSum').textContent = PRESETS.length + '件・シナリオ' + SCEN.length + '件';
-  SCEN.forEach(([n, list]) => {
+  SCEN.forEach(([n, list, at]) => {
     const b = document.createElement('button');
     b.textContent = n;
     b.onclick = () => {
@@ -5470,6 +5492,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       list.forEach(p => EQS.push(Object.assign({ dip: null, rup: 'bi', slip: SLIP_U }, p)));
       selQ = 0;
       P = EQS[0];
+      /* 過去の地震のシナリオは、室内の昼・夜を実際の発生時刻に（Version 190）。地震を変えたら今の時刻に戻る */
+      scenAt = at ? Date.parse(at) : 0;
+      scenSig = scenAt ? JSON.stringify(EQS) : '';
       syncCfgUI();
       preview();
     };
@@ -7675,6 +7700,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       endT: Math.min(SIM_MAX, Math.max(...evs.map(e => e.endT))),
       farShown: null,
       startClock: runClock,
+      dnBase: scenNow(),
       lastHeat: -1,
       sites,
       tsunami: null,
@@ -10144,26 +10170,203 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const bs = Int32Array.from(cnt),
       order = new Int32Array(nOk);
     for (let n = 0; n < N; n++) if (ta[n] >= 0) order[cnt[(ta[n] / 60) | 0]++] = n;
-    return { ta, A, order, bs, T: 60 * Math.max(8, Math.min(50, 6 + 0.3 * a)) };
+    return { ta, A, order, bs, T: 60 * Math.max(8, Math.min(50, 6 + 0.3 * a)), O: undefined, mk: () => wvBuildOut(R, SP, src, a, ta) };
   }
-  const wvCv = document.createElement('canvas');
+  /* ---- 格子（SG）の外の波の広がり（Version 193）----
+     以前は海の格子（東経119〜157度・北緯19〜51度）の外へ出た波が消え、格子の縁で角ばって切れていた。
+     地図で見られる範囲（手で動かせる中心は日本から2000km以内、いちばん縮小すると経度40度の幅）まで、0.25度の粗い格子で続きを描く。
+     日本の陸はすべて SG の中なので、外側はすべて外洋として扱う（地図に描かれていない大陸の上も、SG の中と同じく海として扱う）。
+     到達時刻は SG の中の値（格子の外に重なる粗い格子の、いちばん早く届く細かい格子）と格子の外の波源から、16方向の最短時間で広げる。
+     振幅は SG の中と同じ式（波源の高さ×道のりによる減衰）を道のりを延ばして続ける */
+  const WVO = { lon0: 89, lat0: -13, d: 0.25, w: 400, h: 360 };
+  /* 粗い格子のうち SG と重なる範囲（列・行。SG の縁は0.25度の格子の境目にそろう） */
+  const WVO_C0 = (SG.lon0 - WVO.lon0) / WVO.d,
+    WVO_C1 = (SG.lon0 + SG.w * SG.d - WVO.lon0) / WVO.d,
+    WVO_R0 = (SG.lat0 - WVO.lat0) / WVO.d,
+    WVO_R1 = (SG.lat0 + SG.h * SG.d - WVO.lat0) / WVO.d;
+  function wvBuildOut(R, SP, src, a, ta) {
+    const w = WVO.w,
+      h = WVO.h,
+      N = w * h,
+      d = WVO.d,
+      T = new Float32Array(N).fill(1e9),
+      B = new Float32Array(N),
+      D = new Float32Array(N),
+      sp = new Float32Array(N),
+      inSG = (r, c) => c >= WVO_C0 && c < WVO_C1 && r >= WVO_R0 && r < WVO_R1;
+    /* 各格子の波の速さ（m/s）。表示用の水深（wvDepth）、遠地の地震は外洋4500m以上（SG の中と同じ） */
+    for (let r = 0; r < h; r++) {
+      const lat = WVO.lat0 + (r + 0.5) * d;
+      for (let c = 0; c < w; c++) {
+        const lon = WVO.lon0 + (c + 0.5) * d;
+        /* 海溝の線（WV_TRENCH）がある緯度は SG の中と同じ深さ、それより南北の外洋は一様に5000m（段差で波の縞が折れないように） */
+        let hm = lat >= 19 && lat <= 48 ? wvDepth(lon, lat) : 5000;
+        if (R.farK && hm > 3000) hm = Math.max(4500, hm);
+        sp[r * w + c] = Math.sqrt(9.8 * hm);
+      }
+    }
+    /* SG の中の値を、重なる粗い格子へ：細かい格子の到達時刻＋粗い格子の中心までの時間の、いちばん早いもの
+       （格子の境目で波の縞がずれないように） */
+    const sw = SG.w;
+    for (let n = 0; n < ta.length; n++) {
+      if (ta[n] < 0) continue;
+      const rr = (n / sw) | 0,
+        lon = SG.lon0 + (n - rr * sw + 0.5) * SG.d,
+        lat = SG.lat0 + (rr + 0.5) * SG.d,
+        c = Math.floor((lon - WVO.lon0) / d),
+        r = Math.floor((lat - WVO.lat0) / d),
+        m = r * w + c,
+        km = Math.hypot((WVO.lon0 + (c + 0.5) * d - lon) * 111.32 * Math.cos(lat * D2R), (WVO.lat0 + (r + 0.5) * d - lat) * 110.57),
+        t = ta[n] + (km * 1000) / sp[m];
+      if (t < T[m]) {
+        T[m] = t;
+        B[m] = src[SP.lab[n]][2] * Math.exp(-pathLoss(SP, n));
+        D[m] = SP.dist[n] + km;
+      }
+    }
+    /* SG の外の波源（遠地の地震）：粗い格子の中なら、その格子から。粗い格子の外なら、粗い格子の縁へ大円の距離で届かせる */
+    const step = Math.max(1, Math.ceil(src.length / 40)),
+      edge = [];
+    for (let c = 0; c < w; c++) edge.push(c, (h - 1) * w + c);
+    for (let r = 1; r < h - 1; r++) edge.push(r * w, r * w + w - 1);
+    for (let i = 0; i < src.length; i += step) {
+      const q = src[i],
+        c = Math.floor((q[0] - WVO.lon0) / d),
+        r = Math.floor((q[1] - WVO.lat0) / d);
+      if (c >= 0 && r >= 0 && c < w && r < h) {
+        if (inSG(r, c)) continue;
+        const m = r * w + c;
+        if (0 < T[m]) {
+          T[m] = 0;
+          B[m] = q[2];
+          D[m] = 0;
+        }
+        continue;
+      }
+      for (const m of edge) {
+        const rr = (m / w) | 0,
+          g = gcKm(q[0], q[1], WVO.lon0 + (m - rr * w + 0.5) * d, WVO.lat0 + (rr + 0.5) * d),
+          t = (g * 1000) / Math.sqrt(9.8 * 4500);
+        if (t < T[m]) {
+          T[m] = t;
+          B[m] = q[2];
+          D[m] = g;
+        }
+      }
+    }
+    /* 最短時間で広げる（二分ヒープ）。SG と重なる格子へは入らない（そこは細かい格子が描く） */
+    const hp = new Int32Array(N * 8),
+      hk = new Float32Array(N * 8),
+      done = new Uint8Array(N);
+    let hn = 0;
+    const push = (m, k) => {
+      let i = hn++;
+      while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (hk[p] <= k) break;
+        hp[i] = hp[p];
+        hk[i] = hk[p];
+        i = p;
+      }
+      hp[i] = m;
+      hk[i] = k;
+    };
+    const pop = () => {
+      const m = hp[0],
+        lm = hp[--hn],
+        lk = hk[hn];
+      let i = 0;
+      for (;;) {
+        let c = 2 * i + 1;
+        if (c >= hn) break;
+        if (c + 1 < hn && hk[c + 1] < hk[c]) c++;
+        if (hk[c] >= lk) break;
+        hp[i] = hp[c];
+        hk[i] = hk[c];
+        i = c;
+      }
+      hp[i] = lm;
+      hk[i] = lk;
+      return m;
+    };
+    for (let m = 0; m < N; m++) if (T[m] < 1e9) push(m, T[m]);
+    const NB16 = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1], [1, 2], [1, -2], [-1, 2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1]],
+      dy = d * 110.57;
+    while (hn > 0 && hn < hp.length - 16) {
+      const k = hk[0],
+        m = pop();
+      if (done[m] || k > T[m]) continue;
+      done[m] = 1;
+      if (T[m] > SIM_MAX) continue;
+      const r = (m / w) | 0,
+        c = m - r * w;
+      for (const [dr, dc] of NB16) {
+        const R2 = r + dr,
+          C2 = c + dc;
+        if (R2 < 0 || C2 < 0 || R2 >= h || C2 >= w || inSG(R2, C2)) continue;
+        const m2 = R2 * w + C2;
+        if (done[m2]) continue;
+        const km = Math.hypot(dc * d * 111.32 * Math.cos((WVO.lat0 + (r + dr / 2 + 0.5) * d) * D2R), dr * dy),
+          t2 = T[m] + (km * 2000) / (sp[m] + sp[m2]);
+        if (t2 < T[m2]) {
+          T[m2] = t2;
+          B[m2] = B[m];
+          D[m2] = D[m] + km;
+          push(m2, t2);
+        }
+      }
+    }
+    /* 振幅（SG の中の式と同じ減衰）と、到達時刻の順の並び */
+    const NBk = Math.ceil(SIM_MAX / 60) + 1,
+      cnt = new Int32Array(NBk + 1),
+      A = new Float32Array(N),
+      ta2 = new Float32Array(N).fill(-1);
+    let nOk = 0;
+    for (let m = 0; m < N; m++) {
+      if (!(T[m] <= SIM_MAX)) continue;
+      const v = (B[m] * Math.sqrt(a / (a + D[m]))) / (1 + D[m] / 800);
+      if (Math.abs(v) < 0.01) continue;
+      ta2[m] = T[m];
+      A[m] = Math.max(-20, Math.min(20, v));
+      cnt[((T[m] / 60) | 0) + 1]++;
+      nOk++;
+    }
+    for (let b = 1; b <= NBk; b++) cnt[b] += cnt[b - 1];
+    const bs = Int32Array.from(cnt),
+      order = new Int32Array(nOk);
+    for (let m = 0; m < N; m++) if (ta2[m] >= 0) order[cnt[(ta2[m] / 60) | 0]++] = m;
+    return nOk ? { ta: ta2, A, order, bs } : null;
+  }
+  const wvCv = document.createElement('canvas'),
+    wvCvO = document.createElement('canvas');
   let wvImg = null,
     wvEta = null,
+    wvImgO = null,
+    wvEtaO = null,
     wvSim = null,
     wvT = NaN,
-    wvAny = false;
+    wvTO = NaN,
+    wvAny = false,
+    wvAnyO = false;
   /* 描き直しの刻み（シミュレーター内の秒）：等倍で2秒、速いほど粗く（1秒間に約10回まで） */
   const wvQ = t => {
     const dq = Math.max(2, speed * 0.1);
     return Math.floor(t / dq) * dq;
   };
-  function wvPaint(t) {
+  /* out：SG の外も描くか（画面に SG の外が見えているときだけ。見えない間は計算しない） */
+  function wvPaint(t, out) {
     const tq = wvQ(t);
-    if (sim === wvSim && tq === wvT) return wvAny;
+    if (!out) wvTO = NaN;
+    else if (!(sim === wvSim && tq === wvTO)) wvPaintOut(tq);
+    wvPaintIn(tq);
+    return wvAny || (out && wvAnyO);
+  }
+  function wvPaintIn(tq) {
+    if (sim === wvSim && tq === wvT) return;
     wvSim = sim;
     wvT = tq;
     wvAny = false;
-    if (!seaG) return false;
+    if (!seaG) return;
     const w = SG.w,
       h = SG.h,
       N = w * h;
@@ -10192,9 +10395,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         wvAny = true;
       }
     }
-    if (!wvAny) return false;
+    if (!wvAny) return;
     for (let k = 0; k < wvFill.length; k += 2) if (!eta[wvFill[k]]) eta[wvFill[k]] = eta[wvFill[k + 1]];
-    const d = wvImg.data,
+    wvColor(eta, wvImg, w, h);
+    wvCv.getContext('2d').putImageData(wvImg, 0, 0);
+  }
+  /* 海面の上下 eta を色の画像（w×h、北が上）に書く。SG の中と外で同じ色 */
+  function wvColor(eta, img, w, h) {
+    const d = img.data,
       L0 = Math.log10(0.02),
       LS = 1 / (Math.log10(8) - L0);
     for (let r = 0; r < h; r++) {
@@ -10219,8 +10427,53 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         d[o + 3] = 255 * (0.3 + 0.6 * s);
       }
     }
-    wvCv.getContext('2d').putImageData(wvImg, 0, 0);
-    return true;
+  }
+  /* SG の外（粗い格子）の波。wvAnyO：何か描いたか */
+  function wvPaintOut(tq) {
+    wvTO = tq;
+    wvAnyO = false;
+    if (!seaG) return;
+    const w = WVO.w,
+      h = WVO.h;
+    if (!wvImgO) {
+      wvCvO.width = w;
+      wvCvO.height = h;
+      wvImgO = wvCvO.getContext('2d').createImageData(w, h);
+      wvEtaO = new Float32Array(w * h);
+    }
+    const eta = wvEtaO;
+    eta.fill(0);
+    for (const e of sim.evs) {
+      if (!e.tsunami || !e.tsunami.gen) continue;
+      if (e.tsWv === undefined) e.tsWv = wvBuild(e);
+      const W = e.tsWv,
+        p0 = tq - e.t0;
+      if (!W || p0 <= 0) continue;
+      /* SG の外の到達時刻は、SG の外が初めて画面に見えたときに1回だけ求める */
+      if (W.O === undefined) W.O = W.mk();
+      if (!W.O) continue;
+      const { ta, A, order, bs } = W.O,
+        T = W.T,
+        iEnd = bs[Math.min(bs.length - 1, ((p0 / 60) | 0) + 1)];
+      for (let i = 0; i < iEnd; i++) {
+        const n = order[i],
+          p = (p0 - ta[n]) / T;
+        if (p < 0 || p > 8) continue;
+        eta[n] += A[n] * Math.cos(2 * Math.PI * p) * Math.exp(-p / 2) * Math.min(1, 0.35 + p * 20);
+        wvAnyO = true;
+      }
+    }
+    if (!wvAnyO) return;
+    wvColor(eta, wvImgO, w, h);
+    wvCvO.getContext('2d').putImageData(wvImgO, 0, 0);
+  }
+  /* SG の外だけに描くための切り抜き（粗い格子の範囲から SG の範囲を抜く） */
+  /* e：SG の側へ少しだけ重ねる幅（地図の単位。境目の線の隙間を埋める。画面で約1px） */
+  function wvClipO(e) {
+    const p = new Path2D();
+    p.rect(WVO.lon0 * K, -(WVO.lat0 + WVO.h * WVO.d), WVO.w * WVO.d * K, WVO.h * WVO.d);
+    p.rect(SG.lon0 * K + e, -(SG.lat0 + SG.h * SG.d) + e, SG.w * SG.d * K - 2 * e, SG.h * SG.d - 2 * e);
+    return p;
   }
   /* 海だけに描くための切り抜き（格子の範囲から地図の陸を抜く） */
   function wvClip() {
@@ -12582,27 +12835,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     tvDrawTelop(c);
     RM.tvTex.needsUpdate = true;
   }
-  /* テレビが倒れた・台から離れたか（テレビ台の座標で見たテレビの重心）。リセットまで消したまま（Version 113） */
-  function tvRel(R3) {
-    const t = R3.objs.tv && R3.objs.tv.b,
-      s = R3.objs.stand && R3.objs.stand.b;
-    if (!t || !s) return null;
-    const M = s.R,
-      dx = t.p[0] - s.p[0],
-      dy = t.p[1] - s.p[1],
-      dz = t.p[2] - s.p[2];
-    return [M[0] * dx + M[3] * dy + M[6] * dz, M[1] * dx + M[4] * dy + M[7] * dz, M[2] * dx + M[5] * dy + M[8] * dz];
-  }
-  function tvFallen(R3) {
-    const t = R3.objs.tv && R3.objs.tv.b,
-      s = R3.objs.stand && R3.objs.stand.f;
-    if (!t || !s || !RM.tvRest) return false;
-    /* 完全に倒れた：画面の上向きが水平から約17度以内（傾き73度以上） */
-    if (t.R[4] < 0.3) return true;
-    const r = tvRel(R3);
-    /* 台から離れた：重心が台の天板の外、または天板から12cm以上下がった */
-    return Math.abs(r[0]) > s.w / 2 || Math.abs(r[2]) > s.d / 2 || r[1] < RM.tvRest[1] - 0.12;
-  }
   /* ---------- 机の上のスマホ（Version 115）：この地点が警報の対象になったら、緊急地震速報の通知（ダイアログ）を画面に出す ---------- */
   function buildPhone(f) {
     const g = new THREE.Group(),
@@ -12877,8 +13109,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     c.textAlign = 'left';
     RM.phTex.needsUpdate = true;
   }
-  /* 倒れた・台から離れたら画面を消す（リセットまで点けない）。点いていたら「ブチブチ」と途切れてから消える（実時間0.7秒）。揺れが終わった後に倒れても判定する */
-  const TV_FX_MS = 700;
+  /* テレビの電源が断たれる演出（Version 187）：プラグが抜けたときだけ。点いていれば、明るくなって上下から中央の横線へ縮み、横線が左右から縮んで消える（実時間0.23秒）。倒れただけでは消えない */
+  const TV_FX_MS = 230;
   /* テレビの画面は「内容が変わったとき」だけ描き直す（以前は0.5秒ごとに描いて画像を送り直していた）。カメラの視野の外にあるときは描かず、視野に入ったら描く（Version 118） */
   function tvKey() {
     const tk = tvTsuKey();
@@ -12923,18 +13155,23 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     tvDraw();
     RM.need = true;
   }
-  function tvFx() {
-    if (!RM.tvDead && tvFallen(RM.R3)) {
-      RM.tvDead = true;
-      if (RM.tvOn && RM.tvCv) {
-        const c = RM.tvSnap || (RM.tvSnap = document.createElement('canvas'));
-        c.width = 320;
-        c.height = 180;
-        c.getContext('2d').drawImage(RM.tvCv, 0, 0);
-        RM.tvFxT = performance.now();
-        RM.tvFxSeed = (Math.random() * 1e6) | 0;
-      }
+  /* プラグが抜けた：リセットまで点けない。点いていれば消える演出を始める */
+  function tvKill() {
+    if (RM.tvDead) return;
+    RM.tvDead = true;
+    if (RM.tvOn && RM.tvCv) {
+      const c = RM.tvSnap || (RM.tvSnap = document.createElement('canvas'));
+      c.width = 320;
+      c.height = 180;
+      c.getContext('2d').drawImage(RM.tvCv, 0, 0);
+      RM.tvFxT = performance.now();
+    } else {
+      RM.tvFxT = 0;
+      tvSet(false);
     }
+    RM.need = true;
+  }
+  function tvFx() {
     if (!RM.tvFxT) return;
     const el = performance.now() - RM.tvFxT;
     if (el >= TV_FX_MS || el < 0) {
@@ -12950,69 +13187,21 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       S = RM.tvSnap,
       W = 320,
       H = 180;
-    /* 45ms ごとに状態を変える（同じ区間は同じ乱数） */
-    const slot = Math.floor(el / 45),
-      rnd = rng(RM.tvFxSeed + slot * 131);
-    rnd();
-    rnd();
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'source-over';
-    if (el < 470) {
-      /* ブチブチ：真っ黒・乱れた映像・白い閃光を不規則に繰り返す（後ほど黒が多い） */
-      const r = rnd(),
-        pBlack = 0.3 + (el / 470) * 0.35;
-      c.fillStyle = '#000';
-      c.fillRect(0, 0, W, H);
-      if (r < pBlack) {
-        /* 黒の中に残る細い横線 */
-        if (rnd() < 0.5) {
-          c.fillStyle = 'rgba(255,255,255,' + (0.15 + rnd() * 0.3) + ')';
-          c.fillRect(0, (rnd() * H) | 0, W, 1 + ((rnd() * 2) | 0));
-        }
-      } else if (r > 0.93) {
-        c.fillStyle = 'rgba(235,240,255,0.9)';
-        c.fillRect(0, 0, W, H);
-      } else {
-        /* 横に裂けてずれた映像＋色ずれ＋砂嵐の帯 */
-        c.globalAlpha = 0.55 + rnd() * 0.45;
-        let y = 0;
-        while (y < H) {
-          const h = 6 + ((rnd() * 34) | 0),
-            dx = rnd() < 0.45 ? ((rnd() - 0.5) * 70) | 0 : 0;
-          c.drawImage(S, 0, y, W, h, dx, y + (rnd() < 0.15 ? ((rnd() - 0.5) * 8) | 0 : 0), W, h);
-          y += h;
-        }
-        c.globalCompositeOperation = 'lighter';
-        c.globalAlpha = 0.25;
-        c.drawImage(S, 3 + ((rnd() * 4) | 0), 0);
-        c.globalCompositeOperation = 'source-over';
-        c.globalAlpha = 1;
-        const nb = 1 + ((rnd() * 3) | 0);
-        for (let k = 0; k < nb; k++) {
-          const by = (rnd() * H) | 0,
-            bh = 2 + ((rnd() * 10) | 0);
-          for (let x = 0; x < W; x += 4) {
-            const v = (rnd() * 255) | 0;
-            c.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
-            c.fillRect(x, by, 4, bh);
-          }
-        }
-      }
-    } else if (el < 620) {
-      /* 最後に明るくなって上下から中央の横線へ縮む */
-      const k = (el - 470) / 150,
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, W, H);
+    if (el < 150) {
+      /* 明るくなって上下から中央の横線へ縮む */
+      const k = el / 150,
         h = Math.max(2, H * (1 - k) * (1 - k));
-      c.fillStyle = '#000';
-      c.fillRect(0, 0, W, H);
       c.drawImage(S, 0, (H - h) / 2, W, h);
       c.fillStyle = 'rgba(255,255,255,' + (0.35 + 0.5 * k) + ')';
       c.fillRect(0, (H - h) / 2, W, h);
     } else {
       /* 白い横線が左右から縮んで消える */
-      const k = (el - 620) / (TV_FX_MS - 620),
+      const k = (el - 150) / (TV_FX_MS - 150),
         w = W * (1 - k);
-      c.fillStyle = '#000';
-      c.fillRect(0, 0, W, H);
       c.fillStyle = 'rgba(255,255,255,' + (1 - k * 0.7) + ')';
       c.fillRect((W - w) / 2, H / 2 - 1, w, 2);
     }
@@ -13130,10 +13319,19 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (!o || o.lamp.on === on) return;
     const L = o.lamp;
     L.on = on;
-    L.pl.intensity = on ? RX.lamp : 0;
-    L.outM.emissiveIntensity = on ? 0.32 : 0;
-    L.inM.emissiveIntensity = on ? 0.95 : 0.04;
-    L.bm.color.setRGB(on ? 1 : 0.25, on ? 0.88 : 0.24, on ? 0.67 : 0.22);
+    lampApply();
+  }
+  /* 点灯の明るさ：点いていても昼は消している（Version 191。夕方から点ける） */
+  function lampApply() {
+    const o = RM.flamp;
+    if (!o) return;
+    const L = o.lamp,
+      D = RM.R3 && RM.R3.dn,
+      k = L.on ? (D && D.lit >= 0 ? D.lit : 1) : 0;
+    L.pl.intensity = DN.lamp * k;
+    L.outM.emissiveIntensity = 0.32 * k;
+    L.inM.emissiveIntensity = 0.04 + 0.91 * k;
+    L.bm.color.setRGB(0.25 + 0.75 * k, 0.24 + 0.64 * k, 0.22 + 0.45 * k);
     RM.need = true;
   }
   function lampFx() {
@@ -14285,10 +14483,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       /* プラグが抜けた：抜ける勢いで少し飛ぶ */
       const n = C.nodes[CAB.N];
       n.q[0] = n.p[0] - 0.4 * dt * 2;
-      RM.tvDead = true;
-      RM.tvFxT = 0;
-      tvSet(false);
-      RM.need = true;
+      tvKill();
     }
   }
   /* 糸の計算（Verlet）。端：テレビ側は固定、コンセント側は差さっていれば固定・抜けていればプラグの重さ */
@@ -14978,6 +15173,197 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function batchSync() {
     for (const o of RM.R3.list) if (o.batches) for (const B of o.batches) batchWrite(B, false);
   }
+  /* 床に落ちた物・破片のまとめ描き（Version 192：軽量化）：材質と影の設定が同じ物を1つのメッシュにまとめ、動いた物の頂点だけ書き直す。
+     元のメッシュは描かない層（PB_LAYER）へ移すだけで、位置・向き・表示の有無は今までどおり持つ（見た目は同じ。描く回数が減る） */
+  const PB_LAYER = 30;
+  function pbAdd(b) {
+    const R = RM.R3,
+      m0 = b.mesh;
+    if (!m0 || !m0.isMesh || m0.parent !== R.room || Array.isArray(m0.material) || m0.material.transparent || m0.renderOrder) return;
+    if (Math.abs(m0.scale.x - 1) + Math.abs(m0.scale.y - 1) + Math.abs(m0.scale.z - 1) > 1e-9) return;
+    let ok = true;
+    const subs = [];
+    m0.traverse(m => {
+      if (m === m0) {
+        subs.push(m);
+        return;
+      }
+      if (!m.isMesh || m.material !== m0.material || m.parent !== m0 || m.children.length || m.castShadow !== m0.castShadow || m.receiveShadow !== m0.receiveShadow || !m.visible || m.renderOrder) ok = false;
+      else subs.push(m);
+    });
+    if (!ok) return;
+    for (const m of subs) {
+      const at = m.geometry.attributes;
+      if (!at.position || !at.normal || !at.uv || Object.keys(at).length !== 3 || Object.keys(m.geometry.morphAttributes).length) return;
+    }
+    const gs = subs.map(m => {
+        let g = m.geometry.clone();
+        if (m !== m0) {
+          m.updateMatrix();
+          g.applyMatrix4(m.matrix);
+        }
+        if (g.index) g = g.toNonIndexed();
+        return g;
+      }),
+      nn = gs.reduce((a, g) => a + g.attributes.position.count, 0),
+      bp = new Float32Array(nn * 3),
+      bn = new Float32Array(nn * 3),
+      bu = new Float32Array(nn * 2);
+    let q = 0;
+    for (const g of gs) {
+      bp.set(g.attributes.position.array, q * 3);
+      bn.set(g.attributes.normal.array, q * 3);
+      bu.set(g.attributes.uv.array, q * 2);
+      q += g.attributes.position.count;
+      g.dispose();
+    }
+    let rad = 0;
+    for (let i = 0; i < bp.length; i += 3) rad = Math.max(rad, Math.hypot(bp[i], bp[i + 1], bp[i + 2]));
+    const key = m0.material.uuid + (m0.castShadow ? 'c' : '') + (m0.receiveShadow ? 'r' : '');
+    let G = R.pbs.find(x => x.key === key);
+    if (!G) {
+      G = { key, mat: m0.material, cast: m0.castShadow, recv: m0.receiveShadow, ents: [], cap: 0, mesh: null, P: null, N: null, U: null, sig: '' };
+      R.pbs.push(G);
+    }
+    G.ents.push({ b, mesh: m0, bp, bn, bu, rad, k: new Float64Array(7).fill(NaN), off: 0 });
+    m0.traverse(m => m.layers.set(PB_LAYER));
+    G.sig = null;
+  }
+  function pbWrite(G) {
+    const R = RM.R3;
+    let nv = 0,
+      sig = '';
+    for (const e of G.ents) {
+      const on = !e.b.dead && e.mesh.visible;
+      sig += on ? '1' : '0';
+      if (on) nv += e.bp.length / 3;
+    }
+    const pack = sig !== G.sig;
+    if (nv > G.cap) {
+      /* 頂点の入れ物が足りなければ作り直す（余裕を持たせて、作り直しを減らす） */
+      const BG = Object.getPrototypeOf(THREE.BoxGeometry.prototype).constructor,
+        BA = new THREE.BoxGeometry(1, 1, 1).attributes.position.constructor,
+        cap = Math.max(nv * 2, 1536);
+      if (G.mesh) {
+        R.room.remove(G.mesh);
+        G.mesh.geometry.dispose();
+      }
+      G.cap = cap;
+      const geo = new BG();
+      geo.setAttribute('position', new BA(new Float32Array(cap * 3), 3));
+      geo.setAttribute('normal', new BA(new Float32Array(cap * 3), 3));
+      geo.setAttribute('uv', new BA(new Float32Array(cap * 2), 2));
+      /* Float32BufferAttribute は配列を写すので、書き込み先は属性の配列にする */
+      G.P = geo.attributes.position.array;
+      G.N = geo.attributes.normal.array;
+      G.U = geo.attributes.uv.array;
+      const mesh = new THREE.Mesh(geo, G.mat);
+      mesh.castShadow = G.cast;
+      mesh.receiveShadow = G.recv;
+      R.room.add(mesh);
+      G.mesh = mesh;
+      for (const e of G.ents) e.k[0] = NaN;
+    }
+    if (pack) G.sig = sig;
+    const { P, N, U } = G;
+    let o = 0,
+      ch = false,
+      x0 = 1e9,
+      y0 = 1e9,
+      z0 = 1e9,
+      x1 = -1e9,
+      y1 = -1e9,
+      z1 = -1e9;
+    for (const e of G.ents) {
+      if (e.b.dead || !e.mesh.visible) continue;
+      const m = e.mesh,
+        p = m.position,
+        r = e.rad,
+        qq = m.quaternion,
+        k = e.k,
+        n = e.bp.length;
+      /* 描く範囲（視野の外なら描かない判定に使う） */
+      if (p.x - r < x0) x0 = p.x - r;
+      if (p.y - r < y0) y0 = p.y - r;
+      if (p.z - r < z0) z0 = p.z - r;
+      if (p.x + r > x1) x1 = p.x + r;
+      if (p.y + r > y1) y1 = p.y + r;
+      if (p.z + r > z1) z1 = p.z + r;
+      if (pack || e.off !== o) {
+        e.off = o;
+        U.set(e.bu, (o / 3) * 2);
+        k[0] = NaN;
+      }
+      if (k[0] === p.x && k[1] === p.y && k[2] === p.z && k[3] === qq.x && k[4] === qq.y && k[5] === qq.z && k[6] === qq.w) {
+        o += n;
+        continue;
+      }
+      k[0] = p.x;
+      k[1] = p.y;
+      k[2] = p.z;
+      k[3] = qq.x;
+      k[4] = qq.y;
+      k[5] = qq.z;
+      k[6] = qq.w;
+      ch = true;
+      m.updateMatrix();
+      const E = m.matrix.elements,
+        bp = e.bp,
+        bn = e.bn;
+      for (let i = 0; i < n; i += 3) {
+        const x = bp[i],
+          y = bp[i + 1],
+          z = bp[i + 2],
+          a = bn[i],
+          b = bn[i + 1],
+          c = bn[i + 2];
+        P[o + i] = E[0] * x + E[4] * y + E[8] * z + E[12];
+        P[o + i + 1] = E[1] * x + E[5] * y + E[9] * z + E[13];
+        P[o + i + 2] = E[2] * x + E[6] * y + E[10] * z + E[14];
+        N[o + i] = E[0] * a + E[4] * b + E[8] * c;
+        N[o + i + 1] = E[1] * a + E[5] * b + E[9] * c;
+        N[o + i + 2] = E[2] * a + E[6] * b + E[10] * c;
+      }
+      o += n;
+    }
+    const g = G.mesh.geometry;
+    if (pack) {
+      g.setDrawRange(0, o / 3);
+      g.attributes.uv.needsUpdate = true;
+      G.mesh.visible = o > 0;
+    }
+    if (o > 0 && (ch || pack)) {
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      const S = g.boundingSphere;
+      S.center.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      S.radius = Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2;
+    }
+    if (ch || pack) {
+      g.attributes.position.needsUpdate = true;
+      g.attributes.normal.needsUpdate = true;
+    }
+  }
+  function pbSync() {
+    const R = RM.R3;
+    for (const b of R.parts)
+      if (!b.pbT) {
+        b.pbT = true;
+        if (b.pbOk && !b.dead) pbAdd(b);
+      }
+    for (const G of R.pbs) pbWrite(G);
+  }
+  /* 部屋を初期化するとき：まとめたメッシュを消し、元のメッシュを描く層へ戻す */
+  function pbClear() {
+    const R = RM.R3;
+    for (const G of R.pbs) {
+      for (const e of G.ents) e.mesh.traverse(m => m.layers.set(0));
+      if (G.mesh) {
+        R.room.remove(G.mesh);
+        G.mesh.geometry.dispose();
+      }
+    }
+    R.pbs = [];
+  }
   /* 隅の陰の帯：四角形ごとに [隅側の2点, 外側の2点]。v＝0 が隅（濃い）、1 が外側（透明） */
   function aoStrips() {
     const W0 = 0.32,
@@ -15049,6 +15435,218 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   /* 照明の強さ（Version 135。sRGB出力に合わせて調整） */
   const RX = { exp: 0.8, hemi: 0.38, sun: 1.35, pend: 0.5, sx: 4.2, sz: 2.2, lamp: 1.25 };
+  /* ===== 室内の昼・夜（Version 189。Version 191 でライティングを作り直し） =====
+     時刻（地震の進行中はシミュレーター内の時計、それ以外は今の時刻。過去の地震のシナリオは実際の発生時刻から。Version 190）と
+     揺れを見る地点の緯度・経度から太陽の高さ・向きを求める。部屋の窓は南向きとし（窓の壁＝−x が南、+z が東）、
+     日の光は窓からだけ入る（見えない天井・壁で影を作る）。朝夕は低く暖かい色、昼は白い。部屋の中は空の光（窓からの光と周りの照り返し）で照らす。
+     夕方からは天井の照明とフロアライトを点け（昼は消す）、窓の外は街の灯り、目が慣れるように少し明るめに補正する。
+     PC は照明でも家具の影を出す（照明を点けている間だけ。スマホは重いので出さない） */
+  const DN = {
+    sunI: 4.2, /* 直射日光（高い太陽） */
+    moonI: 0.06,
+    hemi: [1.05, 0.2], /* 周りからの光：昼・夜 */
+    winL: 0.7, /* 窓からの空の光（昼） */
+    pend: 2.2, /* 天井の照明（点灯時） */
+    lamp: 1.5, /* フロアライト（点灯時） */
+    env: 0.35, /* 夜の映り込みの倍率（明るい窓の映り込みを抑える） */
+    winI: [1.15, 0.85], /* 窓の外の明るさ：昼・夜 */
+    winEnv: 3, /* 夜の窓ガラスへの室内の映り込み */
+    exp: 0.28, /* 夜の明るさの補正（目が慣れる分） */
+    hemiS: [0xfbf6ee, 0xa89880],
+    hemiG: [0x8a7660, 0x2a2622], /* 下からの光＝床の照り返し（木の色） */
+    sky: [
+      ['#5f93cc', '#a9cbe9', '#dbe8f2'],
+      ['#3d4f80', '#b9857a', '#f2ae73'],
+      ['#03060f', '#0a1328', '#16223a']
+    ]
+  };
+  function dnClock() {
+    if (sim && sim.dnBase) return sim.dnBase + sim.t * 1000;
+    if (sim && sim.running && sim.startClock) return sim.startClock + sim.t * 1000;
+    return scenNow() || Date.now();
+  }
+  /* 太陽：日の出・日の入り（その日の時刻・時）と、高さ alt（度）・向き A（南から西回り、ラジアン）。大気差込み −0.833度、均時差は近似式 */
+  function sunPos(ms, lon, lat) {
+    const d = new Date(ms),
+      doy = (Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(d.getFullYear(), 0, 0)) / 864e5,
+      B = (2 * Math.PI * (doy - 81)) / 364,
+      eqt = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B),
+      dec = ((23.44 * Math.PI) / 180) * Math.sin((2 * Math.PI * (doy - 81)) / 365),
+      phi = (lat * Math.PI) / 180,
+      ch = (Math.sin((-0.833 * Math.PI) / 180) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec)),
+      H0 = (Math.acos(Math.max(-1, Math.min(1, ch))) * 180) / Math.PI / 15,
+      /* 南中時刻：端末の時刻帯（日本なら UTC+9） */
+      noon = 12 - d.getTimezoneOffset() / 60 - lon / 15 - eqt / 60,
+      h = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600,
+      Hr = ((h - noon) * 15 * Math.PI) / 180,
+      alt = (Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(Hr)) * 180) / Math.PI,
+      A = Math.atan2(Math.sin(Hr), Math.cos(Hr) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi));
+    return { r: noon - H0, s: noon + H0, h, alt, A };
+  }
+  const smooth01 = (a, b, x) => {
+    const u = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return u * u * (3 - 2 * u);
+  };
+  function dnSite() {
+    return [SITE && isFinite(SITE.lon) ? SITE.lon : 139.7, SITE && isFinite(SITE.lat) ? SITE.lat : 35.7];
+  }
+  /* 夜の度合い 0（昼）〜1（夜）。日の出・日の入りの前後約20分で移り変わる */
+  function dnNight(ms) {
+    const [lon, lat] = dnSite(),
+      p = sunPos(ms, lon, lat);
+    return 1 - smooth01(p.r - 0.35, p.r + 0.35, p.h) * (1 - smooth01(p.s - 0.35, p.s + 0.35, p.h));
+  }
+  const DN_C = [];
+  function dnCol(i, hx, k) {
+    const a = DN_C[i] || (DN_C[i] = [new THREE.Color(), new THREE.Color()]);
+    a[0].setHex(hx[0]);
+    a[1].setHex(hx[1]);
+    return a[0].lerp(a[1], k).convertSRGBToLinear();
+  }
+  function dnMix(c0, c1, k) {
+    const p = x => [1, 3, 5].map(j => parseInt(x.substr(j, 2), 16));
+    const a = p(c0),
+      b = p(c1);
+    return 'rgb(' + a.map((v, j) => Math.round(v + (b[j] - v) * k)).join(',') + ')';
+  }
+  /* 窓の外の街並み（決まった乱数で作る）：奥の列と手前の列のビル、窓の灯り */
+  let DN_CITY = null;
+  function dnCity(W, H) {
+    if (DN_CITY) return DN_CITY;
+    const rnd = rng(20261113),
+      rows = [];
+    for (const [base, hMin, hMax, wMin, wMax] of [
+      [0.62, 0.1, 0.3, 14, 34],
+      [0.74, 0.08, 0.36, 20, 48]
+    ]) {
+      const bl = [];
+      let x = -10;
+      while (x < W + 10) {
+        const w = wMin + rnd() * (wMax - wMin),
+          top = H * (base - (hMin + rnd() * (hMax - hMin))),
+          lights = [];
+        for (let yy = top + 5; yy < H * base + H * 0.3; yy += 7)
+          for (let xx = x + 3; xx < x + w - 4; xx += 6) if (rnd() < 0.42) lights.push([xx, yy, 0.55 + rnd() * 0.45, rnd() < 0.25]);
+        bl.push({ x, w, top, lights });
+        x += w + rnd() * 6;
+      }
+      rows.push(bl);
+    }
+    DN_CITY = rows;
+    return rows;
+  }
+  function dnSky(g, W, H, n) {
+    const S = DN.sky,
+      k = n < 0.5 ? n * 2 : (n - 0.5) * 2,
+      a = n < 0.5 ? S[0] : S[1],
+      b = n < 0.5 ? S[1] : S[2],
+      gr = g.createLinearGradient(0, 0, 0, H * 0.75);
+    gr.addColorStop(0, dnMix(a[0], b[0], k));
+    gr.addColorStop(0.7, dnMix(a[1], b[1], k));
+    gr.addColorStop(1, dnMix(a[2], b[2], k));
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    /* 夜空の星（少しだけ） */
+    if (n > 0.7) {
+      const rs = rng(77);
+      g.fillStyle = 'rgba(220,230,255,' + (n - 0.7) * 2 + ')';
+      for (let i = 0; i < 18; i++) g.fillRect(rs() * W, rs() * H * 0.35, 1, 1);
+    }
+    const rows = dnCity(W, H),
+      body = [
+        ['#a9b6c4', '#0c1424'],
+        ['#7f8b98', '#070c16']
+      ];
+    rows.forEach((bl, ri) => {
+      g.fillStyle = dnMix(body[ri][0], body[ri][1], n);
+      for (const q of bl) g.fillRect(q.x, q.top, q.w, H - q.top);
+      /* 昼：窓のガラスの反射（明るい縦の筋）、夜：灯り */
+      for (const q of bl)
+        for (const [x, y, v, warm] of q.lights) {
+          if (n > 0.25) {
+            g.fillStyle = warm ? 'rgba(255,214,150,' + v * (n - 0.25) * 1.33 + ')' : 'rgba(255,240,205,' + v * (n - 0.25) * 1.33 + ')';
+            g.fillRect(x, y, 3, 3);
+          } else if (ri === 1) {
+            g.fillStyle = 'rgba(220,232,245,' + 0.22 * (1 - n * 4) + ')';
+            g.fillRect(x, y, 3, 3);
+          }
+        }
+    });
+    /* 手前の地面（ベランダの手すりの影のように暗い帯） */
+    g.fillStyle = dnMix('#5c6670', '#05080e', n);
+    g.fillRect(0, H * 0.93, W, H * 0.07);
+  }
+  /* 0.5秒ごとに時刻を見て、変わったときだけ光・空を直す（光の数は変えない＝シェーダーは作り直さない） */
+  function dnApply(force) {
+    const R = RM.R3,
+      D = R && R.dn;
+    if (!D) return;
+    const now = performance.now();
+    if (!force && now < D.chk) return;
+    D.chk = now + 500;
+    const ms = dnClock(),
+      [lon, lat] = dnSite(),
+      p = sunPos(ms, lon, lat),
+      n = Math.round((1 - smooth01(p.r - 0.35, p.r + 0.35, p.h) * (1 - smooth01(p.s - 0.35, p.s + 0.35, p.h))) * 40) / 40,
+      alt = Math.round(p.alt * 2) / 2,
+      A = Math.round(p.A * 100) / 100,
+      key = n + ',' + alt + ',' + A;
+    if (key === D.key) return;
+    D.key = key;
+    /* 照明：夕方（夜の度合い0.15〜0.5）で点ける */
+    const lit = smooth01(0.15, 0.5, n);
+    /* 直射日光：高さ0〜8度で強くなる。夜は月明かり（南東の空、高さ40度） */
+    const sunK = smooth01(-0.5, 8, alt) * (0.55 + 0.45 * Math.min(1, Math.max(0, alt) / 45)),
+      moonK = n * DN.moonI,
+      useSun = sunK * DN.sunI >= moonK,
+      sa = ((useSun ? Math.max(alt, 1) : 40) * Math.PI) / 180,
+      sA = useSun ? A : -0.6,
+      L = 9;
+    D.sun.position.set(-Math.cos(sa) * Math.cos(sA) * L, Math.sin(sa) * L, -Math.cos(sa) * Math.sin(sA) * L);
+    D.sun.intensity = useSun ? sunK * DN.sunI : moonK;
+    /* 太陽の色：低いほど夕日の色 */
+    const warm = useSun ? 1 - smooth01(2, 25, alt) : 0;
+    D.sun.color.copy(useSun ? dnCol(0, [0xfff3e4, 0xffa257], warm) : dnCol(0, [0xb8c4dc, 0xb8c4dc], 0));
+    D.hemi.intensity = DN.hemi[0] + (DN.hemi[1] - DN.hemi[0]) * n;
+    D.hemi.color.copy(dnCol(1, DN.hemiS, n));
+    D.hemi.groundColor.copy(dnCol(2, DN.hemiG, n));
+    D.winL.intensity = DN.winL * (1 - n) * (0.6 + 0.4 * smooth01(0, 20, alt));
+    D.winL.color.copy(dnCol(4, [0xe6eefc, 0xffc9a0], warm * 0.6));
+    /* 天井の照明（電球・かさの光り方も） */
+    D.pend.intensity = DN.pend * lit;
+    D.pbM.emissiveIntensity = 0.08 + 1.3 * lit;
+    D.pbM.color.setRGB(0.82 + 0.18 * lit, 0.8 + 0.15 * lit, 0.76 + 0.04 * lit);
+    D.shM.emissiveIntensity = 1.6 * lit;
+    if (lit !== D.lit) {
+      D.lit = lit;
+      lampApply();
+    }
+    for (const [mt, b] of D.envMats) if (mt !== D.win.material) mt.envMapIntensity = b * (1 + (DN.env - 1) * n);
+    D.win.material.emissiveIntensity = DN.winI[0] + (DN.winI[1] - DN.winI[0]) * n;
+    D.win.material.envMapIntensity = 0.01 + DN.winEnv * n;
+    R.renderer.toneMappingExposure = RX.exp * (1 + DN.exp * n);
+    /* PC：照明を点けている間だけ照明の影を出す（切り替えはシェーダーの作り直しになるので、点け始めと消し終わりの2回だけ） */
+    const psh = !RM.lowP && lit > 0.02;
+    if (psh !== D.psh) {
+      D.psh = psh;
+      for (const pl of [D.pend, RM.flamp && RM.flamp.lamp.pl])
+        if (pl) {
+          pl.castShadow = psh;
+          if (psh && !pl.shadow.map) {
+            pl.shadow.mapSize.set(512, 512);
+            pl.shadow.camera.near = 0.3; /* かさ（光から0.3m以内）は影を落とさない */
+            pl.shadow.camera.far = 8;
+            pl.shadow.bias = -0.004;
+            pl.shadow.radius = 2;
+          }
+        }
+    }
+    const cv = D.skyTex.image;
+    dnSky(cv.getContext('2d'), cv.width, cv.height, n);
+    D.skyTex.needsUpdate = true;
+    RM.need = RM.shDirty = true;
+    if (R.renderer.shadowMap) R.renderer.shadowMap.needsUpdate = true;
+  }
   /* 同梱の three.js をこのとき初めて実行する（起動を軽くするため。通信は不要） */
   function loadThree() {
     if (window.THREE) return;
@@ -15112,9 +15710,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       controls.maxDistance = 12;
       controls.update();
     } else camera.lookAt(0, 0.8, -0.2);
-    scene.add(new THREE.HemisphereLight(new THREE.Color(0xfff4e6).convertSRGBToLinear(), new THREE.Color(0x55504a).convertSRGBToLinear(), RX.hemi));
+    const hemi = new THREE.HemisphereLight(new THREE.Color(0xfff4e6).convertSRGBToLinear(), new THREE.Color(0x55504a).convertSRGBToLinear(), RX.hemi);
+    scene.add(hemi);
     const sun = new THREE.DirectionalLight(new THREE.Color(0xfff6ea).convertSRGBToLinear(), RX.sun);
-    sun.position.set(RX.sx, 6, RX.sz);
+    sun.position.set(RX.sx, 6, RX.sz); /* 向きは dnApply が時刻で決める */
     sun.castShadow = true;
     sun.shadow.mapSize.set(lowP ? 512 : 2048, lowP ? 512 : 2048);
     /* 影の縞模様（ギザギザ）を防ぐずらしと、輪郭を少しぼかす */
@@ -15123,6 +15722,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     sun.shadow.radius = 2;
     Object.assign(sun.shadow.camera, { left: -4.4, right: 4.4, top: 4.4, bottom: -4.4, near: 1, far: 16 });
     scene.add(sun);
+    /* 窓からの空の光（影なし。Version 191）：窓に向いた面を明るくする */
+    const winL = new THREE.DirectionalLight(new THREE.Color(0xe6eefc).convertSRGBToLinear(), 0);
+    winL.position.set(-5, 2.2, -1.2);
+    scene.add(winL);
     const room = new THREE.Group();
     scene.add(room);
     // 地面（建物外）
@@ -15144,21 +15747,40 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       wallM2 = mat(0xf0ece6, { map: plTex, bumpMap: plTex, bumpScale: 0.0015, roughness: 0.92, userData: { uvS: 0.5 } }),
       trim = paintMat(0xf4f2ee, 0.45);
     room.add(box(RW * 2, RH, 0.08, wallM, 0, RH / 2, -RD - 0.04));
-    room.add(box(0.08, RH, RD * 2, wallM2, -RW - 0.04, RH / 2, 0));
+    /* 窓の壁は窓の所を空けて4枚に（Version 191：日の光が窓から差し込むように）。uv は位置で決まるので模様は続く */
+    {
+      const wx0 = -RW - 0.04,
+        z0 = -1.45,
+        z1 = -0.35,
+        y0 = 0.95,
+        y1 = 1.95;
+      room.add(box(0.08, RH, z0 + RD, wallM2, wx0, RH / 2, (z0 - RD) / 2));
+      room.add(box(0.08, RH, RD - z1, wallM2, wx0, RH / 2, (z1 + RD) / 2));
+      room.add(box(0.08, y0, z1 - z0, wallM2, wx0, y0 / 2, (z0 + z1) / 2));
+      room.add(box(0.08, RH - y1, z1 - z0, wallM2, wx0, (y1 + RH) / 2, (z0 + z1) / 2));
+    }
+    /* 影だけを落とす見えない天井と手前の2枚の壁（部屋は手前が開いた模型だが、日の光は窓からだけ入るようにする） */
+    {
+      const cm = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }),
+        cs = (w, h, d, x, y, z) => {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cm);
+          m.position.set(x, y, z);
+          m.castShadow = true;
+          m.receiveShadow = false;
+          room.add(m);
+        };
+      cs(RW * 2 + 0.4, 0.1, RD * 2 + 0.4, 0, RH + 0.06, 0);
+      cs(0.1, RH + 0.2, RD * 2 + 0.4, RW + 0.12, RH / 2, 0);
+      cs(RW * 2 + 0.4, RH + 0.2, 0.1, 0, RH / 2, RD + 0.12);
+    }
     room.add(box(RW * 2, 0.07, 0.012, trim, 0, 0.035, -RD + 0.006));
     room.add(box(0.012, 0.07, RD * 2, trim, -RW + 0.006, 0.035, 0));
     /* 窓：空のグラデーション、白い枠と中央の縦の框、窓台。左右にリネンのカーテン（腰までの丈） */
-    const skyTex = cvTex('sky', 4, 64, (g, W, H) => {
-      const gr = g.createLinearGradient(0, 0, 0, H);
-      gr.addColorStop(0, '#6f9fd0');
-      gr.addColorStop(0.7, '#b8d4ec');
-      gr.addColorStop(1, '#dfe9f0');
-      g.fillStyle = gr;
-      g.fillRect(0, 0, W, H);
-    });
+    /* 窓の外の景色（Version 191）：空と街並み。時刻で描き直す（dnSky）。窓は景色の画像そのまま光らせ（室内の光は当てない）、夜はガラスに室内が映る */
+    const skyTex = cvTex('sky', 256, 232, (g, W, H) => dnSky(g, W, H, 0));
     const win = new THREE.Mesh(
       new THREE.PlaneGeometry(1.1, 1.0),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, map: skyTex, emissive: 0x3a5a78, roughness: 0.2 })
+      new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveMap: skyTex, emissiveIntensity: DN.winI[0], roughness: 0.06, userData: { env: 0.01 } })
     );
     win.rotation.y = Math.PI / 2;
     win.position.set(-RW + 0.001, 1.45, -0.9);
@@ -15327,12 +15949,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       gp.push([r, y]);
     }
     gp[gp.length - 1][0] = 0; /* 下端の頂点（法線が下を向くよう半径0で閉じる） */
-    const bulb = lampPart(latheGeo(gp.reverse(), 20), new THREE.MeshStandardMaterial({ color: 0xfff2cc, emissive: 0xffe2a0, roughness: 0.6 }));
+    const pbM = new THREE.MeshStandardMaterial({ color: 0xfff2cc, emissive: 0xffe2a0, roughness: 0.6 }),
+      bulb = lampPart(latheGeo(gp.reverse(), 20), pbM);
     bulb.castShadow = false;
     lampArm.children.forEach(o => {
       if (o !== shade) o.castShadow = false;
     });
-    const pl = new THREE.PointLight(new THREE.Color(0xffe7b8).convertSRGBToLinear(), RX.pend, 6);
+    const pl = new THREE.PointLight(new THREE.Color(0xffd9a6).convertSRGBToLinear(), RX.pend, 7, 2);
     pl.position.y = gTop - gLen * 0.6;
     lampArm.add(pl);
     mergeStatic(lampArm, new Set([shade]));
@@ -15363,6 +15986,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       objs,
       list,
       parts: [],
+      pbs: [],
       extra: [],
       bodies: [],
       sorted: [],
@@ -15388,6 +16012,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     });
     linMats(scene);
     R3env(RM.R3, env);
+    /* 昼・夜の明るさ（Version 189）で変える物 */
+    const envMats = new Set();
+    scene.traverse(m => {
+      for (const mt of [].concat(m.material || [])) if (mt && mt.envMap) envMats.add(mt);
+    });
+    win.material.envMap = env;
+    RM.R3.dn = { hemi, sun, winL, pend: pl, pbM, shM: shade.material, win, skyTex, envMats: [...envMats].map(mt => [mt, mt.envMapIntensity]), key: '', chk: 0, lit: -1, psh: null };
+    dnApply(true);
     for (const o of list) o.b = furnBody(o);
     RM.R3.cab = buildCable(room);
     RM.R3.fix = buildFix(room, objs);
@@ -15423,6 +16055,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     RM.need = RM.shDirty = true;
     RM.active = false;
     /* 破片などあとから作った物を消し、収納物を棚へ戻す */
+    pbClear();
     for (const m of R.extra) {
       R.room.remove(m);
       m.geometry.dispose();
@@ -15466,7 +16099,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       applyPose(o);
     }
     setBodies();
-    RM.tvRest = tvRel(R);
     R.lampT = [0, 0];
     R.lampW = [0, 0];
     frameReset(RM.frame);
@@ -16752,6 +17384,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const pb = partBody({ m: it.m || 0.4, half: it.half, cyl: it.cyl, xS: it.xS, mu: it.mu, frag: it.frag || 0 });
     it.mesh.traverse(m => (m.castShadow = !RM.lowP));
     pb.ref = { it, o };
+    pb.pbOk = true;
     pb.ign = b;
     /* 棚から出た物は、棚の外形（中が空いた箱を1つの箱として扱っている）から出きるまで棚とはぶつけない。
        以前は1秒で打ち切っていたので、棚の中に残った本が「箱の中に埋まった」扱いになり、押し出す力で棚が跳ね上がった（Version 159） */
@@ -16803,6 +17436,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       room.add(mesh);
       R.extra.push(mesh);
       const pb = partBody(Object.assign({ m, mu: 0.5 }, def));
+      pb.pbOk = true;
       pb.noHit = true;
       /* 棚から出たばかりで割れた物の破片は、その棚とは出るまでぶつけない（棚の箱の中に生まれた破片が底から床へ押し込まれないように。Version 151） */
       if (b.ign && !b.ign.dead) {
@@ -17069,6 +17703,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (RM.glass && !RM.glass.broken) glassMesh(RM.glass);
     puddleSync();
     batchSync();
+    pbSync();
     if (!camOnly) R.renderer.shadowMap.needsUpdate = true;
     R.renderer.render(R.scene, R.camera);
     RM.lastDraw = performance.now();
@@ -17189,6 +17824,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       RM.need = RM.shDirty = true;
     }
     prAdapt(dtReal);
+    dnApply(false);
     tvFx();
     lampFx();
     tvRefresh();
