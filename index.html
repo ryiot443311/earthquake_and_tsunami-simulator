@@ -3080,7 +3080,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const nz = noiseAt(lon, lat),
       dt = dirTerm(q, m),
       aa = arcAdj(q, lon, lat, ci),
-      I0 = intensity(q, m.X, arv, aa) + dt + nz + cfg.bias;
+      oa = obsAdj(q, lon, lat),
+      I0 = intensity(q, m.X, arv, aa) + dt + nz + cfg.bias + oa;
     let I = I0,
       dur = durOf(q.M, m.X, geo(q).fc),
       mm = m;
@@ -3097,7 +3098,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       m: mm,
       I,
       I0,
-      lp: lpSva(q, m.X, lon, lat, arv, aa) * Math.pow(10, (nz + dt + cfg.bias) * 0.38),
+      lp: lpSva(q, m.X, lon, lat, arv, aa) * Math.pow(10, (nz + dt + cfg.bias + oa) * 0.38),
       dur
     };
   }
@@ -4398,12 +4399,234 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     return m;
   }
+  /* ===== 実際の観測震度への補正（Version 186）=====
+     直近の地震は、気象庁の各観測点の震度（P2P地震情報 API の points）に合わせて揺れを補正する。
+     観測点の名前の先頭（市区町村名）で市区町村に結び付け、市区町村ごとの最大の震度を目標にする。報告の無い市区町村は震度0（0.5未満）とみなす。
+     計算の震度（市区町村内の格子の最大と役所の位置の値）が目標の階級からはみ出す分だけ補正値を求め、2〜7km（都市部ほど狭い）の広がりで周りへなめらかに広げて各格子・各地点に足す。
+     震源・M・深さを変えたら補正しない（obsOf）。 */
+  const OBS_RNG = { 10: [0.5, 1.5], 20: [1.5, 2.5], 30: [2.5, 3.5], 40: [3.5, 4.5], 45: [4.5, 5], 50: [5, 5.5], 55: [5.5, 6], 60: [6, 6.5], 70: [6.5, 7.6] },
+    OBS_L = 7 /* km：補正を広げる幅 */,
+    OBS_W0 = 0.02 /* 観測から離れると補正を0へ戻す重み */,
+    OBS_M = 0.1 /* 階級の境から内側へ置く余裕 */,
+    OBS_STEP = 0.025 /* 補正の格子（度） */;
+  const OBSQ = new Map(); /* 地震のキー（発生時刻）→ { lon, lat, M, depth, cs: Map(市区町村 → 震度コード) } */
+  const obsG = new WeakMap(); /* 地震 → 補正の格子 */
+  /* 観測点の一覧 [[都道府県名, 観測点名, 震度コード], …] を市区町村ごとの最大震度にする */
+  function obsCities(pts) {
+    const byPref = new Map();
+    CITIES.forEach((c, i) => {
+      const pn = prefName[AREAS[c.area].pref];
+      if (!byPref.has(pn)) byPref.set(pn, []);
+      byPref.get(pn).push(i);
+    });
+    const cs = new Map();
+    let un = 0;
+    for (const [pf, addr, sc] of pts) {
+      if (!OBS_RNG[sc]) continue;
+      let best = -1,
+        bl = 0;
+      for (const i of byPref.get(pf) || []) {
+        const n = CITIES[i].name;
+        if (n.length > bl && addr.startsWith(n)) {
+          bl = n.length;
+          best = i;
+        }
+      }
+      if (best < 0) un++;
+      else if (!(cs.get(best) >= sc)) cs.set(best, sc);
+    }
+    return { cs, un };
+  }
+  /* 埋め込みの観測（「都道府県 震度コード: 観測点,観測点,…」の行）を一覧にする */
+  function obsParse(src) {
+    const out = [];
+    for (const l of String(src || '').split('\n')) {
+      const m = l.match(/^(\S+) (\d+): (.+)$/);
+      if (m) for (const a of m[3].split(',')) if (a) out.push([m[1], a, +m[2]]);
+    }
+    return out;
+  }
+  function obsReg(r) {
+    if (!r.pts || !r.pts.length) return;
+    const o = obsCities(r.pts);
+    OBSQ.set(r.t, { lon: r.lon, lat: r.lat, M: r.M, depth: r.depth, cs: o.cs, n: r.pts.length, un: o.un });
+  }
+  function obsOf(q) {
+    const o = q && q.obs && OBSQ.get(q.obs);
+    return o && o.lon === q.lon && o.lat === q.lat && o.M === q.M && o.depth === q.depth ? o : null;
+  }
+  /* 補正値（震度の単位）。格子の外は0 */
+  function obsAdj(q, lon, lat) {
+    const g = obsG.get(q);
+    if (!g) return 0;
+    const e = g.ex.get(lon + ',' + lat);
+    return e !== undefined ? e : obsGrid(g, lon, lat);
+  }
+  function obsGrid(g, lon, lat) {
+    const fx = (lon - g.x0) / OBS_STEP,
+      fy = (lat - g.y0) / OBS_STEP,
+      i = Math.floor(fx),
+      j = Math.floor(fy);
+    if (i < 0 || j < 0 || i >= g.nx - 1 || j >= g.ny - 1) return 0;
+    const u = fx - i,
+      v = fy - j,
+      V = g.v,
+      k = j * g.nx + i;
+    return (V[k] * (1 - u) + V[k + 1] * u) * (1 - v) + (V[k + g.nx] * (1 - u) + V[k + g.nx + 1] * u) * v;
+  }
+  /* 地震 q の補正の格子を作る。EI＝補正前の格子の震度。
+     市区町村の震度＝その「震度観測点」の格子（cityCells：役所付近＋区域内の観測点）の最大なので、各格子を補正の基準点にする。
+     どの格子も階級の上限を超えないように下げ、最大の格子が下限に届かなければその格子を上げる（繰り返して合わせる） */
+  function obsBuild(q, o, EI) {
+    if (!cityCells) buildCityCells();
+    if (!cityCells) return null;
+    /* 基準点：各市区町村の格子＋役所の位置（市区町村の震度は役所の位置の値とも比べるため。trueAt は補正の格子ができる前なので補正なしの値） */
+    const PX = [],
+      PY = [],
+      PV = [],
+      cg = [];
+    const PC = [],
+      PK = [],
+      add = (x, y, v, k) => (PX.push(x), PY.push(y), PV.push(v), PK.push(k), PX.length - 1);
+    CITIES.forEach((c, i) => {
+      const C = cityCells[i];
+      if (!C.length) return;
+      let x = -99;
+      for (const k of C) if (EI[k] > x) x = EI[k];
+      const sc = o.cs.get(i);
+      if (!sc && !(x > -0.5)) return;
+      const ps = C.map(k => add(cellLon[k], cellLat[k], EI[k], k));
+      ps.push(add(c.lon, c.lat, trueAt(c.lon, c.lat, c.arv, q).I, -1));
+      const gi = cg.length;
+      ps.forEach(n => (PC[n] = gi));
+      cg.push(sc ? { ps, lo: OBS_RNG[sc][0], hi: OBS_RNG[sc][1] } : { ps, lo: -9, hi: 0.5 });
+    });
+    if (!PX.length) return null;
+    const NP = PX.length,
+      ky = 110.57,
+      bin = new Map(),
+      bk = (bx, by) => bx * 4096 + by;
+    for (let n = 0; n < NP; n++) {
+      const k = bk(Math.floor(PX[n] / 0.3), Math.floor(PY[n] / 0.3));
+      if (!bin.has(k)) bin.set(k, []);
+      bin.get(k).push(n);
+    }
+    /* 基準点ごとの広がり：隣の市区町村の基準点が近い所（都市部）ほど狭くする（隣どうしで階級が違っても合わせられるように）。2〜OBS_L km */
+    const LL = new Float32Array(NP).fill(OBS_L);
+    const near0 = (lon, lat, f) => {
+      const bx = Math.floor(lon / 0.3),
+        by = Math.floor(lat / 0.3),
+        kx = 111.32 * Math.cos(lat * D2R);
+      for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++) {
+          const B = bin.get(bk(bx + dx, by + dy));
+          if (B) for (const n of B) f(n, ((PX[n] - lon) * kx) ** 2 + ((PY[n] - lat) * ky) ** 2);
+        }
+    };
+    for (let n = 0; n < NP; n++)
+      near0(PX[n], PY[n], (m, d2) => {
+        if (PC[m] !== PC[n]) LL[n] = Math.max(2, Math.min(LL[n], 0.8 * Math.sqrt(d2)));
+      });
+    const near = (lon, lat, f) =>
+      near0(lon, lat, (n, d2) => {
+        const l = LL[n];
+        if (d2 < 9 * l * l) f(n, Math.exp(-d2 / (l * l)));
+      });
+    /* 近くの基準点と重み。G＝自分の補正値を1動かしたときの自分の位置の補正の変わり方の逆数（密な所ほど大きく動かす） */
+    const W = [],
+      G = new Float32Array(NP);
+    for (let n = 0; n < NP; n++) {
+      const w = [];
+      let sw = OBS_W0;
+      near(PX[n], PY[n], (m, x) => (w.push(m, x), (sw += x)));
+      W.push(w);
+      G[n] = sw;
+    }
+    const r = new Float32Array(NP),
+      v = new Float32Array(NP);
+    let it = 0,
+      bad = 0;
+    for (; it < 200; it++) {
+      for (let n = 0; n < NP; n++) {
+        const w = W[n];
+        let s = 0,
+          sw = OBS_W0;
+        for (let j = 0; j < w.length; j += 2) {
+          s += w[j + 1] * r[w[j]];
+          sw += w[j + 1];
+        }
+        v[n] = PV[n] + s / sw;
+      }
+      bad = 0;
+      for (const g of cg) {
+        let mx = -99,
+          am = -1;
+        for (const n of g.ps) {
+          if (v[n] > g.hi - OBS_M * 0.5) {
+            r[n] += 0.6 * G[n] * (g.hi - OBS_M - v[n]);
+            bad++;
+          }
+          if (v[n] > mx) {
+            mx = v[n];
+            am = n;
+          }
+        }
+        if (mx < g.lo + OBS_M * 0.5) {
+          r[am] += 0.6 * G[am] * (g.lo + OBS_M - mx);
+          bad++;
+        }
+      }
+      for (let n = 0; n < NP; n++) r[n] = Math.max(-6, Math.min(6, r[n]));
+      if (!bad) break;
+    }
+    /* 格子にする（基準点のある範囲＋0.4度） */
+    let x0 = 1e9,
+      x1 = -1e9,
+      y0 = 1e9,
+      y1 = -1e9;
+    for (let n = 0; n < NP; n++) {
+      if (PX[n] < x0) x0 = PX[n];
+      if (PX[n] > x1) x1 = PX[n];
+      if (PY[n] < y0) y0 = PY[n];
+      if (PY[n] > y1) y1 = PY[n];
+    }
+    x0 -= 0.4;
+    y0 -= 0.4;
+    const nx = Math.ceil((x1 + 0.4 - x0) / OBS_STEP) + 1,
+      ny = Math.ceil((y1 + 0.4 - y0) / OBS_STEP) + 1,
+      V = new Float32Array(nx * ny);
+    for (let j = 0; j < ny; j++)
+      for (let i = 0; i < nx; i++) {
+        let s = 0,
+          sw = OBS_W0;
+        near(x0 + i * OBS_STEP, y0 + j * OBS_STEP, (n, w) => {
+          s += w * r[n];
+          sw += w;
+        });
+        V[j * nx + i] = s / sw;
+      }
+    /* 基準点（市区町村の格子・役所の位置）は格子の補間でなく正確な値を使う（階級の境の近くでずれないように） */
+    const ex = new Map(),
+      exK = new Map();
+    for (let n = 0; n < NP; n++) {
+      const w = W[n];
+      let s = 0,
+        sw = OBS_W0;
+      for (let j = 0; j < w.length; j += 2) {
+        s += w[j + 1] * r[w[j]];
+        sw += w[j + 1];
+      }
+      ex.set(PX[n] + ',' + PY[n], s / sw);
+      if (PK[n] >= 0) exK.set(PK[n], s / sw);
+    }
+    return { x0, y0, nx, ny, v: V, ex, exK, it, bad };
+  }
   /* 入力（地震の一覧と設定）が前回と同じなら計算し直さない（Version 131。予想の表示で計算済みの結果を「地震発生」でそのまま使う） */
   let cellsKey = '';
   function computeCells() {
     if (!NC) return;
     const ck = NC + '|' + JSON.stringify(EQS) + '|' + JSON.stringify(cfg);
-    if (ck === cellsKey && cellI && cellLp && cellEv.length === EQS.length) return;
+    if (ck === cellsKey && cellI && cellLp && cellEv.length === EQS.length && EQS.every(q => !obsOf(q) || obsG.has(q))) return;
     cellsKey = ck;
     cellI = new Float32Array(NC).fill(-9);
     cellLp = new Float32Array(NC);
@@ -4453,8 +4676,27 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         E.TS[i] = ts;
         E.TP[i] = m.tP;
         E.Dur[i] = du;
-        if (I > cellI[i]) cellI[i] = I;
-        if (lp > cellLp[i]) cellLp[i] = lp;
+      }
+      /* 実際の観測震度への補正（Version 186） */
+      obsG.delete(q);
+      const ob = obsOf(q);
+      if (ob) {
+        const g = obsBuild(q, ob, E.I);
+        if (g) {
+          obsG.set(q, g);
+          for (let i = 0; i < NC; i++) {
+            const e = g.exK.get(i),
+              a = e !== undefined ? e : obsGrid(g, cellLon[i], cellLat[i]);
+            if (a) {
+              E.I[i] += a;
+              E.Lp[i] *= Math.pow(10, a * 0.38);
+            }
+          }
+        }
+      }
+      for (let i = 0; i < NC; i++) {
+        if (E.I[i] > cellI[i]) cellI[i] = E.I[i];
+        if (E.Lp[i] > cellLp[i]) cellLp[i] = E.Lp[i];
       }
       return E;
     });
@@ -5051,6 +5293,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const last = EQS[EQS.length - 1];
     const q = Object.assign({}, P, {
       slip: null,
+      obs: undefined,
       lon: +(P.lon + 0.6).toFixed(2),
       lat: +(P.lat - 0.3).toFixed(2),
       M: Math.max(2, +(P.M - 0.8).toFixed(1)),
@@ -5140,7 +5383,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     b.textContent = n;
     b.onclick = () => {
       if (sim) reset();
-      Object.assign(P, { dip: null, rup: 'bi', slip: null }, p);
+      Object.assign(P, { dip: null, rup: 'bi', slip: null, obs: undefined }, p);
       syncCfgUI();
       preview();
     };
@@ -5235,30 +5478,48 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* ===== Version 174・175: 直近の震度3以上の地震（新しい順に REC_N 件）。[v175] タップでその地震1つに置き換える（続けて再現は廃止）。
      出典: P2P地震情報 API（気象庁の地震情報）。アーティファクトは外部と通信できないので埋め込み、公開版（github.io）は開くたびに最新を取得 */
   const REC_N = 3;
+  /* [v186] 各地の観測震度（pts）と、USGS のモーメントテンソル解がある地震は断層の向き・傾斜（mt）も持つ */
   let RECENT = [
-    { t: '2026/11/09 13:52', name: '茨城県沖', lat: 36.2, lon: 142.2, depth: 10, M: 5.9, mx: 30 },
-    { t: '2026/11/09 05:16', name: '宮城県沖', lat: 38.3, lon: 141.9, depth: 50, M: 4.5, mx: 30 },
-    { t: '2026/11/08 10:53', name: '熊本県天草・芦北地方', lat: 32.6, lon: 130.6, depth: 10, M: 4.3, mx: 40 }
+    { t: '2026/11/13 10:52', name: '熊本県熊本地方', lat: 32.5, lon: 130.6, depth: 10, M: 4.0, mx: 30 },
+    { t: '2026/11/09 13:52', name: '茨城県沖', lat: 36.2, lon: 142.2, depth: 10, M: 5.9, mx: 30, mt: { strike: 223, dip: 20, rake: 111, src: 'USGS' } },
+    { t: '2026/11/09 05:16', name: '宮城県沖', lat: 38.3, lon: 141.9, depth: 50, M: 4.5, mx: 30, mt: { strike: 157, dip: 20, rake: 50, src: 'USGS' } }
   ];
-  let recAt = '2026/11/12 時点';
+  /* 気象庁の観測点ごとの震度（P2P地震情報 API、2026/11/13 取得）。「都道府県 震度コード: 観測点,…」 */
+  const REC_OBS = {
+    "2026/11/13 10:52": "熊本県 30: 八代市平山新町,八代市坂本町,宇城市小川町,氷川町島地,上天草市大矢野町,上天草市松島町,上天草市姫戸町,芦北町芦北,芦北町田浦町\n熊本県 20: 八代市新地町,八代市千丁町,八代市鏡町,八代市東陽町,八代市泉支所,宇城市松橋町,宇城市三角町,宇城市不知火町,宇城市豊野町,熊本西区春日,熊本南区城南町,宇土市浦田町,熊本美里町永富,西原村小森,嘉島町上島,山都町浜町,上天草市龍ヶ岳町,水俣市牧ノ内,水俣市陣内,天草市五和町,津奈木町小津奈木,人吉市蟹作町,多良木町上球磨消防署,五木村甲,山江村山田,球磨村渡,あさぎり町免田東,あさぎり町岡原,あさぎり町須惠\n熊本県 10: 八代市泉町,氷川町宮原,熊本美里町馬場,熊本中央区大江,熊本東区佐土原,熊本北区植木町,玉名市横島町,玉名市天水町,山鹿市菊鹿町,山鹿市鹿本町,山鹿市鹿央町,山鹿市鹿北町,菊池市隈府,菊池市旭志,合志市竹迫,大津町引水,大津町大津,御船町御船,益城町宮園,甲佐町豊内,天草市牛深町,天草市新和町,天草市天草町,天草市河浦町,天草市有明町,天草市御所浦町,天草市栖本町,苓北町志岐,人吉市西間下町,多良木町多良木,あさぎり町上,あさぎり町深田,錦町一武,湯前町役場,水上村岩野,相良村深水,熊本高森町高森\n長崎県 20: 長崎市元町,諫早市多良見町,大村市玖島,雲仙市小浜町雲仙,雲仙市小浜町北本町,雲仙市南串山町,南島原市口之津町,南島原市南有馬町,南島原市北有馬町,南島原市西有家町,南島原市布津町,南島原市深江町,南島原市加津佐町,南島原市有家町\n長崎県 10: 諫早市東小路町,諫早市堂崎町,長与町嬉里,雲仙市国見町,雲仙市千々石町,雲仙市雲仙出張所,島原市下折橋町,島原市有明町\n宮崎県 20: 西都市上の宮,宮崎市高岡町内山\n宮崎県 10: 延岡市北川町川内名白石,延岡市北方町総合支所,川南町川南,宮崎都農町役場,門川町平城東,宮崎市霧島,宮崎市田野町体育館,国富町本庄,綾町南俣健康センター,綾町役場,西米良村板谷,椎葉村総合運動公園,椎葉村下福良,宮崎美郷町田代,高千穂町三田井,都城市山之口町花木,小林市真方,小林市中原,小林市野尻町東麓,えびの市加久藤\n鹿児島県 20: 長島町獅子島,長島町伊唐島\n鹿児島県 10: 長島町鷹巣,長島町指江,阿久根市赤瀬川,阿久根市鶴見町,鹿児島出水市緑町,鹿児島出水市高尾野町,薩摩川内市中郷,薩摩川内市神田町,薩摩川内市祁答院町,薩摩川内市入来町,薩摩川内市東郷町,薩摩川内市樋脇町,霧島市横川町中ノ,いちき串木野市緑町,伊佐市大口山野,伊佐市大口鳥巣,伊佐市菱刈前目,さつま町宮之城屋地,さつま町宮之城保健センタ,さつま町神子,湧水町吉松\n福岡県 10: 八女市矢部村,みやま市高田町\n佐賀県 10: 白石町有明\n大分県 10: 佐伯市宇目,竹田市荻町",
+    "2026/11/09 13:52": "宮城県 30: 石巻市桃生町\n宮城県 20: 石巻市大街道南,石巻市前谷地,仙台宮城野区五輪,東松島市矢本,松島町高城,利府町利府,大郷町粕川,大衡村大衡,登米市中田町,登米市登米町,登米市南方町,登米市迫町,登米市米山町,栗原市若柳,大崎市古川三日町,大崎市古川大崎,大崎市古川旭,大崎市松山,大崎市鹿島台,大崎市田尻,色麻町四竈,宮城加美町中新田,涌谷町新町裏,宮城美里町木間塚,白石市亘理町,仙台空港,名取市増田,角田市角田,岩沼市桜,蔵王町円田,大河原町新南,村田町村田,宮城川崎町前川,丸森町鳥屋,亘理町悠里,山元町浅生原\n宮城県 10: 石巻市泉町,石巻市北上町,石巻市相野谷,仙台宮城野区苦竹,東松島市小野,仙台青葉区大倉,仙台青葉区作並,仙台青葉区雨宮,仙台青葉区落合,仙台若林区遠見塚,仙台太白区山田,仙台泉区将監,塩竈市今宮町,多賀城市中央,富谷市富谷,七ヶ浜町東宮浜,大和町吉岡,登米市東和町,栗原市栗駒,栗原市築館,栗原市鶯沢,栗原市花山,栗原市瀬峰,栗原市志波姫,栗原市高清水,栗原市金成,栗原市一迫,大崎市三本木,大崎市岩出山,宮城加美町小野田,宮城加美町宮崎,宮城美里町北浦,気仙沼市赤岩,丸森町上滝,七ヶ宿町関,柴田町船岡\n福島県 30: 福島市五老内町,田村市大越町,西郷村熊倉,双葉町長塚\n福島県 20: 福島市花園町,福島市桜木町,田村市常葉町,田村市都路町,田村市滝根町,郡山市朝日,郡山市開成,郡山市湖南町,白河市郭内,白河市新白河,白河市東,白河市表郷,白河市大信,白河市八幡小路,須賀川市八幡山,須賀川市長沼支所,須賀川市岩瀬支所,須賀川市八幡町,二本松市油井,二本松市針道,福島伊達市保原町,福島伊達市前川原,本宮市本宮,本宮市白岩,桑折町谷地,国見町藤田,川俣町五百田,大玉村南小屋,大玉村玉井,鏡石町不時沼,天栄村下松本,泉崎村泉崎,中島村滑津,矢吹町一本木,棚倉町棚倉中居野,石川町長久保,玉川村小高,浅川町浅川,古殿町松川新桑原,いわき市小名浜,いわき市三和町,いわき市平四ツ波,いわき市錦町,いわき市平梅本,相馬市中村,南相馬市原町区三島町,南相馬市原町区高見町,南相馬市原町区本町,南相馬市鹿島区西町,南相馬市小高区,福島広野町下北迫大谷地原,楢葉町北田,川内村上川内小山平,川内村上川内早渡,大熊町野上,大熊町大川原,浪江町幾世橋,葛尾村落合落合,新地町谷地小屋,飯舘村伊丹沢,会津若松市東栄町,磐梯町磐梯,猪苗代町城南,猪苗代町下園,会津坂下町市中三番甲,湯川村清水田,会津美里町新鶴庁舎\n福島県 10: 福島市飯野町,田村市船引町,二本松市金色,福島伊達市梁川町,福島伊達市月舘町,福島伊達市霊山町,天栄村湯本支所,棚倉町棚倉舘ヶ丘,古殿町松川横川,矢祭町戸塚,矢祭町東舘,塙町塙,鮫川村赤坂中野,平田村永田,三春町大町,小野町中通,小野町小野新町,南相馬市鹿島区栃窪,福島広野町下北迫苗代替,川内村下川内,富岡町本岡,会津若松市材木町,会津美里町本郷庁舎,喜多方市松山町,喜多方市塩川町,下郷町高陦,南会津町田島,西会津町野沢,西会津町登世島\n茨城県 30: 水戸市内原町,常陸太田市金井町,東海村東海\n茨城県 20: 水戸市金町,水戸市千波町,水戸市栗崎町,常陸太田市高柿町,日立市助川小学校,日立市役所,日立市十王町友部,高萩市安良川,高萩市本町,北茨城市磯原町,北茨城市中郷町,笠間市石井,笠間市中央,笠間市下郷,笠間市笠間,ひたちなか市山ノ上町,ひたちなか市南神敷台,ひたちなか市東石川,常陸大宮市北町,常陸大宮市野口,那珂市福田,那珂市瓜連,小美玉市小川,小美玉市堅倉,小美玉市上玉里,茨城町小堤,大洗町磯浜町,城里町石塚,大子町池田,土浦市田中,土浦市藤沢,茨城古河市仁連,茨城古河市下大野,石岡市柿岡,石岡市若宮,石岡市八郷,石岡市石岡,結城市中央町,龍ケ崎市役所,下妻市本城町,下妻市鬼怒,常総市新石下,常総市水海道諏訪町,取手市寺田,取手市井野,取手市藤代,つくば市天王台,つくば市研究学園,つくば市小茎,茨城鹿嶋市鉢形,茨城鹿嶋市宮中,潮来市堀之内,潮来市辻,守谷市大柏,筑西市舟生,筑西市門井,筑西市海老ヶ島,筑西市二木成,坂東市岩井,坂東市馬立,坂東市山,稲敷市江戸崎甲,稲敷市役所,稲敷市伊佐津,稲敷市結佐,稲敷市須賀津,かすみがうら市大和田,かすみがうら市上土田,桜川市岩瀬,桜川市真壁,桜川市羽田,神栖市溝口,神栖市波崎,行方市玉造,行方市麻生,行方市山田,鉾田市鉾田,鉾田市汲上,鉾田市造谷,つくばみらい市加藤,つくばみらい市福田,美浦村受領,阿見町中央,河内町源清田,八千代町菅谷,五霞町小福田\n茨城県 10: 常陸太田市町屋町,常陸太田市町田町,常陸大宮市中富町,常陸大宮市高部,常陸大宮市上小瀬,常陸大宮市山方,城里町阿波山,城里町徳蔵,茨城古河市長谷町,坂東市役所,牛久市中央,境町旭町,利根町布川\n栃木県 30: 益子町益子\n栃木県 20: 宇都宮市明保野町,宇都宮市中里町,宇都宮市中岡本町,小山市神鳥谷,小山市中央町,真岡市田町,真岡市荒町,真岡市石島,那須烏山市神長,那須烏山市大金,下野市田中,下野市笹原,茂木町茂木,市貝町市塙,芳賀町祖母井,壬生町壬生甲,高根沢町石末,栃木那珂川町小川,大田原市黒羽田町,大田原市湯津上,那須塩原市鍋掛,那須塩原市共墾社,那須町寺子\n栃木県 10: 宇都宮市塙田,那須烏山市役所,下野市大松山,茂木町北高岡天矢場,栃木那珂川町馬頭,足利市大正町,栃木市旭町,栃木市大平町富田,栃木市藤岡町藤岡,栃木市岩舟町静,佐野市高砂町,鹿沼市晃望台,鹿沼市口粟野,栃木さくら市氏家,栃木さくら市喜連川,上三川町しらさぎ,野木町丸林,大田原市本町,那須塩原市蟇沼,那須塩原市中塩原,那須塩原市あたご町,那須塩原市塩原庁舎,日光市瀬川,日光市鬼怒川温泉大原,日光市湯元,日光市足尾町中才,日光市芹沼,日光市藤原庁舎,日光市黒部,矢板市本町,塩谷町玉生\n岩手県 20: 普代村銅屋,盛岡市薮川\n岩手県 10: 宮古市田老,久慈市川崎町,久慈市枝成沢,野田村野田,盛岡市山王町,八幡平市田頭,矢巾町南矢幅,釜石市中妻町,花巻市石鳥谷町,北上市柳原町,遠野市青笹町,一関市竹山町,一関市花泉町,一関市千厩町,奥州市水沢大鐘町\n山形県 20: 上山市河崎,村山市中央,天童市老野森,中山町長崎,米沢市駅前,米沢市アルカディア,米沢市林泉寺,南陽市三間通,高畠町高畠,山形川西町上小松,白鷹町荒砥\n山形県 10: 東根市中央,尾花沢市若葉町,山辺町緑ケ丘,河北町役場,西川町大井沢,山形朝日町宮宿,大石田町緑町,米沢市金池,鶴岡市温海川,酒田市飛鳥,最上町向町,大蔵村清水\n群馬県 20: 沼田市西倉内町,沼田市白沢町,渋川市赤城町,邑楽町中野\n群馬県 10: 沼田市下久屋町,沼田市利根町,渋川市有馬,渋川市北橘町,渋川市吹屋,渋川市伊香保町,前橋市駒形町,前橋市大手町,前橋市堀越町,前橋市粕川町,前橋市富士見町,前橋市鼻毛石町,高崎市高松町,高崎市足門町,桐生市錦町,桐生市元宿町,桐生市黒保根町,桐生市新里町,伊勢崎市今泉町,伊勢崎市西久保町,伊勢崎市境,伊勢崎市東町,太田市西本町,太田市浜町,太田市粕川町,太田市新田金井町,太田市大原町,館林市上三林町,館林市城町,みどり市笠懸町,みどり市大間々町,吉岡町下野田,板倉町板倉,群馬明和町新里,千代田町赤岩,大泉町日の出\n埼玉県 20: 加須市三俣,加須市大利根,久喜市青葉,久喜市栗橋,埼玉美里町木部,春日部市粕壁,春日部市金崎,春日部市谷原新田,草加市中央,三郷市中央,幸手市東,宮代町笠原\n埼玉県 10: 加須市騎西,加須市北川辺,久喜市下早見,久喜市菖蒲,久喜市鷲宮,熊谷市桜町,熊谷市宮町,熊谷市大里,熊谷市妻沼,熊谷市江南,行田市本丸,行田市南河原,本庄市児玉町,東松山市市ノ川,東松山市松葉町,羽生市東,鴻巣市中央,鴻巣市川里,鴻巣市吹上富士見,深谷市花園,深谷市仲町,深谷市菅沼,吉見町下細谷,埼玉神川町植竹,さいたま西区西大宮,さいたま北区宮原,さいたま大宮区天沼町,さいたま大宮区大門,さいたま見沼区堀崎,さいたま中央区下落合,さいたま桜区道場,さいたま浦和区高砂,さいたま南区別所,さいたま緑区中尾,川口市中青木分室,川口市三ツ和,川口市安行領家,所沢市北有楽町,狭山市入間川,上尾市本町,越谷市越ヶ谷,蕨市中央,戸田市上戸田,朝霞市本町,志木市中宗岡,和光市広沢,新座市野火止,桶川市泉,北本市本町,八潮市中央,富士見市鶴馬,蓮田市黒浜,坂戸市千代田,吉川市きよみ野,白岡市千駄野,伊奈町中央,埼玉三芳町藤久保,毛呂山町中央,川島町下八ツ林,松伏町松伏\n千葉県 20: 銚子市川口町,銚子市小畑新町,銚子市若宮町,東金市東新宿,東金市日吉台,東金市東岩崎,旭市南堀之内,旭市高生,旭市萩園,旭市ニ,匝瑳市八日市場ハ,匝瑳市今泉,香取市佐原平田,香取市佐原諏訪台,香取市羽根川,香取市仁良,香取市岩部,山武市松尾町富士見台,山武市蓮沼ニ,山武市埴谷,山武市殿台,山武市蓮沼ハ,山武市松尾町五反田,神崎町神崎本宿,多古町多古,東庄町笹川,九十九里町片貝,芝山町小池,横芝光町宮川,横芝光町栗山,白子町関,千葉美浜区ひび野,市川市本行徳,松戸市西馬橋,野田市鶴奉,成田国際空港,成田市名古屋,成田市中台,成田市役所,成田市松子,千葉佐倉市海隣寺町,柏市旭町,柏市柏,市原市姉崎,八千代市大和田新田,浦安市日の出,印西市大森,印西市笠神,白井市復,いすみ市岬町長者\n千葉県 10: 大網白里市大網,一宮町一宮,睦沢町下之郷,長生村本郷,長南町総合グラウンド,千葉美浜区稲毛海岸,市川市大町,野田市東宝珠花,成田市猿山,柏市大島田,印西市美瀬,千葉中央区中央港,千葉花見川区花島町,千葉稲毛区園生町,千葉若葉区小倉台,千葉緑区おゆみ野,船橋市湊町,習志野市鷺沼,流山市平和台,我孫子市我孫子,鎌ケ谷市新鎌ケ谷,四街道市鹿渡,八街市八街,富里市七栄,酒々井町中央台,栄町安食台,いすみ市大原,いすみ市弥正,館山市長須賀,木更津市太田,木更津市富士見,鴨川市八色,鴨川市横渚,君津市久留里市場,君津市久保,富津市下飯野,南房総市岩糸\n東京都 20: 東京荒川区東尾久,東京足立区神明南\n東京都 10: 東京荒川区荒川,東京足立区中央本町,東京足立区千住中居町,東京足立区伊興,東京千代田区大手町,東京千代田区富士見,東京千代田区麹町,東京中央区日本橋兜町,東京中央区勝どき,東京港区海岸,東京港区南青山,東京港区白金,東京新宿区上落合,東京文京区スポーツセンタ,東京文京区本郷,東京文京区大塚,東京台東区東上野,東京台東区千束,東京墨田区横川,東京墨田区吾妻橋,東京墨田区東向島,東京江東区青海,東京江東区越中島,東京江東区森下,東京江東区亀戸,東京江東区枝川,東京品川区北品川,東京品川区平塚,東京目黒区中央町,東京大田区本羽田,東京世田谷区世田谷,東京世田谷区成城,東京渋谷区本町,東京中野区中野,東京中野区江古田,東京杉並区阿佐谷,東京杉並区桃井,東京杉並区高井戸,東京豊島区南池袋,東京北区西ヶ原,東京北区赤羽南,東京板橋区高島平,東京板橋区板橋,東京板橋区相生町,東京練馬区東大泉,東京練馬区光が丘,東京葛飾区立石,東京葛飾区金町,東京江戸川区中央,東京江戸川区鹿骨,東京江戸川区船堀,八王子市堀之内,武蔵野市緑町,調布市西つつじヶ丘,町田市忠生,日野市神明,東村山市美住町,国分寺市並木町,国分寺市泉町,東大和市中央,西東京市中町\n青森県 10: 平内町小湊,八戸市南郷,六戸町犬落瀬,東北町上北南,おいらせ町中下田,青森南部町苫米地,階上町道仏\n秋田県 10: 井川町北川尻,由利本荘市西目町沼田,にかほ市平沢,大仙市高梨\n神奈川県 10: 横浜神奈川区神大寺,横浜神奈川区広台太田町,横浜中区山手町,横浜港北区日吉本町,横浜緑区鴨居,横浜瀬谷区中屋敷,川崎川崎区中島,川崎幸区戸手本町,川崎中原区小杉町,川崎宮前区宮前平,川崎宮前区野川,平塚市浅間町,茅ヶ崎市茅ヶ崎,湯河原町中央\n新潟県 10: 長岡市山古志竹沢,南魚沼市六日町,田上町原ケ崎新田,刈羽村割町新田,新潟西蒲区巻仮設庁舎,村上市岩船駅前\n山梨県 10: 南アルプス市寺部,富士川町鰍沢,忍野村忍草,山中湖村山中\n長野県 10: 諏訪市湖岸通り,茅野市葛井公園,長野南牧村海ノ口",
+    "2026/11/09 05:16": "岩手県 30: 一関市千厩町,一関市室根町\n岩手県 20: 一関市大東町,一関市花泉町,一関市東山町,一関市藤沢町,北上市相去町,奥州市前沢,奥州市衣川,平泉町平泉,大船渡市大船渡町,大船渡市猪川町,陸前高田市高田町,釜石市只越町,釜石市中妻町,住田町世田米\n岩手県 10: 一関市竹山町,一関市川崎町,北上市柳原町,奥州市水沢大鐘町,奥州市水沢佐倉河,奥州市江刺,奥州市胆沢,花巻市大迫町,花巻市石鳥谷町,花巻市大迫総合支所,花巻市材木町,花巻市東和町,遠野市青笹町,西和賀町沢内川舟,金ケ崎町西根,大船渡市盛町,大槌町上町,宮古市鍬ヶ崎,宮古市長沢,宮古市五月町,宮古市川井,宮古市区界,宮古市田老,宮古市茂市,久慈市枝成沢,山田町八幡町,山田町大沢,盛岡市山王町,盛岡市馬場町,盛岡市薮川,盛岡市渋民,八幡平市田頭,矢巾町南矢幅\n宮城県 30: 気仙沼市笹が陣,石巻市北上町\n宮城県 20: 気仙沼市赤岩,気仙沼市本吉町西川内,気仙沼市唐桑町,登米市中田町,登米市東和町,登米市豊里町,登米市南方町,登米市迫町,登米市津山町,栗原市栗駒,栗原市金成,栗原市若柳,大崎市古川大崎,大崎市田尻,涌谷町新町裏,宮城美里町北浦,南三陸町歌津,石巻市泉町,石巻市鮎川浜,石巻市大街道南,石巻市桃生町,石巻市雄勝町,東松島市小野,東松島市矢本,女川町女川,名取市増田,柴田町船岡,宮城川崎町前川,亘理町悠里\n宮城県 10: 気仙沼市本吉町津谷,登米市登米町,登米市石越町,登米市米山町,栗原市築館,栗原市鶯沢,栗原市花山,栗原市瀬峰,栗原市志波姫,栗原市高清水,栗原市一迫,大崎市古川三日町,大崎市鳴子,大崎市古川旭,大崎市松山,大崎市鹿島台,宮城美里町木間塚,南三陸町志津川,色麻町四竈,宮城加美町中新田,石巻市大瓜,石巻市相野谷,石巻市前谷地,仙台青葉区大倉,仙台青葉区作並,仙台青葉区落合,仙台宮城野区五輪,仙台宮城野区苦竹,仙台若林区遠見塚,仙台泉区将監,塩竈市今宮町,多賀城市中央,松島町高城,七ヶ浜町東宮浜,利府町利府,大和町吉岡,大郷町粕川,大衡村大衡,仙台空港,白石市亘理町,角田市角田,岩沼市桜,蔵王町円田,大河原町新南,村田町村田,山元町浅生原\n福島県 20: 相馬市中村,飯舘村伊丹沢\n福島県 10: いわき市三和町,南相馬市原町区三島町,南相馬市鹿島区栃窪,南相馬市原町区高見町,南相馬市鹿島区西町,楢葉町北田,富岡町本岡,川内村下川内,大熊町大川原,双葉町長塚,浪江町幾世橋,葛尾村落合落合,新地町谷地小屋,福島市花園町,福島市桜木町,福島市五老内町,白河市新白河,須賀川市岩瀬支所,二本松市金色,二本松市油井,二本松市針道,田村市船引町,田村市大越町,田村市常葉町,田村市都路町,田村市滝根町,福島伊達市梁川町,福島伊達市保原町,福島伊達市月舘町,福島伊達市前川原,福島伊達市霊山町,本宮市本宮,国見町藤田,川俣町五百田,天栄村下松本,玉川村小高,小野町中通,小野町小野新町\n青森県 10: 八戸市湊町,八戸市南郷,五戸町古舘,青森南部町苫米地,階上町道仏\n秋田県 10: 大仙市高梨"
+  };
+  RECENT.forEach(r => (r.pts = obsParse(REC_OBS[r.t])));
+  let recAt = '2026/11/13 時点';
   let recCur = -1;
   const REC_SC = { 10: '1', 20: '2', 30: '3', 40: '4', 45: '5弱', 50: '5強', 55: '6弱', 60: '6強', 70: '7' };
+  const REC_DIPS = [10, 20, 30, 45, 60, 75, 90];
   function recQuake(r) {
     const sea = /沖|灘|近海|海|湾|海峡|水道/.test(r.name);
-    const type = r.depth >= 80 ? 'intra' : sea ? (r.depth <= 60 ? 'inter' : 'intra') : r.depth <= 25 ? 'crustal' : 'intra';
-    const strike = type === 'crustal' ? 45 : r.lon < 138 && r.lat < 34.5 ? 240 : 200;
-    return { lon: r.lon, lat: r.lat, depth: r.depth, M: r.M, strike, type };
+    let type = r.depth >= 80 ? 'intra' : sea ? (r.depth <= 60 ? 'inter' : 'intra') : r.depth <= 25 ? 'crustal' : 'intra';
+    let strike = type === 'crustal' ? 45 : r.lon < 138 && r.lat < 34.5 ? 240 : 200,
+      dip = null;
+    /* 実際の発震機構（USGS）：断層の向き・傾斜はその値。海の浅い逆断層で傾斜が緩ければプレート境界、急なら海のプレート内 */
+    if (r.mt) {
+      strike = Math.round(((r.mt.strike % 360) + 360) % 360);
+      dip = REC_DIPS.reduce((a, b) => (Math.abs(b - r.mt.dip) < Math.abs(a - r.mt.dip) ? b : a));
+      const rev = r.mt.rake > 30 && r.mt.rake < 150;
+      if (sea && r.depth <= 60) type = rev && r.mt.dip <= 35 ? 'inter' : 'intra';
+    }
+    obsReg(r);
+    return { lon: r.lon, lat: r.lat, depth: r.depth, M: r.M, strike, type, dip, obs: r.pts && r.pts.length ? r.t : undefined };
   }
   function renderRec() {
     const L = $('recl');
     L.innerHTML = '';
-    $('recAt').textContent = recAt;
+    $('recAt').textContent = recAt + '・震度は実際の観測に合わせて補正';
     RECENT.forEach((r, i) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('aria-pressed', recCur === i);
       b.innerHTML = '<b></b><span></span><small></small>';
-      [r.name, 'M' + r.M.toFixed(1), '深さ' + (r.depth ? r.depth + 'km' : 'ごく浅い'), '最大震度' + (REC_SC[r.mx] || '?')].forEach(x => {
+      [r.name, 'M' + r.M.toFixed(1), '深さ' + (r.depth ? r.depth + 'km' : 'ごく浅い'), '最大震度' + (REC_SC[r.mx] || '?')].concat(r.mt ? ['発震機構 ' + r.mt.src] : []).forEach(x => {
         const it = document.createElement('i');
         it.textContent = x;
         b.querySelector('span').appendChild(it);
@@ -5267,7 +5528,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       b.onclick = () => {
         if (sim) reset();
         EQS.length = 0;
-        EQS.push(Object.assign({ dip: null, rup: 'bi' }, recQuake(r), { dt: 0 }));
+        EQS.push(Object.assign({ rup: 'bi' }, recQuake(r), { dt: 0 }));
         selQ = 0;
         P = EQS[0];
         recCur = i;
@@ -5284,16 +5545,24 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then(js => {
         const out = [],
-          seen = new Set();
+          seen = new Map();
         for (const it of js || []) {
           const q = it && it.earthquake,
             h = q && q.hypocenter;
           if (!h || !(q.maxScale >= 30) || !(h.magnitude >= 2) || !(h.depth >= 0) || !(h.latitude > 20 && h.latitude < 50) || !(h.longitude > 120 && h.longitude < 155)) continue;
           const t = String(q.time || '').slice(0, 16);
-          if (!/^\d{4}\/\d\d\/\d\d \d\d:\d\d$/.test(t) || seen.has(t)) continue;
-          seen.add(t);
-          out.push({ t, name: String(h.name || ''), lat: +h.latitude, lon: +h.longitude, depth: Math.min(700, Math.round(h.depth)), M: Math.min(10, +h.magnitude), mx: q.maxScale });
-          if (out.length >= REC_N) break;
+          if (!/^\d{4}\/\d\d\/\d\d \d\d:\d\d$/.test(t)) continue;
+          /* 観測点ごとの震度：同じ地震の報のうち観測点の最も多いもの（各地の震度に関する情報） */
+          const pts = (it.points || []).filter(p => p && !p.isArea && OBS_RNG[p.scale]).map(p => [String(p.pref || ''), String(p.addr || ''), p.scale]);
+          if (seen.has(t)) {
+            const o = seen.get(t);
+            if (pts.length > o.pts.length) o.pts = pts;
+            continue;
+          }
+          if (out.length >= REC_N) continue;
+          const r = { t, name: String(h.name || ''), lat: +h.latitude, lon: +h.longitude, depth: Math.min(700, Math.round(h.depth)), M: Math.min(10, +h.magnitude), mx: q.maxScale, pts };
+          seen.set(t, r);
+          out.push(r);
         }
         if (!out.length) return;
         RECENT = out;
@@ -5301,8 +5570,38 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         const d = new Date();
         recAt = '最新（' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0') + ' 取得）';
         renderRec();
+        out.forEach(recMT);
       })
       .catch(() => {});
+  /* 公開版：USGS のモーメントテンソル解（あれば）を取得して断層の向き・傾斜に使う（Version 186）。
+     発生時刻（日本時間）の前後3分・震央から200km以内で、Mが近い地震 */
+  function recMT(r) {
+    const m = r.t.match(/^(\d{4})\/(\d\d)\/(\d\d) (\d\d):(\d\d)$/);
+    if (!m || !window.fetch) return;
+    const t0 = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]),
+      iso = x => new Date(x).toISOString().slice(0, 19);
+    const u =
+      'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&producttype=moment-tensor&starttime=' +
+      iso(t0 - 180000) + '&endtime=' + iso(t0 + 240000) + '&latitude=' + r.lat + '&longitude=' + r.lon + '&maxradiuskm=200&minmagnitude=' + Math.max(2, r.M - 1.3);
+    fetch(u)
+      .then(x => (x.ok ? x.json() : Promise.reject()))
+      .then(js => {
+        const f = (js.features || []).sort((a, b) => Math.abs(a.properties.time - t0 - 30000) - Math.abs(b.properties.time - t0 - 30000))[0];
+        return f && f.properties.detail ? fetch(f.properties.detail).then(x => (x.ok ? x.json() : Promise.reject())) : Promise.reject();
+      })
+      .then(d => {
+        const L = (d.properties.products || {})['moment-tensor'] || [],
+          p = (L.find(x => x.properties['review-status'] === 'reviewed') || L[0] || {}).properties;
+        if (!p) return;
+        const pl = [1, 2].map(k => ({ strike: +p['nodal-plane-' + k + '-strike'], dip: +p['nodal-plane-' + k + '-dip'], rake: +p['nodal-plane-' + k + '-rake'] }));
+        if (pl.some(x => !isFinite(x.strike) || !isFinite(x.dip) || !isFinite(x.rake))) return;
+        /* 2つの節面のうち、逆断層なら傾斜の緩い方、それ以外は1つ目 */
+        const rev = pl[0].rake > 30 && pl[0].rake < 150;
+        r.mt = Object.assign(rev && pl[1].dip < pl[0].dip ? pl[1] : pl[0], { src: 'USGS' });
+        renderRec();
+      })
+      .catch(() => {});
+  }
   function setLayer(key, on) {
     layers[key] = on;
     const id = { heat: 'Lheat', amp: 'Lamp', st: 'Lst', flt: 'Lflt', lp: 'Llp', name: 'Lname' }[key];
