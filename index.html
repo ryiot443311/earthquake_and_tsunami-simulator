@@ -2505,6 +2505,76 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const D2R = Math.PI / 180,
     K = Math.cos(36 * D2R);
   const VR = 2.6;
+  /* ===== 計算の分散（Version 200）=====
+     重い計算（津波の経路・波の広がり・室内の揺れの波形など）は「ジョブ」として、毎コマの空き時間（JOB_DL まで）に少しずつ進める。
+     ジョブの中身はジェネレーター関数で、ループの途中で時間を見て yield する。すぐ結果が要るときは jobDrain で最後まで一気に進める（同じ結果になる） */
+  let JOB_DL = Infinity;
+  const jobQ = [];
+  /* 締め切り（JOB_DL）を過ぎたか。重いループの中で数百回に1回だけ呼ぶ */
+  const jobLate = () => JOB_DL !== Infinity && performance.now() > JOB_DL;
+  function jobDrain(g) {
+    for (;;) {
+      const r = g.next();
+      if (r.done) return r.value;
+    }
+  }
+  /* ジョブを足す。pri：小さいほど先（必要になる時刻など）。done(結果)：終わったとき。同じ key のジョブは1つだけ */
+  function jobAdd(key, pri, mk, done) {
+    let j = key != null ? jobQ.find(x => x.key === key) : null;
+    if (j) {
+      if (pri < j.pri) j.pri = pri;
+      return j;
+    }
+    j = { key, pri, g: null, mk, done, fin: false };
+    jobQ.push(j);
+    return j;
+  }
+  /* そのジョブを今すぐ最後まで進める（まだ始まっていなければ始めから） */
+  function jobFinish(j) {
+    if (!j || j.fin) return;
+    const i = jobQ.indexOf(j);
+    if (i >= 0) jobQ.splice(i, 1);
+    const dl = JOB_DL;
+    JOB_DL = Infinity;
+    try {
+      if (!j.g) j.g = j.mk();
+      const v = jobDrain(j.g);
+      j.fin = true;
+      if (j.done) j.done(v);
+    } finally {
+      JOB_DL = dl;
+    }
+  }
+  function jobCancel(pred) {
+    for (let i = jobQ.length - 1; i >= 0; i--) if (pred(jobQ[i])) jobQ.splice(i, 1);
+  }
+  /* 締め切りまでジョブを進める */
+  /* share：ほかのジョブが待っているとき、そのジョブが使える時間の割合（描き直しのように次々に来るジョブが、ほかを止めないように） */
+  function jobTick(dl) {
+    if (!jobQ.length) return;
+    const used = new Set();
+    try {
+      for (;;) {
+        const now = performance.now();
+        if (!jobQ.length || now >= dl) break;
+        let j = null;
+        for (const x of jobQ) if (!used.has(x) && (!j || x.pri < j.pri)) j = x;
+        if (!j) break;
+        used.add(j);
+        JOB_DL = j.share && jobQ.length > 1 ? now + (dl - now) * j.share : dl;
+        if (!j.g) j.g = j.mk();
+        const r = j.g.next();
+        if (r.done) {
+          const i = jobQ.indexOf(j);
+          if (i >= 0) jobQ.splice(i, 1);
+          j.fin = true;
+          if (j.done) j.done(r.value);
+        }
+      }
+    } finally {
+      JOB_DL = Infinity;
+    }
+  }
   const CLS_LABEL = ['0', '1', '2', '3', '4', '5弱', '5強', '6弱', '6強', '7'];
   const CLS_COLOR = [
     null,
@@ -3531,7 +3601,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           view.cx + W / (2 * view.s) > (SG.lon0 + SG.w * SG.d) * K ||
           -(view.cy + H / (2 * view.s)) < SG.lat0 ||
           -(view.cy - H / (2 * view.s)) > SG.lat0 + SG.h * SG.d),
-      wvOn = tsuView && wvPaint(t, wvOut);
+      wvOn =
+        tsuView &&
+        wvPaint(t, wvOut, [
+          (view.cx - W / (2 * view.s)) / K,
+          (view.cx + W / (2 * view.s)) / K,
+          -(view.cy + H / (2 * view.s)),
+          -(view.cy - H / (2 * view.s))
+        ]);
     const paintStatic = () => {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(baseCv, 0, 0);
@@ -3563,7 +3640,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       if (wvOn && wvOut && wvAnyO) {
         ctx.save();
-        ctx.clip(wvClipO(0.5 / (view.s * DPR)), 'evenodd');
+        ctx.clip(wvClipO(), 'evenodd');
         ctx.imageSmoothingEnabled = true;
         ctx.drawImage(wvCvO, WVO.lon0 * K, -(WVO.lat0 + WVO.h * WVO.d), WVO.w * WVO.d * K, WVO.h * WVO.d);
         ctx.restore();
@@ -3602,7 +3679,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           (warnOn ? warnVer + ',' + nhkLive : '') +
           '|' +
           tsuSig +
-          (wvOn ? '|w' + wvT + (wvOut ? 'o' + wvTO : '') : '');
+          (wvOn ? '|w' + wvT + (wvOut ? 'o' + wvTO : '') + 'g' + wvGen : '');
       const bi = tsuBlink ? 1 : 0;
       if (vk !== mapStView) {
         mapStView = vk;
@@ -4178,6 +4255,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const prefPathById = new Map();
   prefPathId.forEach((id, i) => prefPathById.set(id, prefPaths[i]));
   function clearWarnFill() {
+    if (warnJob) jobCancel(j => j === warnJob);
+    warnJob = null;
     warnCv.getContext('2d').clearRect(0, 0, G.w, G.h);
     warnPref.clear();
     warnVer++;
@@ -4258,25 +4337,50 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     uc.putImageData(ui, 0, 0);
     return { cv: u, x0: c0, y0: r0, w, h, sig };
   }
-  function paintWarn() {
-    if (!cellArea || !sim || !prefCellList) return;
+  /* 警報の塗り（県ごとの形）は、緊急地震速報のテロップを出したコマでは作らず、次のコマから空き時間で作って、全部そろったら差し替える（Version 200。
+     第1報のコマが約40ms重くなっていた）。時刻の移動中はその場で作る。作った形は県と対象地域の組で覚えて使い回す */
+  let warnJob = null;
+  const warnMk = new Map();
+  function* paintWarnG() {
     const byPref = new Map();
     shownAreas().forEach((v, i) => {
       const p = AREAS[i].pref;
       if (!byPref.has(p)) byPref.set(p, []);
       byPref.get(p).push(i);
     });
-    for (const p of [...warnPref.keys()]) if (!byPref.has(p)) warnPref.delete(p);
-    byPref.forEach((list, p) => {
-      const sig = list.sort((x, y) => x - y).join(',');
-      const old = warnPref.get(p);
-      if (old && old.sig === sig) return;
-      const mk = buildPrefMask(p, new Set(list), sig);
-      if (mk) warnPref.set(p, mk);
-      else warnPref.delete(p);
-    });
+    const nw = new Map();
+    for (const [p, list] of byPref) {
+      const sig = list.sort((x, y) => x - y).join(','),
+        old = warnPref.get(p);
+      if (old && old.sig === sig) {
+        nw.set(p, old);
+        continue;
+      }
+      const key = p + '|' + sig;
+      let mk = warnMk.get(key);
+      if (mk === undefined) {
+        if (jobLate()) yield;
+        mk = buildPrefMask(p, new Set(list), sig) || null;
+        if (warnMk.size > 80) warnMk.clear();
+        warnMk.set(key, mk);
+      }
+      if (mk) nw.set(p, mk);
+    }
+    warnPref.clear();
+    nw.forEach((v, p) => warnPref.set(p, v));
     warnVer++;
     dirty = true;
+  }
+  function paintWarn() {
+    if (!cellArea || !sim || !prefCellList) return;
+    if (warnJob) jobCancel(j => j === warnJob);
+    warnJob = null;
+    if (seeking) {
+      jobDrain(paintWarnG());
+      return;
+    }
+    warnJob = jobAdd(null, -3, paintWarnG, () => (warnJob = null));
+    warnJob.owner = sim;
   }
   /* 震度・長周期の格子の塗りを、県境・海岸線の内側（陸地）だけに見せる。格子は粗いので、そのままだと海や隣の県にはみ出す。
      Version 151：塗りを画面全体にそのまま描き、その上に「下地の海の部分だけ（陸を抜いた下地）」の画像を重ねて海へのはみ出しを隠す。
@@ -6069,15 +6173,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      周期15〜20秒の表面波（群速度3.7km/s）が数分〜十数分後に届く。最大速度は表面波マグニチュードの式（log(A/T)＝Ms−1.66logΔ−3.3、Δは度）から求め、
      計測震度のフィルター（周期15秒の波は約0.2倍）を通した加速度から震度にする。長周期の波は堆積平野と軟らかい地盤で増える。
      ほとんどは震度0で、M9級が近いときに平野で震度1になる程度（実際の遠地の巨大地震も日本ではほぼ無感） */
-  let swKey = '',
-    swOn = false;
+  /* 地震ごとに覚えておく（以前は直前の1つだけで、複数の地震を交互に調べると毎回すべての市区町村との距離を測っていた。Version 200） */
+  const swMemo = new Map();
   function swCheck(q) {
-    const k = q.lon + ',' + q.lat + ',' + q.M;
-    if (k !== swKey) {
-      swKey = k;
-      swOn = q.M >= 8.3 && nearCity(q.lon, q.lat).d >= FAR_KM;
+    if (q.M < 8.3) return false;
+    const k = q.lon + ',' + q.lat;
+    let v = swMemo.get(k);
+    if (v === undefined) {
+      if (swMemo.size > 64) swMemo.clear();
+      swMemo.set(k, (v = nearCity(q.lon, q.lat).d >= FAR_KM));
     }
-    return swOn;
+    return v;
   }
   function swAt(q, lon, lat, arv, bas, nz) {
     const Dk = Math.max(100, gcKm(q.lon, q.lat, lon, lat)),
@@ -6390,7 +6496,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return -1;
   }
   /* 波源から海の上だけを通る最短距離（ダイクストラ法）。lab=どの波源点から来たか */
-  function seaPath(srcPts) {
+  function* seaPathG(srcPts) {
     const N = SG.w * SG.h,
       dist = new Float64Array(N).fill(1e9),
       lab = new Int32Array(N).fill(-1),
@@ -6494,7 +6600,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
     }
     const PW = outP.length ? 150 : 0;
+    let yc = 0;
     while (hn) {
+      if ((++yc & 2047) === 0 && jobLate()) yield;
       const n = pop(),
         d = pd;
       if (d > cs[n]) continue;
@@ -6556,14 +6664,22 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return Object.assign({}, q, { slip: { k: g(), x0: (g() - 0.5) * 0.7 } });
   }
   function computeTsunami(P, qual) {
+    return jobDrain(computeTsunamiG(P, qual));
+  }
+  function* computeTsunamiG(P, qual) {
     P = P || EQS[0];
     if (!COAST.length) return null;
     const k = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, P.dip, P.rup, !!qual, slipKey(P)].join();
     let r = tsuMemo.get(k);
     if (!r) {
-      r = computeTsunami0(P, qual);
+      r = yield* computeTsunami0G(P, qual);
       if (r && r.pending) return r;
-      if (tsuMemo.size > 40) tsuMemo.clear();
+      /* 古いものから消す（以前は40件を超えたら全部消していた。先に計算しておいた値が消えないように。Version 200） */
+      while (tsuMemo.size >= 40) tsuMemo.delete(tsuMemo.keys().next().value);
+      tsuMemo.set(k, r);
+    } else {
+      /* 使ったものを新しい側へ */
+      tsuMemo.delete(k);
       tsuMemo.set(k, r);
     }
     return r && { gen: r.gen, regs: r.regs.map(x => Object.assign({}, x)), raw: r };
@@ -6733,6 +6849,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   const JSEA_REGS = new Set(['北海道日本海沿岸南部','北海道日本海沿岸北部','青森県日本海沿岸','秋田県','山形県','新潟県上中下越','佐渡','富山県','石川県能登','石川県加賀','福井県','京都府','兵庫県北部','鳥取県','島根県出雲・石見','隠岐','山口県日本海沿岸','福岡県日本海沿岸','佐賀県北部','壱岐・対馬']);
   function computeTsunami0(P, qual) {
+    return jobDrain(computeTsunami0G(P, qual));
+  }
+  function* computeTsunami0G(P, qual) {
     const Lf = faultLen(P.M),
       L = Lf / 2,
       sr = sRange(P, L),
@@ -6771,7 +6890,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     let GS = tsuGeo.get(gk);
     if (!GS) {
       const S0 = tsuSource(P);
-      GS = { S: S0, SP: S0 ? seaPath(S0.src) : null };
+      if (jobLate()) yield;
+      GS = { S: S0, SP: S0 ? yield* seaPathG(S0.src) : null };
       if (tsuGeo.size >= 24) tsuGeo.clear();
       tsuGeo.set(gk, GS);
     }
@@ -6791,7 +6911,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       amp = P.type === 'crustal' ? Math.min(1, seaFrac * 2) : Math.min(1, 0.3 + seaFrac * 1.2);
     /* 波源の各点が日本海側か（最寄りの海岸が日本海側の予報区か）。震源の位置ではなく断層そのものの位置で判定する */
     const srcJS = new Map();
+    let sjc = 0;
     for (const q of src) {
+      if ((++sjc & 15) === 0 && jobLate()) yield;
       let bd = 1e18, br = null;
       for (const c of COAST) {
         const dx = (c.lon - q[0]) * kx,
@@ -6828,7 +6950,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       ptA = new Float32Array(COAST.length),
       ptS = new Int8Array(COAST.length),
       jsCap = new Uint8Array(COAST.length);
-    COAST.forEach((c, ci) => {
+    const ptOne = (c, ci) => {
       /* 海岸から最も近い波源 */
       let D = 1e9,
         fl = 0,
@@ -6951,7 +7073,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       ptH[ci] = Math.min(H, 30);
       ptA[ci] = arr;
       ptS[ci] = bestQ && bestQ[2] < 0 ? -1 : 1;
-    });
+    };
+    for (let ci = 0; ci < COAST.length; ci++) {
+      ptOne(COAST[ci], ci);
+      if ((ci & 63) === 63 && jobLate()) yield;
+    }
     /* 近くの海岸どうしをなだらかにする（Version 179）：海峡・岬の先で回り込んだ波は数kmで広がるので、近くの点の高さ×exp(−距離/5km)より低くしない（上げるだけ）。
        以前は海峡の内と外で6km離れただけの点が5倍以上違うことがあった。到達時刻は近くの点＋距離÷30m/秒 */
     const anyJS = [...srcJS.values()].some(Boolean),
@@ -7582,7 +7708,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       /* 津波：約3分後に第1報。M8を超える巨大地震は定性表現で出し、約15分後に数値へ更新 */
       if (!fake && cfg.tsu) {
         const qual = q.M > 8 && !e.farQ;
-        e.tsunami = computeTsunami(slipOf(q, e), qual);
+        /* 実際の津波の計算（M9で約0.1〜0.5秒）は、近地の地震は「地震発生」の後に毎コマの空き時間で進める（Version 200。tsuStartG）。
+           時刻の移動中と遠地地震は従来どおりここで計算する */
+        e.tsLazy = !seeking && !e.farQ;
+        e.tsunami = e.tsLazy ? null : computeTsunami(slipOf(q, e), qual);
         if (e.tsunami) e.tsunami.regs.forEach(r => (r.arr += e.t0));
         /* 「認知」＝緊急地震速報の第1報の発表時。第1報が出た時点で上書きする（eewTick）。出ない地震は検知＋遅延から数える */
         const tRec = e.det.length ? e.det[0] + cfg.delay : e.t0;
@@ -7676,7 +7805,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.ang = (q.lon * 97 + q.lat * 31 + e.k * 1.7) % 6.283;
       /* 予報（データベース）でも津波が予想されるか（Version 160）。Mは発表時点の見込み（M8超は最大級を見込む）。
          実際の津波が無くても予報が出る地震は、発表の時刻までシミュレーションを続ける */
-      if (e.tsDbGen === null) {
+      if (e.tsDbGen === null && !e.tsLazy) {
         e.tsDbGen = false;
         if (!e.farQ) {
           const db = tsuDb(e, e.tsQual ? tsuQualM(e, q.M) : q.M, e.tsQual);
@@ -7735,6 +7864,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       tsuPend: new Map(),
       tsuObsQ: []
     };
+    /* 前の「地震発生」のジョブは捨てる */
+    jobCancel(j => j.owner && j.owner !== sim);
+    for (const e of evs)
+      if (e.tsLazy) {
+        /* 必要になる時刻（緊急地震速報の第1報・震度速報・津波の発表の早い方）までに終わらなければ、その時点で残りを一気に計算する（simBody） */
+        e.tsNeed = Math.min(e.infoT, e.tsT);
+        e.tsT0 = e.tsT;
+        e.tsT20 = e.tsT2 || 0;
+        const P = slipOf(e.q, e);
+        e.tsJob = jobAdd(null, e.tsNeed, () => tsuStartG(e, P), v => tsuStartApply(e, v));
+        e.tsJob.owner = sim;
+      }
     $('log').innerHTML = '<div class="empty">地震波を監視中…</div>';
     $('res').innerHTML = '<div class="empty wait">シミュレーション中…</div>';
     $('lpRes').innerHTML = '<div class="empty wait">シミュレーション中…</div>';
@@ -7769,7 +7910,69 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     setStatus('live', fake ? '誤報のテスト中' : '地震発生');
     if (!fake) roomPlay('sync');
   }
+  /* 津波予報の引き直し（M8超の数値への更新・Mの速報値の更新）で使うデータベースの計算（1回で約0.1〜0.4秒）を、
+     緊急地震速報が終わってMの見込みが決まったら、必要になる少し前から毎コマの空き時間で先に済ませておく（Version 200。結果は tsuMemo に残り、発表の時にそれを使う） */
+  function tsuPrefetch(e, t) {
+    if (e.farQ || !e.eewDone || !cfg.tsu || sim.fake) return;
+    if (!e.tsPre) {
+      const L = [],
+        add = (tt, M) => {
+          if (!L.some(x => x.M === M)) L.push({ t: tt, M, j: null });
+        };
+      if (!e.tsuDone) add(e.tsT, e.tsQual ? tsuQualM(e, infoM(e, e.tsT)) : infoM(e, e.tsT));
+      if (e.tsQual && e.tsT2 && !e.tsuUpd) add(e.tsT2, infoM(e, e.tsT2));
+      (e.mwSteps || []).forEach((st, i) => add(st.t + 30, mwM(e, i)));
+      e.tsPre = L;
+    }
+    const lead = Math.max(120, speed * 4);
+    for (const x of e.tsPre)
+      if (!x.j && t >= x.t - lead) {
+        x.j = jobAdd(null, x.t, () => tsuDbG(e, x.M, false), null);
+        x.j.owner = sim;
+      }
+  }
+  /* 「地震発生」後に分けて計算する津波（Version 200）：実際の津波と、予報（データベース）で津波が予想されるか。
+     結果の当てはめ（tsuStartApply）は start で同時に計算していた場合と同じ値になるようにする（シミュレーションの長さは大きい方を取るだけなので、順番によらない） */
+  function* tsuStartG(e, P) {
+    const T = yield* computeTsunamiG(P, e.tsQual);
+    const db = yield* tsuDbG(e, e.tsQual ? tsuQualM(e, e.q.M) : e.q.M, e.tsQual);
+    return [T, db];
+  }
+  function tsuStartApply(e, [T, db]) {
+    e.tsJob = null;
+    e.tsLazy = false;
+    if (sim && !sim.evs.includes(e)) return;
+    e.tsunami = T;
+    if (T) T.regs.forEach(r => (r.arr += e.t0));
+    let x = e.endT,
+      x0 = e.endT0;
+    /* start で計算した場合と同じく、「地震発生」の時点の発表予定時刻（tsT0・tsT20）で延ばす */
+    if (T && T.gen) {
+      const a = Math.max(e.tsT0 + 25, e.tsQual && e.tsT20 ? e.tsT20 + 20 : 0);
+      x = Math.max(x, a);
+      x0 = Math.max(x0, a);
+    }
+    e.tobs = T && T.gen ? tobsBuild(e) : null;
+    if (e.tobs && T.regs[0].cat >= 2 && e.tobs.end > 0) x = Math.max(x, Math.min(e.t0 + TOBS_MAX, e.tobs.end + TOBS_DELAY + 60));
+    e.tsDbGen = !!(db && db.gen);
+    if (e.tsDbGen && !(T && T.gen)) {
+      const a = Math.max(e.tsT0 + 25, e.tsT20 ? e.tsT20 + 20 : 0);
+      x = Math.max(x, a);
+      x0 = Math.max(x0, a);
+    }
+    e.endT = Math.min(x, SIM_MAX);
+    e.endT0 = x0;
+    /* 計算中に緊急地震速報の第1報が出ていたら、そこで延ばすはずだった分（eewTick）をここで */
+    if (e.tsRepPend && tsuWill(e)) e.endT = Math.max(e.endT, e.tsT + 25, e.tsT2 ? e.tsT2 + 20 : 0);
+    e.tsRepPend = false;
+    if (sim) {
+      sim.endT = Math.min(SIM_MAX, Math.max(sim.endT, e.endT));
+      sim.shakeEnd = Math.max(sim.shakeEnd, e.endT0);
+    }
+  }
   function reset() {
+    jobCancel(j => j.owner);
+    RM.moJob = null;
     clearTimeout(infoFoldT);
     $('info').classList.remove('short', 'fold');
     sim = null;
@@ -8154,7 +8357,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (e.reports.length === 1 && e.tsT != null && !e.tsuDone && !s.fake && !e.farQ) {
       e.tsT = t + (e.tsOff || 180);
       if (e.tsQual) e.tsT2 = t + (e.tsOff2 || 900);
-      if (tsuWill(e)) {
+      if (e.tsJob) e.tsRepPend = true;
+      else if (tsuWill(e)) {
         e.endT = Math.max(e.endT, e.tsT + 25, e.tsT2 ? e.tsT2 + 20 : 0);
         s.endT = Math.min(SIM_MAX, Math.max(s.endT, e.endT));
       }
@@ -9481,6 +9685,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.tsFc = { gen: regs.length > 0, regs, raw: (nw && nw.raw) || (e.tsunami && e.tsunami.raw) };
     } else if (!upd) {
       e.tsuDone = true;
+      /* 「震度｜津波」の津波表示に切り替わる前に、波の広がりを先に計算しておく（毎コマの空き時間で。Version 200） */
+      if (e.tsunami && e.tsunami.gen && seaG) wvBuildReq(e, t + 30);
       /* 第1報は、その時点で分かっているMで予想する（実際のMとずれていれば、後の情報や観測で見直す） */
       e.tsFc = tsuFc(e, infoM(e, t));
     }
@@ -9646,6 +9852,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     };
   }
   function tsuDb(e, M, qual) {
+    return jobDrain(tsuDbG(e, M, qual));
+  }
+  function* tsuDbG(e, M, qual) {
     const q = e.q,
       E = tsuDbSrc(e),
       st = TSU_DB_STEP,
@@ -9660,7 +9869,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     let raw = null;
     for (const [lon, lat] of pts) {
       const P = { lon, lat, M, depth: E.depth, strike: q.strike, type: q.type, dip: 45, rup: 'bi' };
-      const T = computeTsunami(P, false);
+      const T = yield* computeTsunamiG(P, false);
       if (T && T.pending) return T;
       if (!T || !T.gen) continue;
       raw = raw || T.raw;
@@ -10062,6 +10271,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      実際の津波（e.tsunami）の波源と海の上の最短経路（seaPath）から、海の格子ごとに第1波の到達時刻と振幅を求め、
      時刻ごとの海面の上下（赤＝上昇、青＝下降）を 380×320 の画像に描いて地図に重ねる。計算は地震ごとに1回、描き直しは時刻の刻みが変わったときだけ */
   let wvDc = null,
+    wvFillI = null,
     wvFill = null,
     wvClipP = null;
   function wvPrep() {
@@ -10114,22 +10324,28 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         const n = r * w + c;
         if (seaG[n]) continue;
         let m = -1;
-        for (let i = -1; i <= 1 && m < 0; i++)
-          for (let j = -1; j <= 1; j++) {
-            const R = r + i,
-              C = c + j;
-            if (R < 0 || C < 0 || R >= h || C >= w || !seaG[R * w + C]) continue;
-            m = R * w + C;
-            break;
-          }
+        /* 縦・横の隣を先に（斜めは後） */
+        for (const [i, j] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const R = r + i,
+            C = c + j;
+          if (R < 0 || C < 0 || R >= h || C >= w || !seaG[R * w + C]) continue;
+          m = R * w + C;
+          break;
+        }
         if (m >= 0) f.push(n, m);
       }
     wvFill = Int32Array.from(f);
+    /* 陸の格子 → 値を借りる海の格子（なければ -1） */
+    wvFillI = new Int32Array(N).fill(-1);
+    for (let k = 0; k < f.length; k += 2) wvFillI[f[k]] = f[k + 1];
   }
   /* 波の広がりの表示に使う外洋の水深（m。Version 185）。予報・観測の計算（tsuHmax の3500m）は変えず、表示だけ実際の深さに近づける：
      日本海溝・千島海溝・伊豆小笠原海溝より東の太平洋は約6000m、南海トラフ・南西諸島海溝より外のフィリピン海は約4500m */
   const WV_TRENCH = [
-    [[155.5, 48], [151, 44.6], [147.5, 42.6], [145, 41.3], [144.3, 40], [143.8, 38], [142.6, 36], [142, 34.4], [142.2, 32], [142.9, 29], [142.6, 26], [142.4, 23], [143.5, 19]],
+    [
+      [163.5, 55.5], [161, 53], [158.5, 51], [155.5, 48], [151, 44.6], [147.5, 42.6], [145, 41.3], [144.3, 40], [143.8, 38], [142.6, 36], [142, 34.4], [142.2, 32],
+      [142.9, 29], [142.6, 26], [142.4, 23], [143.5, 19], [146.5, 15.5], [147.3, 13], [145, 11], [140, 9.5]
+    ],
     [[139.2, 34.3], [138.2, 33.8], [136.5, 33.3], [134.5, 32.8], [133, 32.2], [132, 31.2], [131.6, 30], [130.2, 28.2], [128.4, 26.4], [126.5, 24.6], [124.5, 23.5], [122.5, 23], [121, 21.5]]
   ];
   const wvLineX = (L, lat) => {
@@ -10149,7 +10365,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (lat < 34.3 && (xp === null || lon < xp)) {
       /* 南海トラフ・南西諸島海溝より南東（海溝の線より、陸と反対の側） */
       const L = WV_TRENCH[1];
-      let below = false;
+      /* 線の東の端（伊豆半島の沖）より東と、西の端（台湾の南）より西の低緯度は、フィリピン海・南シナ海の深い海（Version 198） */
+      let below = lon > L[0][0] || (lon < L[L.length - 1][0] && lat < 21.5);
       for (let i = 0; i + 1 < L.length; i++) {
         const [x0, y0] = L[i],
           [x1, y1] = L[i + 1];
@@ -10162,135 +10379,115 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     return hm;
   }
-  function wvBuild(e) {
-    const R = e.tsunami && e.tsunami.gen && e.tsunami.raw,
-      GS = R && R.geo;
-    if (!GS || !GS.S || !GS.SP || !seaG) return null;
-    wvPrep();
-    const SP = GS.SP,
-      src = GS.S.src,
-      a = GS.S.a,
-      N = SG.w * SG.h,
-      ta = new Float32Array(N),
-      A = new Float32Array(N),
-      NB = Math.ceil(SIM_MAX / 60) + 1,
-      cnt = new Int32Array(NB + 1);
-    let nOk = 0;
-    for (let n = 0; n < N; n++) {
-      ta[n] = -1;
-      const D = SP.dist[n],
-        q = seaG[n] && D < 1e8 ? src[SP.lab[n]] : null;
-      if (!q) continue;
-      const r = (n / SG.w) | 0,
-        lon = SG.lon0 + (n - r * SG.w + 0.5) * SG.d,
-        lat = SG.lat0 + (r + 0.5) * SG.d,
-        hm = wvDepth(lon, lat),
-        ha = R.farK && hm > 3000 ? Math.max(4500, hm) : hm,
-        dc = wvDc[n],
-        tt = tsuTime(D + dc, ha) - tsuTime(dc, ha);
-      if (!(tt <= SIM_MAX)) continue;
-      const hs = Math.min(ha, 30 + 25 * dc),
-        v = (q[2] * Math.min(3, Math.sqrt(Math.sqrt(ha / hs))) * Math.sqrt(a / (a + D)) * Math.exp(-pathLoss(SP, n))) / (1 + D / 800);
-      if (Math.abs(v) < 0.01) continue;
-      ta[n] = tt;
-      A[n] = Math.max(-20, Math.min(20, v));
-      cnt[((tt / 60) | 0) + 1]++;
-      nOk++;
-    }
-    for (let b = 1; b <= NB; b++) cnt[b] += cnt[b - 1];
-    const bs = Int32Array.from(cnt),
-      order = new Int32Array(nOk);
-    for (let n = 0; n < N; n++) if (ta[n] >= 0) order[cnt[(ta[n] / 60) | 0]++] = n;
-    return { ta, A, order, bs, T: 60 * Math.max(8, Math.min(50, 6 + 0.3 * a)), O: undefined, mk: () => wvBuildOut(R, SP, src, a, ta) };
-  }
-  /* ---- 格子（SG）の外の波の広がり（Version 193）----
-     以前は海の格子（東経119〜157度・北緯19〜51度）の外へ出た波が消え、格子の縁で角ばって切れていた。
-     地図で見られる範囲（手で動かせる中心は日本から2000km以内、いちばん縮小すると経度40度の幅）まで、0.25度の粗い格子で続きを描く。
-     日本の陸はすべて SG の中なので、外側はすべて外洋として扱う（地図に描かれていない大陸の上も、SG の中と同じく海として扱う）。
-     到達時刻は SG の中の値（格子の外に重なる粗い格子の、いちばん早く届く細かい格子）と格子の外の波源から、16方向の最短時間で広げる。
-     振幅は SG の中と同じ式（波源の高さ×道のりによる減衰）を道のりを延ばして続ける */
-  const WVO = { lon0: 89, lat0: -13, d: 0.25, w: 400, h: 360 };
-  /* 粗い格子のうち SG と重なる範囲（列・行。SG の縁は0.25度の格子の境目にそろう） */
-  const WVO_C0 = (SG.lon0 - WVO.lon0) / WVO.d,
-    WVO_C1 = (SG.lon0 + SG.w * SG.d - WVO.lon0) / WVO.d,
-    WVO_R0 = (SG.lat0 - WVO.lat0) / WVO.d,
-    WVO_R1 = (SG.lat0 + SG.h * SG.d - WVO.lat0) / WVO.d;
-  function wvBuildOut(R, SP, src, a, ta) {
-    const w = WVO.w,
-      h = WVO.h,
-      N = w * h,
-      d = WVO.d,
-      T = new Float32Array(N).fill(1e9),
-      B = new Float32Array(N),
-      D = new Float32Array(N),
-      sp = new Float32Array(N),
-      inSG = (r, c) => c >= WVO_C0 && c < WVO_C1 && r >= WVO_R0 && r < WVO_R1;
-    /* 各格子の波の速さ（m/s）。表示用の水深（wvDepth）、遠地の地震は外洋4500m以上（SG の中と同じ） */
-    for (let r = 0; r < h; r++) {
-      const lat = WVO.lat0 + (r + 0.5) * d;
+  /* ---- 波の広がりの到達時刻（Version 198 で作り直し）----
+     以前は予報用の最短経路（seaPath：8方向）の道のりから到達時刻を出していたため、波の縞が八角形に角ばっていた。
+     表示用に、格子ごとの波の速さ（水深）で「いちばん早く届く時刻」を32方向（1〜3格子先、間の格子が海のときだけ。スマホ等は16方向）で広げる。
+     方向による誤差は約0.5%（16方向は約2%）で、縞はほぼ円くなる。島や半島の陰へは縁を回り込んで届き（回折）、陸に近い浅い所では遅れて縞が海岸に沿って曲がる（屈折）。
+     水深は海溝の線などの段差で縞が折れないよう、約0.5度の範囲でならす */
+  const wvStencil = R => {
+    const g = (a, b) => (b ? g(b, a % b) : a),
+      L = [];
+    for (let dr = -R; dr <= R; dr++)
+      for (let dc = -R; dc <= R; dc++) if ((dr || dc) && g(Math.abs(dr), Math.abs(dc)) === 1) L.push([dr, dc]);
+    return L;
+  };
+  /* PC は32方向、スマホ等は16方向（計算を約半分に。縞の角はわずかに残る） */
+  const WV_ST32 = wvStencil(3),
+    WV_ST16 = wvStencil(2);
+  /* 箱型のならし（m：使う格子。半径 rad の平均を2回） */
+  function wvBlur(F, w, h, rad, m, pass) {
+    const tmp = new Float32Array(F.length);
+    for (let k = 0; k < pass; k++) {
+      for (let r = 0; r < h; r++) {
+        let s = 0,
+          c0 = 0;
+        const o = r * w;
+        for (let c = -rad; c < w; c++) {
+          const a = c + rad,
+            b = c - rad - 1;
+          if (a < w && (!m || m[o + a])) (s += F[o + a]), c0++;
+          if (b >= 0 && (!m || m[o + b])) (s -= F[o + b]), c0--;
+          if (c >= 0) tmp[o + c] = c0 ? s / c0 : F[o + c];
+        }
+      }
       for (let c = 0; c < w; c++) {
-        const lon = WVO.lon0 + (c + 0.5) * d;
-        /* 海溝の線（WV_TRENCH）がある緯度は SG の中と同じ深さ、それより南北の外洋は一様に5000m（段差で波の縞が折れないように） */
-        let hm = lat >= 19 && lat <= 48 ? wvDepth(lon, lat) : 5000;
-        if (R.farK && hm > 3000) hm = Math.max(4500, hm);
-        sp[r * w + c] = Math.sqrt(9.8 * hm);
-      }
-    }
-    /* SG の中の値を、重なる粗い格子へ：細かい格子の到達時刻＋粗い格子の中心までの時間の、いちばん早いもの
-       （格子の境目で波の縞がずれないように） */
-    const sw = SG.w;
-    for (let n = 0; n < ta.length; n++) {
-      if (ta[n] < 0) continue;
-      const rr = (n / sw) | 0,
-        lon = SG.lon0 + (n - rr * sw + 0.5) * SG.d,
-        lat = SG.lat0 + (rr + 0.5) * SG.d,
-        c = Math.floor((lon - WVO.lon0) / d),
-        r = Math.floor((lat - WVO.lat0) / d),
-        m = r * w + c,
-        km = Math.hypot((WVO.lon0 + (c + 0.5) * d - lon) * 111.32 * Math.cos(lat * D2R), (WVO.lat0 + (r + 0.5) * d - lat) * 110.57),
-        t = ta[n] + (km * 1000) / sp[m];
-      if (t < T[m]) {
-        T[m] = t;
-        B[m] = src[SP.lab[n]][2] * Math.exp(-pathLoss(SP, n));
-        D[m] = SP.dist[n] + km;
-      }
-    }
-    /* SG の外の波源（遠地の地震）：粗い格子の中なら、その格子から。粗い格子の外なら、粗い格子の縁へ大円の距離で届かせる */
-    const step = Math.max(1, Math.ceil(src.length / 40)),
-      edge = [];
-    for (let c = 0; c < w; c++) edge.push(c, (h - 1) * w + c);
-    for (let r = 1; r < h - 1; r++) edge.push(r * w, r * w + w - 1);
-    for (let i = 0; i < src.length; i += step) {
-      const q = src[i],
-        c = Math.floor((q[0] - WVO.lon0) / d),
-        r = Math.floor((q[1] - WVO.lat0) / d);
-      if (c >= 0 && r >= 0 && c < w && r < h) {
-        if (inSG(r, c)) continue;
-        const m = r * w + c;
-        if (0 < T[m]) {
-          T[m] = 0;
-          B[m] = q[2];
-          D[m] = 0;
-        }
-        continue;
-      }
-      for (const m of edge) {
-        const rr = (m / w) | 0,
-          g = gcKm(q[0], q[1], WVO.lon0 + (m - rr * w + 0.5) * d, WVO.lat0 + (rr + 0.5) * d),
-          t = (g * 1000) / Math.sqrt(9.8 * 4500);
-        if (t < T[m]) {
-          T[m] = t;
-          B[m] = q[2];
-          D[m] = g;
+        let s = 0,
+          c0 = 0;
+        for (let r = -rad; r < h; r++) {
+          const a = r + rad,
+            b = r - rad - 1;
+          if (a < h && (!m || m[a * w + c])) (s += tmp[a * w + c]), c0++;
+          if (b >= 0 && (!m || m[b * w + c])) (s -= tmp[b * w + c]), c0--;
+          if (r >= 0 && (!m || m[r * w + c])) F[r * w + c] = c0 ? s / c0 : tmp[r * w + c];
         }
       }
     }
-    /* 最短時間で広げる（二分ヒープ）。SG と重なる格子へは入らない（そこは細かい格子が描く） */
-    const hp = new Int32Array(N * 8),
-      hk = new Float32Array(N * 8),
-      done = new Uint8Array(N);
-    let hn = 0;
+  }
+  /* 陸をまたがない隣どうし（seaMv の縦・横）だけで値をならす（F：値、ok：使う格子、it：回数）。内側は型付き配列だけで回す（Version 199） */
+  function* wvDiffuseG(F, ok, w, h, it) {
+    const N = w * h,
+      idx = [];
+    for (let n = 0; n < N; n++) if (ok(n)) idx.push(n);
+    const L = Int32Array.from(idx),
+      nL = L.length,
+      /* 各格子の縦・横の隣（使えなければ -1） */
+      NB = new Int32Array(nL * 4).fill(-1),
+      B2 = new Float32Array(nL),
+      bits = [1 << 5, 1 << 3, 1 << 7, 1 << 1],
+      offs = [1, -1, w, -w];
+    for (let i = 0; i < nL; i++) {
+      if ((i & 16383) === 16383 && jobLate()) yield;
+      const n = L[i],
+        r = (n / w) | 0,
+        c = n - r * w;
+      for (let k = 0; k < 4; k++) {
+        if ((k === 0 && c === w - 1) || (k === 1 && c === 0) || (k === 2 && r === h - 1) || (k === 3 && r === 0)) continue;
+        const m = n + offs[k];
+        if (ok(m) && (seaMv[n] & bits[k] || seaLk[n])) NB[i * 4 + k] = m;
+      }
+    }
+    for (let t = 0; t < it; t++) {
+      if (jobLate()) yield;
+      if (jobLate()) yield;
+      for (let i = 0; i < nL; i++) {
+        let s2 = 2 * F[L[i]],
+          k = 2;
+        for (let q = 0; q < 4; q++) {
+          const m = NB[i * 4 + q];
+          if (m >= 0) {
+            s2 += F[m];
+            k++;
+          }
+        }
+        B2[i] = s2 / k;
+      }
+      for (let i = 0; i < nL; i++) F[L[i]] = B2[i];
+    }
+  }
+  /* いちばん早く届く時刻を広げる（二分ヒープ）。T・Dk・L は種（波源）を入れて渡す。ok：通れる格子（配列）、dMax：この道のり（km）より先へ広げない（0＝制限なし）、sp：速さ（m/s）、
+     rowDx(r)：その行の東西1格子の km、dy：南北1格子の km、los：間の格子も通れるか確かめる */
+  function* wvSpreadG(w, h, T, Dk, L, sp, ok, rowDx, dy, los, dMax, LP, mv) {
+    const N = w * h,
+      isp = new Float32Array(N);
+    for (let n = 0; n < N; n++) isp[n] = 1 / sp[n];
+    /* 行ごとの東西1格子の km（行の中ほど・半行ずれを両方） */
+    const rdx = new Float32Array(2 * h + 8);
+    for (let k = 0; k < rdx.length; k++) rdx[k] = rowDx((k - 4) / 2);
+    let cap = N * 4,
+      hp = new Int32Array(cap),
+      hk = new Float32Array(cap),
+      hn = 0;
+    const done = new Uint8Array(N);
     const push = (m, k) => {
+      if (hn >= cap) {
+        cap *= 2;
+        const a = new Int32Array(cap),
+          b = new Float32Array(cap);
+        a.set(hp);
+        b.set(hk);
+        hp = a;
+        hk = b;
+      }
       let i = hn++;
       while (i > 0) {
         const p = (i - 1) >> 1;
@@ -10321,57 +10518,407 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       return m;
     };
     for (let m = 0; m < N; m++) if (T[m] < 1e9) push(m, T[m]);
-    const NB16 = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1], [1, 2], [1, -2], [-1, 2], [-1, -2], [2, 1], [2, -1], [-2, 1], [-2, -1]],
-      dy = d * 110.57;
-    while (hn > 0 && hn < hp.length - 16) {
+    const WV_ST = MAP_LOWP ? WV_ST16 : WV_ST32,
+      NS = WV_ST.length,
+      SR = Int32Array.from(WV_ST.map(v => v[0])),
+      SC = Int32Array.from(WV_ST.map(v => v[1])),
+      /* 進む先の格子の差（番号）と、間の格子の差（最大2つ。MN＝その数）。km の2乗の東西・南北の係数 */
+      DM = Int32Array.from(WV_ST.map(([dr, dc]) => dr * w + dc)),
+      MN = new Int32Array(NS),
+      M1 = new Int32Array(NS),
+      M2 = new Int32Array(NS);
+    /* 進む線を隣の格子への1歩ずつに分けたときの、各歩の出発点（番号の差）と向きのビット（seaMv と同じ (dr+1)*3+(dc+1)） */
+    const SF = [],
+      SB = [];
+    WV_ST.forEach(([dr, dc], s) => {
+      const n = Math.max(Math.abs(dr), Math.abs(dc)),
+        pts = [[0, 0]];
+      MN[s] = n - 1;
+      for (let q = 1; q < n; q++) {
+        const pr = Math.round((dr * q) / n) || 0,
+          pc = Math.round((dc * q) / n) || 0;
+        (q === 1 ? M1 : M2)[s] = pr * w + pc;
+        pts.push([pr, pc]);
+      }
+      pts.push([dr, dc]);
+      const f = [],
+        b = [];
+      for (let i = 1; i < pts.length; i++) {
+        f.push(pts[i - 1][0] * w + pts[i - 1][1]);
+        b.push(1 << ((pts[i][0] - pts[i - 1][0] + 1) * 3 + (pts[i][1] - pts[i - 1][1] + 1)));
+      }
+      SF.push(f);
+      SB.push(b);
+    });
+    let yc = 0;
+    while (hn > 0) {
+      if ((++yc & 1023) === 0 && jobLate()) yield;
       const k = hk[0],
         m = pop();
       if (done[m] || k > T[m]) continue;
       done[m] = 1;
-      if (T[m] > SIM_MAX) continue;
+      if (T[m] > SIM_MAX || (dMax && Dk[m] > dMax)) continue;
       const r = (m / w) | 0,
-        c = m - r * w;
-      for (const [dr, dc] of NB16) {
-        const R2 = r + dr,
+        c = m - r * w,
+        im = isp[m];
+      for (let s = 0; s < NS; s++) {
+        const dr = SR[s],
+          dc = SC[s],
+          R2 = r + dr,
           C2 = c + dc;
-        if (R2 < 0 || C2 < 0 || R2 >= h || C2 >= w || inSG(R2, C2)) continue;
-        const m2 = R2 * w + C2;
-        if (done[m2]) continue;
-        const km = Math.hypot(dc * d * 111.32 * Math.cos((WVO.lat0 + (r + dr / 2 + 0.5) * d) * D2R), dr * dy),
-          t2 = T[m] + (km * 2000) / (sp[m] + sp[m2]);
+        if (R2 < 0 || C2 < 0 || R2 >= h || C2 >= w) continue;
+        const m2 = m + DM[s];
+        if (done[m2] || !ok[m2]) continue;
+        /* 間の格子（2〜3格子先へ進むとき）：海でなければ通れない。遅さ（1/速さ）は通る格子の平均 */
+        let isum = im + isp[m2],
+          cnt = 2;
+        const nm = MN[s];
+        if (nm > 0) {
+          const a1 = m + M1[s];
+          if (los && !ok[a1]) continue;
+          isum += isp[a1];
+          cnt++;
+          if (nm > 1) {
+            const a2 = m + M2[s];
+            if (los && !ok[a2]) continue;
+            isum += isp[a2];
+            cnt++;
+          }
+        }
+        /* 陸をまたがない（Version 199）：各歩が、格子の中心どうしを結ぶ線で地図の陸を横切らないこと（seaMv。予報の seaPath と同じ判定。
+           つなぐ水道 seaLk は通れる）。斜めの歩で、角だけ接する陸の格子のすき間を抜けることもなくなる */
+        if (mv) {
+          const f = SF[s],
+            b = SB[s];
+          let okMv = true;
+          for (let q = 0; q < f.length; q++) {
+            const a = m + f[q];
+            if (!(mv[a] & b[q]) && !seaLk[a]) {
+              okMv = false;
+              break;
+            }
+          }
+          if (!okMv) continue;
+        }
+        const ex = dc * rdx[2 * r + dr + 4],
+          ey = dr * dy,
+          km = Math.sqrt(ex * ex + ey * ey),
+          t2 = T[m] + (km * 1000 * isum) / cnt;
         if (t2 < T[m2]) {
           T[m2] = t2;
-          B[m2] = B[m];
-          D[m2] = D[m] + km;
+          Dk[m2] = Dk[m] + km;
+          L[m2] = L[m];
+          /* 通った道の狭さ（seaPen）と列島・海峡（seaX）の弱まり（予報の seaPath と同じ数え方） */
+          if (LP) {
+            LP.ls[m2] = LP.ls[m] + km * seaPen[m2];
+            LP.lx[m2] = LP.lx[m] + km * seaX[m2];
+          }
           push(m2, t2);
         }
       }
     }
-    /* 振幅（SG の中の式と同じ減衰）と、到達時刻の順の並び */
-    const NBk = Math.ceil(SIM_MAX / 60) + 1,
-      cnt = new Int32Array(NBk + 1),
-      A = new Float32Array(N),
-      ta2 = new Float32Array(N).fill(-1);
+  }
+  /* 到達時刻の順の並び（描くときに、届いた格子だけを見る） */
+  function wvOrder(ta) {
+    const NB = Math.ceil(SIM_MAX / 60) + 1,
+      cnt = new Int32Array(NB + 1);
     let nOk = 0;
-    for (let m = 0; m < N; m++) {
-      if (!(T[m] <= SIM_MAX)) continue;
-      const v = (B[m] * Math.sqrt(a / (a + D[m]))) / (1 + D[m] / 800);
-      if (Math.abs(v) < 0.01) continue;
-      ta2[m] = T[m];
-      A[m] = Math.max(-20, Math.min(20, v));
-      cnt[((T[m] / 60) | 0) + 1]++;
-      nOk++;
-    }
-    for (let b = 1; b <= NBk; b++) cnt[b] += cnt[b - 1];
+    for (let n = 0; n < ta.length; n++)
+      if (ta[n] >= 0) {
+        cnt[((ta[n] / 60) | 0) + 1]++;
+        nOk++;
+      }
+    for (let b = 1; b <= NB; b++) cnt[b] += cnt[b - 1];
     const bs = Int32Array.from(cnt),
       order = new Int32Array(nOk);
-    for (let m = 0; m < N; m++) if (ta2[m] >= 0) order[cnt[(ta2[m] / 60) | 0]++] = m;
+    for (let n = 0; n < ta.length; n++) if (ta[n] >= 0) order[cnt[(ta[n] / 60) | 0]++] = n;
+    return { bs, order, nOk };
+  }
+  const WV_HM = [null, null];
+  function* wvBuildG(e) {
+    const R = e.tsunami && e.tsunami.gen && e.tsunami.raw,
+      GS = R && R.geo;
+    if (!GS || !GS.S || !GS.SP || !seaG) return null;
+    wvPrep();
+    const SP = GS.SP,
+      src = GS.S.src,
+      a = GS.S.a,
+      w = SG.w,
+      h = SG.h,
+      N = w * h,
+      dyk = SG.d * 110.57,
+      rowDx = r => SG.d * 111.32 * Math.cos((SG.lat0 + (r + 0.5) * SG.d) * D2R),
+      lonOf = n => SG.lon0 + ((n % w) + 0.5) * SG.d,
+      latOf = n => SG.lat0 + (((n / w) | 0) + 0.5) * SG.d;
+    /* 水深：外洋の深さ（ならす）と、海岸からの距離で浅くなる陸棚（予報の到達時刻 tsuTime と同じ形）。地震によらないので使い回す（遠地用と2通り） */
+    const fk = R.farK ? 1 : 0;
+    if (!WV_HM[fk]) {
+      const HM = new Float32Array(N);
+      for (let n = 0; n < N; n++) {
+        if ((n & 8191) === 8191 && jobLate()) yield;
+        const hm = wvDepth(lonOf(n), latOf(n));
+        HM[n] = fk && hm > 3000 ? Math.max(4500, hm) : hm;
+      }
+      if (jobLate()) yield;
+      wvBlur(HM, w, h, 4, seaG, 2);
+      const sp = new Float32Array(N);
+      for (let n = 0; n < N; n++) sp[n] = Math.sqrt(9.8 * Math.max(10, Math.min(HM[n], 30 + 25 * wvDc[n])));
+      WV_HM[fk] = { HM, sp };
+      if (jobLate()) yield;
+    }
+    const HA = WV_HM[fk].HM,
+      sp = WV_HM[fk].sp;
+    const T = new Float32Array(N).fill(1e9),
+      Dk = new Float32Array(N),
+      L = new Int32Array(N).fill(-1);
+    /* 波源：波源の点を半径 R0（点の間隔の約0.6倍）の円で包んだ範囲を時刻0とし、その縁からの道のりで近くの格子に種を置く
+       （以前は点のまわりの四角い範囲を種にしていたため、波源の縁の形が格子の段になり、そこから広がる縞も段になっていた。Version 199）。
+       格子の外（遠地）は格子の縁の海から大円の距離で */
+    let outSrc = false,
+      sp0 = 0,
+      ns0 = 0;
+    for (let i = 0; i < src.length && ns0 < 60; i += Math.max(1, Math.floor(src.length / 60))) {
+      let dm = 1e9;
+      for (let j = 0; j < src.length; j++) {
+        if (j === i) continue;
+        const dx = (src[j][0] - src[i][0]) * 111.32 * Math.cos(src[i][1] * D2R),
+          dy2 = (src[j][1] - src[i][1]) * 110.57,
+          dd = dx * dx + dy2 * dy2;
+        if (dd < dm) dm = dd;
+      }
+      if (dm < 1e9) {
+        sp0 += Math.sqrt(dm);
+        ns0++;
+      }
+    }
+    const R0 = ns0 ? Math.min(40, (0.6 * sp0) / ns0) : 0;
+    const seedOne = (q, i) => {
+      const c = Math.floor((q[0] - SG.lon0) / SG.d),
+        r = Math.floor((q[1] - SG.lat0) / SG.d);
+      if (c < 0 || r < 0 || c >= w || r >= h) {
+        outSrc = true;
+        return;
+      }
+      const kx = 111.32 * Math.cos(q[1] * D2R),
+        K = Math.max(2, Math.ceil((R0 + 25) / (SG.d * 110)));
+      for (let i2 = -K; i2 <= K; i2++)
+        for (let j2 = -K; j2 <= K; j2++) {
+          const R2 = r + i2,
+            C2 = c + j2;
+          if (R2 < 0 || C2 < 0 || R2 >= h || C2 >= w) continue;
+          const m = R2 * w + C2;
+          if (!seaG[m]) continue;
+          const ex = (lonOf(m) - q[0]) * kx,
+            ey = (latOf(m) - q[1]) * 110.57,
+            km = Math.max(0, Math.sqrt(ex * ex + ey * ey) - R0),
+            t = (km * 1000) / sp[m];
+          if (t < T[m]) {
+            T[m] = t;
+            Dk[m] = km;
+            L[m] = i;
+          }
+        }
+    };
+    for (let i = 0; i < src.length; i++) {
+      seedOne(src[i], i);
+      if ((i & 15) === 15 && jobLate()) yield;
+    }
+    if (outSrc) {
+      const step = Math.max(1, Math.ceil(src.length / 40)),
+        edge = [];
+      for (let c = 0; c < w; c++) edge.push(c, (h - 1) * w + c);
+      for (let r = 1; r < h - 1; r++) edge.push(r * w, r * w + w - 1);
+      for (let i = 0; i < src.length; i += step) {
+        const q = src[i],
+          c = Math.floor((q[0] - SG.lon0) / SG.d),
+          r = Math.floor((q[1] - SG.lat0) / SG.d);
+        if (c >= 0 && r >= 0 && c < w && r < h) continue;
+        for (const m of edge) {
+          if (!seaG[m]) continue;
+          const g = gcKm(q[0], q[1], lonOf(m), latOf(m)),
+            t = (g * 1000) / Math.sqrt(9.8 * 4500);
+          if (t < T[m]) {
+            T[m] = t;
+            Dk[m] = g;
+            L[m] = i;
+          }
+        }
+      }
+    }
+    /* 振幅が見えなくなる（1cm未満）道のりより先へは広げない（小さな津波の計算を軽く） */
+    let qMax = 0;
+    for (const q of src) qMax = Math.max(qMax, Math.abs(q[2]));
+    let dMax = 0;
+    while (dMax < 30000 && (1.5 * qMax * Math.sqrt(a / (a + dMax))) / (1 + dMax / 800) >= 0.015) dMax += 50;
+    const LP = { ls: new Float32Array(N), lx: new Float32Array(N) };
+    if (jobLate()) yield;
+    yield* wvSpreadG(w, h, T, Dk, L, sp, seaG, rowDx, dyk, true, dMax, LP, seaMv);
+    /* 到達時刻を、陸をまたがない隣どうしで少しならす（格子の上の最短経路の細かな段と、波源の点の並びのむらで、縞の縁がぎざぎざにならないように。Version 199） */
+    yield* wvDiffuseG(T, n => T[n] < 1e8, w, h, 6);
+    /* 振幅：波源の高さ×浅い所での増幅×道のりによる減衰×狭い所の減衰（予報の pathLoss と同じ式を、この経路で数える）×回り込み（島・半島の陰）の減衰。
+       波源の点ごとの差で縞の明るさが急に変わらないよう、近くの格子でならす */
+    const ta = new Float32Array(N).fill(-1),
+      A = new Float32Array(N),
+      has = new Uint8Array(N);
+    if (jobLate()) yield;
+    for (let n = 0; n < N; n++) {
+      if ((n & 8191) === 8191 && jobLate()) yield;
+      if (!(T[n] <= SIM_MAX) || L[n] < 0 || !seaG[n]) continue;
+      const q = src[L[n]],
+        D = Dk[n],
+        ha = HA[n],
+        dc = wvDc[n],
+        hs = Math.min(ha, 30 + 25 * dc),
+        /* 波源からの直線の道のり（近似） */
+        qx = (lonOf(n) - q[0]) * 111.32 * Math.cos(((latOf(n) + q[1]) / 2) * D2R),
+        qy = (latOf(n) - q[1]) * 110.57,
+        st = Math.sqrt(qx * qx + qy * qy),
+        shade = Math.exp(-Math.max(0, D - st * 1.01) / 200),
+        lv = Math.max(0, LP.ls[n] - SG.d * 111 * seaPen[n]),
+        pl = Math.exp(-(LOSS_SAT * (1 - Math.exp(-lv / LOSS_SAT)) + LP.lx[n])),
+        v = (q[2] * Math.min(3, Math.sqrt(Math.sqrt(ha / Math.max(10, hs)))) * Math.sqrt(a / (a + D)) * pl * shade) / (1 + D / 800);
+      ta[n] = T[n];
+      A[n] = Math.max(-20, Math.min(20, v));
+      has[n] = 1;
+    }
+    /* 波源の点ごとの差で縞に沿って明るさが粒になって見えないよう、約0.3度の範囲でならす（Version 198）。
+       陸を挟んだ向こう側の値が混ざらないよう、陸をまたがない隣どうし（seaMv）だけで少しずつ広げる（Version 199） */
+    if (jobLate()) yield;
+    yield* wvDiffuseG(A, n => has[n] === 1, w, h, 24);
+    /* 振幅の小さい格子も残す（切り捨てると、その境が格子の段になって見えていた。色は 0.02m 未満で消えていく。Version 199） */
+    const { bs, order } = wvOrder(ta);
+    return { ta, A, order, bs, T: 60 * Math.max(8, Math.min(50, 6 + 0.3 * a)), O: undefined, mk: () => wvBuildOutG(R, src, a, ta, A, Dk) };
+  }
+  /* ---- 格子（SG）の外の波の広がり（Version 193、Version 198 で同じ方法に）----
+     地図で見られる範囲まで、0.25度の粗い格子で続きを描く。日本の陸はすべて SG の中なので、外側はすべて外洋として扱う。
+     到達時刻は SG の中の値（重なる粗い格子の、いちばん早く届く細かい格子）と格子の外の波源から、SG の中と同じ32方向で広げる。
+     振幅は SG の中の値を引き継ぎ、道のりで弱める */
+  const WVO = { lon0: 89, lat0: -13, d: 0.25, w: 400, h: 360 };
+  /* 粗い格子のうち SG と重なる範囲（列・行。SG の縁は0.25度の格子の境目にそろう） */
+  const WVO_C0 = (SG.lon0 - WVO.lon0) / WVO.d,
+    WVO_C1 = (SG.lon0 + SG.w * SG.d - WVO.lon0) / WVO.d,
+    WVO_R0 = (SG.lat0 - WVO.lat0) / WVO.d,
+    WVO_R1 = (SG.lat0 + SG.h * SG.d - WVO.lat0) / WVO.d;
+  function* wvBuildOutG(R, src, a, taIn, AIn, DkIn) {
+    const w = WVO.w,
+      h = WVO.h,
+      N = w * h,
+      d = WVO.d,
+      T = new Float32Array(N).fill(1e9),
+      B = new Float32Array(N),
+      Dk = new Float32Array(N),
+      L = new Int32Array(N).fill(-1),
+      sp = new Float32Array(N),
+      HM = new Float32Array(N),
+      inSG = (r, c) => c >= WVO_C0 && c < WVO_C1 && r >= WVO_R0 && r < WVO_R1;
+    /* 水深（SG の中と同じ。海溝の線がない緯度は5000m）をならす。SG の縁で波の速さが変わらないよう、SG の中と同じ関数（Version 198） */
+    for (let r = 0; r < h; r++) {
+      if ((r & 15) === 15 && jobLate()) yield;
+      const lat = WVO.lat0 + (r + 0.5) * d;
+      for (let c = 0; c < w; c++) {
+        const lon = WVO.lon0 + (c + 0.5) * d;
+        let hm = lat >= 9.5 && lat <= 55.5 ? wvDepth(lon, lat) : 5000;
+        if (hm < 3000) hm = 3500;
+        if (R.farK && hm > 3000) hm = Math.max(4500, hm);
+        HM[r * w + c] = hm;
+      }
+    }
+    wvBlur(HM, w, h, 2, null, 2);
+    for (let n = 0; n < N; n++) sp[n] = Math.sqrt(9.8 * HM[n]);
+    if (jobLate()) yield;
+    /* SG の中の値を、重なる粗い格子へ：細かい格子の到達時刻＋粗い格子の中心までの時間の、いちばん早いもの。振幅は外洋の深さに合わせ直す */
+    const sw = SG.w;
+    for (let n = 0; n < taIn.length; n++) {
+      if ((n & 8191) === 8191 && jobLate()) yield;
+      if (taIn[n] < 0) continue;
+      const rr = (n / sw) | 0,
+        lon = SG.lon0 + (n - rr * sw + 0.5) * SG.d,
+        lat = SG.lat0 + (rr + 0.5) * SG.d,
+        c = Math.floor((lon - WVO.lon0) / d),
+        r = Math.floor((lat - WVO.lat0) / d),
+        m = r * w + c,
+        km = Math.hypot((WVO.lon0 + (c + 0.5) * d - lon) * 111.32 * Math.cos(lat * D2R), (WVO.lat0 + (r + 0.5) * d - lat) * 110.57),
+        t = taIn[n] + (km * 1000) / sp[m];
+      if (t < T[m]) {
+        T[m] = t;
+        B[m] = AIn[n];
+        /* SG の中の道のり（負の値で SG からの種の印にする） */
+        Dk[m] = -Math.max(1, DkIn[n]);
+        L[m] = 0;
+      }
+    }
+    /* SG の外の波源（遠地の地震） */
+    const step = Math.max(1, Math.ceil(src.length / 40)),
+      edge = [];
+    for (let c = 0; c < w; c++) edge.push(c, (h - 1) * w + c);
+    for (let r = 1; r < h - 1; r++) edge.push(r * w, r * w + w - 1);
+    for (let i = 0; i < src.length; i += step) {
+      if (jobLate()) yield;
+      const q = src[i],
+        c = Math.floor((q[0] - WVO.lon0) / d),
+        r = Math.floor((q[1] - WVO.lat0) / d);
+      if (c >= 0 && r >= 0 && c < w && r < h) {
+        if (inSG(r, c)) continue;
+        const m = r * w + c;
+        if (0 < T[m]) {
+          T[m] = 0;
+          B[m] = q[2];
+          Dk[m] = 0;
+          L[m] = 1;
+        }
+        continue;
+      }
+      for (const m of edge) {
+        const rr = (m / w) | 0,
+          g = gcKm(q[0], q[1], WVO.lon0 + (m - rr * w + 0.5) * d, WVO.lat0 + (rr + 0.5) * d),
+          t = (g * 1000) / Math.sqrt(9.8 * 4500);
+        if (t < T[m]) {
+          T[m] = t;
+          B[m] = q[2];
+          Dk[m] = g;
+          L[m] = 1;
+        }
+      }
+    }
+    /* 種の格子ごとに振幅の元を持たせ、広げるときは種の番号（L）で引き継ぐ */
+    const seedB = [];
+    for (let m = 0; m < N; m++)
+      if (T[m] < 1e9) {
+        L[m] = seedB.length;
+        seedB.push([B[m], Dk[m]]);
+        Dk[m] = 0;
+      }
+    const okO = new Uint8Array(N);
+    for (let m = 0; m < N; m++) okO[m] = inSG((m / w) | 0, m % w) ? 0 : 1;
+    if (jobLate()) yield;
+    yield* wvSpreadG(w, h, T, Dk, L, sp, okO, r => d * 111.32 * Math.cos((WVO.lat0 + (r + 0.5) * d) * D2R), d * 110.57, false, 0);
+    const ta2 = new Float32Array(N).fill(-1),
+      A = new Float32Array(N),
+      has = new Uint8Array(N);
+    if (jobLate()) yield;
+    for (let m = 0; m < N; m++) {
+      if ((m & 8191) === 8191 && jobLate()) yield;
+      if (!(T[m] <= SIM_MAX) || L[m] < 0) continue;
+      const [b0, d0] = seedB[L[m]],
+        D = Dk[m];
+      /* SG から引き継いだ種（d0 < 0：SG の中の道のり −d0）は、その先の道のりで SG の中の式どおりに弱める。遠地の波源の種は波源からの道のり（d0 ≥ 0）で */
+      const f = x => Math.sqrt(a / (a + x)) / (1 + x / 800),
+        v = d0 < 0 ? (b0 * f(D - d0)) / f(-d0) : b0 * f(d0 + D);
+      if (Math.abs(v) < 0.001) continue;
+      ta2[m] = T[m];
+      A[m] = Math.max(-20, Math.min(20, v));
+      has[m] = 1;
+    }
+    wvBlur(A, w, h, 1, has, 2);
+    const { bs, order, nOk } = wvOrder(ta2);
     return nOk ? { ta: ta2, A, order, bs } : null;
   }
   const wvCv = document.createElement('canvas'),
     wvCvO = document.createElement('canvas');
   let wvImg = null,
     wvEta = null,
+    wvFI = null,
+    wvFO = null,
     wvImgO = null,
     wvEtaO = null,
     wvSim = null,
@@ -10379,132 +10926,406 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     wvTO = NaN,
     wvAny = false,
     wvAnyO = false;
+  /* 描くときの細かさ（格子1つを何画素に分けるか。Version 198）：海面の上下を格子の間で補間してから色にするので、縞の縁がなめらかになる */
+  let WV_UP = 0;
+  const wvUp = () => WV_UP || (WV_UP = MAP_LOWP ? 2 : 3);
   /* 描き直しの刻み（シミュレーター内の秒）：等倍で2秒、速いほど粗く（1秒間に約10回まで） */
   const wvQ = t => {
     const dq = Math.max(2, speed * 0.1);
     return Math.floor(t / dq) * dq;
   };
+  /* 波の広がりの計算（1つの地震で約0.1〜0.5秒）と描き直し（全体で約30ms）は、毎コマの空き時間で少しずつ進める（Version 200）。
+     描き直しの途中は前の画像を出したままにし、終わったら差し替える。計算が済んでいない地震は、済んだら足して描き直す */
+  let wvGen = 0,
+    wvJob = null;
+  function wvBuildReq(e, pri) {
+    if (e.tsWvJob && pri < e.tsWvJob.pri) e.tsWvJob.pri = pri;
+    if (e.tsWv !== undefined || e.tsWvJob) return;
+    const S = sim;
+    e.tsWvJob = jobAdd(null, pri, () => wvBuildG(e), v => {
+      e.tsWvJob = null;
+      if (S !== sim) return;
+      e.tsWv = v;
+      wvGen++;
+      wvT = wvTO = NaN;
+      dirty = true;
+    });
+    e.tsWvJob.owner = S;
+  }
+  function wvBuildOReq(W, pri) {
+    if (W.oJob && pri < W.oJob.pri) W.oJob.pri = pri;
+    if (W.O !== undefined || W.oJob) return;
+    const S = sim;
+    W.oJob = jobAdd(null, pri, W.mk, v => {
+      W.oJob = null;
+      if (S !== sim) return;
+      W.O = v;
+      wvGen++;
+      wvTO = NaN;
+      dirty = true;
+    });
+    W.oJob.owner = S;
+  }
+  const wvGet = e => {
+    if (e.tsWv === undefined) {
+      wvBuildReq(e, 0);
+      return null;
+    }
+    return e.tsWv;
+  };
+  /* 画面に見えている格子の範囲（列・行の最小・最大。南が0）。描き直しは見えている所だけ（Version 198） */
+  function wvRange(G, vb) {
+    const c0 = Math.max(0, Math.floor((vb[0] - G.lon0) / G.d) - 2),
+      c1 = Math.min(G.w - 1, Math.ceil((vb[1] - G.lon0) / G.d) + 2),
+      r0 = Math.max(0, Math.floor((vb[2] - G.lat0) / G.d) - 2),
+      r1 = Math.min(G.h - 1, Math.ceil((vb[3] - G.lat0) / G.d) + 2);
+    return c0 > c1 || r0 > r1 ? null : [c0, c1, r0, r1];
+  }
+  const wvIn = (a, b) => a && b && a[0] >= b[0] && a[1] <= b[1] && a[2] >= b[2] && a[3] <= b[3];
+  let wvRgI = null,
+    wvRgO = null;
   /* out：SG の外も描くか（画面に SG の外が見えているときだけ。見えない間は計算しない） */
-  function wvPaint(t, out) {
+  function wvPaint(t, out, vb) {
     const tq = wvQ(t);
-    if (!out) wvTO = NaN;
-    else if (!(sim === wvSim && tq === wvTO)) wvPaintOut(tq);
-    wvPaintIn(tq);
+    if (sim !== wvSim) {
+      /* 新しい「地震発生」：前の画像は出さない */
+      if (wvJob) jobCancel(j => j === wvJob);
+      wvJob = null;
+      wvSim = sim;
+      wvT = wvTO = NaN;
+      wvAny = wvAnyO = false;
+      wvRgI = wvRgO = null;
+    }
+    const rgI = wvRange(SG, vb),
+      rgO = out ? wvRange(WVO, vb) : null,
+      /* 時刻が同じでも、前に描いた範囲の外が見えたら描き直す */
+      needIn = !(tq === wvT && wvIn(rgI, wvRgI)),
+      needOut = out && !(tq === wvTO && wvIn(rgO, wvRgO));
+    if ((needIn || needOut) && !wvJob && seaG) {
+      const R = { S: sim, tq, rgI, rgO, inP: needIn || (needOut && tq !== wvT), outP: needOut, gen: wvGen };
+      wvJob = jobAdd(null, -1, () => wvPaintG(R), () => {
+        wvJob = null;
+        dirty = true;
+      });
+      wvJob.owner = sim;
+      wvJob.share = 0.5;
+    }
     return wvAny || (out && wvAnyO);
   }
-  function wvPaintIn(tq) {
-    if (sim === wvSim && tq === wvT) return;
-    wvSim = sim;
-    wvT = tq;
-    wvAny = false;
-    if (!seaG) return;
-    const w = SG.w,
-      h = SG.h,
-      N = w * h;
-    if (!wvImg) {
-      wvCv.width = w;
-      wvCv.height = h;
-      wvImg = wvCv.getContext('2d').createImageData(w, h);
-      wvEta = new Float32Array(N);
+  function* wvPaintG(R) {
+    const S = R.S;
+    if (R.inP) {
+      const w = SG.w,
+        h = SG.h,
+        N = w * h;
+      if (!wvImg) {
+        wvCv.width = w * wvUp();
+        wvCv.height = h * wvUp();
+        wvImg = wvCv.getContext('2d').createImageData(w * wvUp(), h * wvUp());
+        wvEta = new Float32Array(N);
+        wvFI = wvF(N);
+      }
+      const eta = wvEta;
+      eta.fill(0);
+      wvFClear(wvFI);
+      let any = false;
+      for (const e of S.evs) {
+        if (!e.tsunami || !e.tsunami.gen) continue;
+        const p0 = R.tq - e.t0;
+        if (p0 <= 0) continue;
+        const W = wvGet(e);
+        if (!W) continue;
+        if (wvAdd(eta, W, W, p0, wvFI)) any = true;
+      }
+      if (any) {
+        /* 補間は海の格子だけで（陸の格子をはさんだ向こう側の値が、細い半島・岬を越えて混ざらないように。Version 199） */
+        wvFRest(wvFI, eta);
+        if (jobLate()) yield;
+        const P = yield* wvColorG(wvImg, w, h, wvUp(), R.rgI, seaG, wvFI);
+        if (P) wvCv.getContext('2d').putImageData(wvImg, 0, 0, P[0], P[1], P[2], P[3]);
+      }
+      wvAny = any;
+      wvT = R.tq;
+      wvRgI = R.rgI;
     }
-    const eta = wvEta;
-    eta.fill(0);
-    for (const e of sim.evs) {
-      if (!e.tsunami || !e.tsunami.gen) continue;
-      if (e.tsWv === undefined) e.tsWv = wvBuild(e);
-      const W = e.tsWv,
-        p0 = tq - e.t0;
-      if (!W || p0 <= 0) continue;
-      const { ta, A, order, bs, T } = W,
-        iEnd = bs[Math.min(bs.length - 1, ((p0 / 60) | 0) + 1)];
-      for (let i = 0; i < iEnd; i++) {
-        const n = order[i],
-          p = (p0 - ta[n]) / T;
-        if (p < 0 || p > 8) continue;
-        /* 第1波（波源の隆起なら上昇、沈降なら下降）から始まり、周期 T で上下しながら弱まる */
-        eta[n] += A[n] * Math.cos(2 * Math.PI * p) * Math.exp(-p / 2) * Math.min(1, 0.35 + p * 20);
-        wvAny = true;
+    if (R.outP) {
+      if (jobLate()) yield;
+      yield* wvPaintOutG(R);
+    }
+    /* 描いている間に計算の済んだ地震があれば、もう一度描き直す */
+    if (wvGen !== R.gen) wvT = wvTO = NaN;
+  }
+  /* 1つの地震の海面の上下を eta に足す */
+  /* 格子ごとに、いちばん大きい津波（主）の振幅 DA・届いてからの秒数 DEL（まだなら負）・周期 DT を持つ。
+     描くときは主の波を画素ごとに DA・DEL を補間してから cos で計算し（縞の境が格子の段にならず、なめらかな線になる）、
+     ほかの地震の分（残り R＝合計−主）は格子の値を補間して足す。先端の立ち上がりも DEL の補間で付ける（Version 199） */
+  function wvAdd(eta, W, Wd, p0, F) {
+    const { ta, A, order, bs } = Wd,
+      T = W.T,
+      nb = bs.length - 1,
+      iEnd = bs[Math.min(nb, ((p0 / 60) | 0) + 1)],
+      iFr = bs[Math.min(nb, ((p0 / 60) | 0) + 11)],
+      { DA, DEL, DT } = F;
+    let any = false;
+    for (let i = 0; i < iFr; i++) {
+      const n = order[i],
+        el = p0 - ta[n],
+        a = A[n];
+      if (!DT[n] || Math.abs(a) > Math.abs(DA[n])) {
+        DA[n] = a;
+        DEL[n] = el;
+        DT[n] = T;
+      }
+      if (i >= iEnd) continue;
+      const p = el / T;
+      if (p < 0 || p >= 8) continue;
+      /* 第1波（波源の隆起なら上昇、沈降なら下降）から始まり、周期 T で上下しながら弱まる（形は表 WV_TB から） */
+      const x = p * 512,
+        xi = x | 0;
+      eta[n] += a * (WV_TB[xi] + (WV_TB[xi + 1] - WV_TB[xi]) * (x - xi));
+      any = true;
+    }
+    return any;
+  }
+  /* 波の形 cos(2πp)·exp(−p/2)（p＝届いてからの周期の数、0〜8）の表（画素ごとの計算を軽く） */
+  const WV_TB = (() => {
+    const t = new Float32Array(8 * 512 + 2);
+    for (let i = 0; i < t.length; i++) {
+      const p = i / 512;
+      t[i] = Math.cos(2 * Math.PI * p) * Math.exp(-p / 2);
+    }
+    return t;
+  })();
+  const wvWave = (a, el, T) => {
+    const p = el / T;
+    if (p <= 0 || p >= 8) return 0;
+    const x = p * 512,
+      i = x | 0,
+      v = WV_TB[i] + (WV_TB[i + 1] - WV_TB[i]) * (x - i);
+    return a * v * (p < 0.06 ? p / 0.06 : 1);
+  };
+  /* F を空にする・合計 eta から主の分を引いた残り R を作る */
+  function wvF(N) {
+    return { DA: new Float32Array(N), DEL: new Float32Array(N), DT: new Float32Array(N), R: new Float32Array(N) };
+  }
+  function wvFClear(F) {
+    F.DA.fill(0);
+    /* 10分より先に届く格子（と届かない格子）は −600秒として補間する */
+    F.DEL.fill(-600);
+    F.DT.fill(0);
+  }
+  function wvFRest(F, eta) {
+    const { DA, DEL, DT, R } = F;
+    for (let n = 0; n < eta.length; n++) {
+      const p = DT[n] ? DEL[n] / DT[n] : -1;
+      if (p <= 0 || p >= 8) R[n] = eta[n];
+      else {
+        const x = p * 512,
+          i = x | 0;
+        R[n] = eta[n] - DA[n] * (WV_TB[i] + (WV_TB[i + 1] - WV_TB[i]) * (x - i));
       }
     }
-    if (!wvAny) return;
-    for (let k = 0; k < wvFill.length; k += 2) if (!eta[wvFill[k]]) eta[wvFill[k]] = eta[wvFill[k + 1]];
-    wvColor(eta, wvImg, w, h);
-    wvCv.getContext('2d').putImageData(wvImg, 0, 0);
   }
-  /* 海面の上下 eta を色の画像（w×h、北が上）に書く。SG の中と外で同じ色 */
-  function wvColor(eta, img, w, h) {
+  /* 海面の上下 eta（w×h の格子、南から北の順）を、格子を U×U の画素に分けて補間しながら色の画像（北が上）に書く。SG の中と外で同じ色 */
+  let wvRowBuf = null;
+  /* rg：書く格子の範囲（[列の最小, 最大, 行の最小, 最大]、行は南が0）。戻り値は書いた画素の範囲 [x, y, 幅, 高さ] */
+  function* wvColorG(img, w, h, U, rg, mk, F) {
+    const { DA, DEL, DT, R } = F;
+    if (!rg) return null;
     const d = img.data,
       L0 = Math.log10(0.02),
-      LS = 1 / (Math.log10(8) - L0);
-    for (let r = 0; r < h; r++) {
-      let o = (h - 1 - r) * w * 4;
-      for (let c = 0, n = r * w; c < w; c++, n++, o += 4) {
-        const v = eta[n],
-          av = Math.abs(v);
+      LS = 1 / (Math.log10(8) - L0),
+      W2 = w * U,
+      X0 = rg[0] * U,
+      X1 = (rg[1] + 1) * U,
+      Y0 = (h - 1 - rg[3]) * U,
+      Y1 = (h - rg[2]) * U;
+    /* 列ごとの補間の位置と重み */
+    const c0 = new Int32Array(W2),
+      c1 = new Int32Array(W2),
+      fx = new Float32Array(W2);
+    for (let X = 0; X < W2; X++) {
+      const x = Math.max(0, Math.min(w - 1, (X + 0.5) / U - 0.5)),
+        xi = Math.floor(x);
+      c0[X] = xi;
+      c1[X] = Math.min(w - 1, xi + 1);
+      fx[X] = x - xi;
+    }
+    if (!wvRowBuf || wvRowBuf.length < W2) wvRowBuf = new Float32Array(W2);
+    const row = wvRowBuf;
+    for (let Y = Y0; Y < Y1; Y++) {
+      if ((Y & 3) === 3 && jobLate()) yield;
+      /* 画像の上が北（格子の行 h-1） */
+      const y = Math.max(0, Math.min(h - 1, h - 1 - ((Y + 0.5) / U - 0.5))),
+        yi = Math.floor(y),
+        y1 = Math.min(h - 1, yi + 1),
+        fy = y - yi,
+        oa = yi * w,
+        ob = y1 * w;
+      if (mk)
+        for (let X = X0; X < X1; X++) {
+          /* 海の格子だけの重みで補間（陸の格子は数えない） */
+          const i0 = oa + c0[X],
+            i1 = oa + c1[X],
+            j0 = ob + c0[X],
+            j1 = ob + c1[X],
+            f = fx[X],
+            w0 = mk[i0] ? (1 - f) * (1 - fy) : 0,
+            w1 = mk[i1] ? f * (1 - fy) : 0,
+            w2 = mk[j0] ? (1 - f) * fy : 0,
+            w3 = mk[j1] ? f * fy : 0,
+            ws = w0 + w1 + w2 + w3;
+          if (!(ws > 0)) {
+            /* 4つとも陸の格子（地図では海の、格子の粗さで陸になった所。北方領土の周りなど）：
+               陸の格子の値を隣の海の格子から借りて補間する（wvFillI。海岸の陸の格子だけ） */
+            const k0 = wvFillI[i0],
+              k1 = wvFillI[i1],
+              k2 = wvFillI[j0],
+              k3 = wvFillI[j1],
+              v0 = k0 >= 0 ? (1 - f) * (1 - fy) : 0,
+              v1 = k1 >= 0 ? f * (1 - fy) : 0,
+              v2 = k2 >= 0 ? (1 - f) * fy : 0,
+              v3 = k3 >= 0 ? f * fy : 0,
+              vs = v0 + v1 + v2 + v3;
+            if (!(vs > 0)) {
+              row[X] = 0;
+              continue;
+            }
+            const q0 = k0 >= 0 ? k0 : 0,
+              q1 = k1 >= 0 ? k1 : 0,
+              q2 = k2 >= 0 ? k2 : 0,
+              q3 = k3 >= 0 ? k3 : 0,
+              iv = 1 / vs,
+              a = (v0 * DA[q0] + v1 * DA[q1] + v2 * DA[q2] + v3 * DA[q3]) * iv,
+              el = (v0 * DEL[q0] + v1 * DEL[q1] + v2 * DEL[q2] + v3 * DEL[q3]) * iv,
+              T = DT[v0 ? q0 : v1 ? q1 : v2 ? q2 : q3];
+            row[X] = (T ? wvWave(a, el, T) : 0) + (v0 * R[q0] + v1 * R[q1] + v2 * R[q2] + v3 * R[q3]) * iv;
+            continue;
+          }
+          const iw = 1 / ws,
+            a = (w0 * DA[i0] + w1 * DA[i1] + w2 * DA[j0] + w3 * DA[j1]) * iw,
+            el = (w0 * DEL[i0] + w1 * DEL[i1] + w2 * DEL[j0] + w3 * DEL[j1]) * iw,
+            T = DT[w0 ? i0 : w1 ? i1 : w2 ? j0 : j1] || DT[i0] || DT[i1] || DT[j0] || DT[j1];
+          row[X] = (T ? wvWave(a, el, T) : 0) + (w0 * R[i0] + w1 * R[i1] + w2 * R[j0] + w3 * R[j1]) * iw;
+        }
+      else
+        for (let X = X0; X < X1; X++) {
+          const f = fx[X],
+            i0 = oa + c0[X],
+            i1 = oa + c1[X],
+            j0 = ob + c0[X],
+            j1 = ob + c1[X],
+            w0 = (1 - f) * (1 - fy),
+            w1 = f * (1 - fy),
+            w2 = (1 - f) * fy,
+            w3 = f * fy,
+            a = w0 * DA[i0] + w1 * DA[i1] + w2 * DA[j0] + w3 * DA[j1],
+            el = w0 * DEL[i0] + w1 * DEL[i1] + w2 * DEL[j0] + w3 * DEL[j1],
+            T = DT[i0] || DT[i1] || DT[j0] || DT[j1];
+          row[X] = (T ? wvWave(a, el, T) : 0) + w0 * R[i0] + w1 * R[i1] + w2 * R[j0] + w3 * R[j1];
+        }
+      let o = (Y * W2 + X0) * 4;
+      for (let X = X0; X < X1; X++, o += 4) {
+        const v = row[X],
+          av = v < 0 ? -v : v;
+        /* 海の地の色（#0c2344）に重ねた色を、不透明で書く（SG の中と外の画像の境目で、半透明の重なり・隙間が線に見えないように。Version 198） */
+        d[o + 3] = 255;
         if (av < 0.02) {
-          d[o + 3] = 0;
+          d[o] = 12;
+          d[o + 1] = 35;
+          d[o + 2] = 68;
           continue;
         }
-        const s = Math.min(1, (Math.log10(av) - L0) * LS);
+        const s = Math.min(1, (Math.log10(av) - L0) * LS),
+          /* 0の近く（上昇と下降の境）は薄く消えていく（境の縁を段にしない） */
+          al = (0.3 + 0.6 * s) * Math.min(1, (av - 0.02) / 0.03),
+          bl = 1 - al;
         if (v > 0) {
-          d[o] = 255;
-          d[o + 1] = 215 - 115 * s;
-          d[o + 2] = 120 - 80 * s;
+          d[o] = 12 * bl + 255 * al;
+          d[o + 1] = 35 * bl + (215 - 115 * s) * al;
+          d[o + 2] = 68 * bl + (120 - 80 * s) * al;
         } else {
-          d[o] = 110 - 70 * s;
-          d[o + 1] = 200 - 110 * s;
-          d[o + 2] = 255;
+          d[o] = 12 * bl + (110 - 70 * s) * al;
+          d[o + 1] = 35 * bl + (200 - 110 * s) * al;
+          d[o + 2] = 68 * bl + 255 * al;
         }
-        d[o + 3] = 255 * (0.3 + 0.6 * s);
       }
     }
+    return [X0, Y0, X1 - X0, Y1 - Y0];
   }
   /* SG の外（粗い格子）の波。wvAnyO：何か描いたか */
-  function wvPaintOut(tq) {
-    wvTO = tq;
-    wvAnyO = false;
-    if (!seaG) return;
+  function* wvPaintOutG(R) {
+    const tq = R.tq,
+      S = R.S;
     const w = WVO.w,
       h = WVO.h;
     if (!wvImgO) {
-      wvCvO.width = w;
-      wvCvO.height = h;
-      wvImgO = wvCvO.getContext('2d').createImageData(w, h);
+      wvCvO.width = w * wvUp();
+      wvCvO.height = h * wvUp();
+      wvImgO = wvCvO.getContext('2d').createImageData(w * wvUp(), h * wvUp());
       wvEtaO = new Float32Array(w * h);
+      wvFO = wvF(w * h);
     }
     const eta = wvEtaO;
     eta.fill(0);
-    for (const e of sim.evs) {
+    wvFClear(wvFO);
+    let any = false;
+    for (const e of S.evs) {
       if (!e.tsunami || !e.tsunami.gen) continue;
-      if (e.tsWv === undefined) e.tsWv = wvBuild(e);
-      const W = e.tsWv,
-        p0 = tq - e.t0;
-      if (!W || p0 <= 0) continue;
-      /* SG の外の到達時刻は、SG の外が初めて画面に見えたときに1回だけ求める */
-      if (W.O === undefined) W.O = W.mk();
-      if (!W.O) continue;
-      const { ta, A, order, bs } = W.O,
-        T = W.T,
-        iEnd = bs[Math.min(bs.length - 1, ((p0 / 60) | 0) + 1)];
-      for (let i = 0; i < iEnd; i++) {
-        const n = order[i],
-          p = (p0 - ta[n]) / T;
-        if (p < 0 || p > 8) continue;
-        eta[n] += A[n] * Math.cos(2 * Math.PI * p) * Math.exp(-p / 2) * Math.min(1, 0.35 + p * 20);
-        wvAnyO = true;
+      const p0 = tq - e.t0;
+      if (p0 <= 0) continue;
+      const W = wvGet(e);
+      if (!W) continue;
+      /* SG の外の到達時刻は、SG の外が初めて画面に見えたときに1回だけ求める（毎コマの空き時間で。Version 200） */
+      if (W.O === undefined) {
+        wvBuildOReq(W, 0);
+        continue;
       }
+      if (!W.O) continue;
+      if (wvAdd(eta, W, W.O, p0, wvFO)) any = true;
     }
-    if (!wvAnyO) return;
-    wvColor(eta, wvImgO, w, h);
-    wvCvO.getContext('2d').putImageData(wvImgO, 0, 0);
+    if (!any) {
+      wvAnyO = false;
+      wvTO = tq;
+      wvRgO = R.rgO;
+      return;
+    }
+    /* SG と重なる粗い格子は、SG の中の値（格子の中心の細かい格子）にする（境目の補間を SG の中とそろえる） */
+    for (let r = WVO_R0; r < WVO_R1; r++)
+      for (let c = WVO_C0; c < WVO_C1; c++) {
+        const fc = Math.floor((WVO.lon0 + (c + 0.5) * WVO.d - SG.lon0) / SG.d),
+          fr = Math.floor((WVO.lat0 + (r + 0.5) * WVO.d - SG.lat0) / SG.d);
+        const ok = wvAny && fc >= 0 && fr >= 0 && fc < SG.w && fr < SG.h,
+          fi = fr * SG.w + fc;
+        const m = r * w + c;
+        eta[m] = ok ? wvEta[fi] : 0;
+        if (ok && seaG[fi]) {
+          wvFO.DA[m] = wvFI.DA[fi];
+          wvFO.DEL[m] = wvFI.DEL[fi];
+          wvFO.DT[m] = wvFI.DT[fi];
+        } else if (ok) {
+          wvFO.DA[m] = 0;
+          wvFO.DT[m] = 0;
+        }
+      }
+    wvFRest(wvFO, eta);
+    if (jobLate()) yield;
+    const P = yield* wvColorG(wvImgO, w, h, wvUp(), R.rgO, null, wvFO);
+    if (P) wvCvO.getContext('2d').putImageData(wvImgO, 0, 0, P[0], P[1], P[2], P[3]);
+    wvAnyO = true;
+    wvTO = tq;
+    wvRgO = R.rgO;
   }
-  /* SG の外だけに描くための切り抜き（粗い格子の範囲から SG の範囲を抜く） */
-  /* e：SG の側へ少しだけ重ねる幅（地図の単位。境目の線の隙間を埋める。画面で約1px） */
-  function wvClipO(e) {
-    const p = new Path2D();
-    p.rect(WVO.lon0 * K, -(WVO.lat0 + WVO.h * WVO.d), WVO.w * WVO.d * K, WVO.h * WVO.d);
-    p.rect(SG.lon0 * K + e, -(SG.lat0 + SG.h * SG.d) + e, SG.w * SG.d * K - 2 * e, SG.h * SG.d - 2 * e);
-    return p;
+  /* 粗い格子の範囲から地図の陸を抜いた切り抜き（Version 198：SG の範囲も下に描き、上に不透明な SG の画像を重ねる。境目に線が出ないように） */
+  let wvClipOP = null;
+  function wvClipO() {
+    if (!wvClipOP) {
+      wvClip();
+      wvClipOP = new Path2D();
+      wvClipOP.rect(WVO.lon0 * K, -(WVO.lat0 + WVO.h * WVO.d), WVO.w * WVO.d * K, WVO.h * WVO.d);
+      wvClipOP.addPath(landClip);
+    }
+    return wvClipOP;
   }
   /* 海だけに描くための切り抜き（格子の範囲から地図の陸を抜く） */
   function wvClip() {
@@ -10904,6 +11725,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* 1コマ分のシミュレーション進行（sim.t は呼ぶ前に進めておく）。画面の更新と、シークでの早送りの両方で使う */
   function simBody(now) {
     const t = sim.t;
+    /* 分けて計算中の津波が必要な時刻になったら、残りをここで終える（Version 200） */
+    for (const e of sim.evs) if (e.tsJob && t >= e.tsNeed) jobFinish(e.tsJob);
     for (const e of sim.evs)
       while (e.nextTick <= t) {
         eewTick(e, e.nextTick);
@@ -11013,6 +11836,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           notifyLog();
         }
         if (!tsuWill(e)) continue;
+        tsuPrefetch(e, t);
         if (!e.tsuDone) {
           if (t >= e.tsT) issueTsunami(t, e, false);
         } else if (e.tsT2 && !e.tsuUpd && t >= e.tsT2) issueTsunami(t, e, true);
@@ -11251,8 +12075,22 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       dirty = simDirty = false;
       lastMapDraw = now;
     }
+    /* 分けた計算を、このコマの残りの時間で進める（Version 200）。コマの間隔（60Hzで約17ms、120Hzで約8ms）の約半分まで。
+       描画などで既に使い切っていても、少しは進める（終わらないままにしない） */
+    if (jobQ.length) {
+      if (dt > 0 && dt < 0.05) frIv += (dt * 1000 - frIv) * 0.1;
+      const t1 = performance.now();
+      /* 必要な時刻が近いジョブ（実時間で約3秒以内）があるときは、そのコマの時間を多めに使う（間に合わずに一気に計算して止まるのを減らす） */
+      let urg = false;
+      if (sim && sim.running && !sim.paused) {
+        const lim = sim.t + Math.max(5, speed * 3);
+        for (const j of jobQ) if (j.owner === sim && j.pri >= 0 && j.pri < lim) urg = true;
+      }
+      jobTick(Math.max(t1 + (urg ? 4 : 2), now + (urg ? Math.min(14, frIv * 0.8) : Math.min(10, frIv * 0.55))));
+    }
     requestAnimationFrame(frame);
   }
+  let frIv = 16.7;
   /* ================= 地点の揺れ・室内シミュレーション ================= */
   const SITE = { lon: 139.7, lat: 35.69 };
   let tapMode = 'epi';
@@ -11327,8 +12165,15 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* 地表の加速度波形（3成分）を合成：ω²モデルのスペクトル＋距離減衰＋地盤のピーク、包絡線はP波→S波主要動→減衰 */
   /* 複数の地震：地震ごとに波形を作り、発生のずれだけずらして足し合わせる */
   function buildMotion() {
+    return jobDrain(buildMotionG());
+  }
+  function* buildMotionG() {
     const base = Math.min(...EQS.map(q => q.dt || 0));
-    const parts = EQS.map((q, k) => ({ o: buildMotionQ(q, k), t0: (q.dt || 0) - base }));
+    const parts = [];
+    for (let k = 0; k < EQS.length; k++) {
+      const q = EQS[k];
+      parts.push({ o: yield* buildMotionQG(q, k), t0: (q.dt || 0) - base });
+    }
     /* 地震ごとのP波・S波の到達時刻（重なりの表示用） */
     const arr = parts.map((p, k) => ({ k, tP: p.t0 + p.o.tP, tS: p.t0 + p.o.tS, I: p.o.I }));
     if (parts.length === 1) return Object.assign(parts[0].o, { arr });
@@ -11370,7 +12215,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     out.pga = pg;
     return out;
   }
-  function buildMotionQ(P, qk) {
+  function* buildMotionQG(P, qk) {
     const arv = siteArv(SITE.lon, SITE.lat),
       tr0 = trueAt(SITE.lon, SITE.lat, arv || 1, P),
       m = tr0.m,
@@ -11444,7 +12289,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const gi = i => 1 + (lpG - 1) * LPW[i];
     let pk = 1e-9,
       sc = 1;
-    const synth = () => {
+    const synth = function* () {
       let on = false;
       for (let i = 0; i < NF; i++) {
         RC[i] = Math.cos(F[i] * DT);
@@ -11458,6 +12303,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         PJ[i] = ap * JF[i];
       }
       for (let k = 0; k < n; k++) {
+        if ((k & 511) === 511 && jobLate()) yield;
         const t = k * DT;
         const u = t - tS;
         const eS =
@@ -11545,9 +12391,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     };
     const lpT = tr0.lp;
     for (let pass = 0; pass < 3; pass++) {
-      synth();
+      yield* synth();
       if (!(lpT > 0.5) || pass === 2) break;
-      const sva = svaMax(ax, ay, DT) * sc,
+      const sva = (yield* svaMaxG(ax, ay, DT)) * sc,
         r = lpT / Math.max(1e-6, sva);
       if (Math.abs(Math.log(r)) < 0.05) break;
       lpG = Math.max(0.05, Math.min(3, lpG * r));
@@ -11563,13 +12409,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return { DT, n, tP, tS, tEnd, I, arv, pga, ax, ay, az, dx, dy };
   }
   /* 水平2成分の絶対速度応答の最大（減衰5%、周期1.6〜7.8秒を0.2秒刻み）。長周期地震動階級の Sva と同じ考え方（cm/s） */
-  function svaMax(ax, ay, DT) {
+  function* svaMaxG(ax, ay, DT) {
     let best = 0;
     for (const ag of [ax, ay]) {
       const n = ag.length,
         vg = new Float32Array(n);
       for (let i = 1; i < n; i++) vg[i] = vg[i - 1] + ((ag[i - 1] + ag[i]) * DT) / 2;
       for (let T = 1.6; T < 7.81; T += 0.2) {
+        if (jobLate()) yield;
         const w = (2 * Math.PI) / T,
           kk = w * w,
           cc = 0.1 * w,
@@ -13012,7 +13859,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = '#000';
     c.fillRect(0, 0, 320, 180);
-    tvDrawTelop(c);
+    if (siteEew()) tvDrawTelop(c);
     RM.tvTex.needsUpdate = true;
   }
   /* ---------- 机の上のスマホ（Version 115）：この地点が警報の対象になったら、緊急地震速報の通知（ダイアログ）を画面に出す ---------- */
@@ -13294,7 +14141,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* テレビの画面は「内容が変わったとき」だけ描き直す（以前は0.5秒ごとに描いて画像を送り直していた）。カメラの視野の外にあるときは描かず、視野に入ったら描く（Version 118） */
   function tvKey() {
     const tk = tvTsuKey();
-    if (tk && !siteEew()) return tk;
+    /* この地点の速報が地図から消えたら、テレビのテロップも同時に消す（Version 201） */
+    if (!siteEew()) return tk || 'off';
     const ev = sim && sim.evs ? sim.evs.find(v => v.k === sim.shown) : null;
     const tt = tvTelopText(),
       src = tt.head + '/' + tt.src + '/' + tt.regs.join(',');
@@ -16394,6 +17242,34 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       RM.visible = es[0].isIntersecting;
       if (RM.visible) RM.need = RM.shDirty = true;
     }).observe(host);
+    /* PC：照明の影の有り・無しの切り替え（夕方・夜の地震、シナリオの時刻）はシェーダーの作り直しで一瞬止まるので、
+       手が空いたときに、今と反対の状態で一度描いておく（作ったシェーダーは使い回される。Version 200） */
+    if (!RM.lowP) (window.requestIdleCallback ? f => requestIdleCallback(f, { timeout: 4000 }) : f => setTimeout(f, 1500))(dnPrewarm);
+  }
+  function dnPrewarm() {
+    const R = RM.R3,
+      D = R && R.dn;
+    if (!D || RM.lowP || D.psh == null) return;
+    const pls = [D.pend, RM.flamp && RM.flamp.lamp.pl].filter(Boolean),
+      on = !D.psh;
+    for (const pl of pls) {
+      pl.castShadow = on;
+      if (on && !pl.shadow.map) {
+        pl.shadow.mapSize.set(512, 512);
+        pl.shadow.camera.near = 0.3;
+        pl.shadow.camera.far = 8;
+        pl.shadow.bias = -0.004;
+        pl.shadow.radius = 2;
+      }
+    }
+    try {
+      R.renderer.shadowMap.needsUpdate = true;
+      R.renderer.render(R.scene, R.camera);
+    } finally {
+      for (const pl of pls) pl.castShadow = D.psh;
+      RM.need = RM.shDirty = true;
+      renderRoom();
+    }
   }
   function resetRoom() {
     const R = RM.R3;
@@ -18076,8 +18952,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
 
   /* ---------- 再生・同期 ---------- */
-  function prepareMotion() {
-    RM.motion = buildMotion();
+  function prepareMotion(mo) {
+    RM.motion = mo || buildMotion();
     RM.waveT = null;
     applyBuilding(RM.motion);
     RM.siteArea = AREAS.indexOf(nearestArea(SITE.lon, SITE.lat).area);
@@ -18087,7 +18963,21 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function roomPlay(mode) {
     if (!RM.R3) initRoom();
     if (!RM.R3 || (sim && sim.fake)) return;
-    prepareMotion();
+    /* 「地震発生」のときは、揺れの波形（M9で約0.2秒）を毎コマの空き時間で作る（Version 200）。この地点にP波が届く少し前までに終わらなければ、その時点で残りを一気に作る（roomFrame） */
+    if (mode === 'sync' && sim && sim.running && !seeking && sim.sites && sim.sites.length) {
+      RM.motion = null;
+      RM.waveT = null;
+      drawWave();
+      RM.moNeed = Math.max(0, Math.min(...sim.sites.map(x => x.tP)) - 1);
+      RM.moJob = jobAdd(null, RM.moNeed, () => buildMotionG(), mo => {
+        RM.moJob = null;
+        prepareMotion(mo);
+      });
+      RM.moJob.owner = sim;
+    } else {
+      RM.moJob = null;
+      prepareMotion();
+    }
     resetRoom();
     RM.mode = mode;
     if (RM.prW) Object.assign(RM.prW, { n: 0, t: 0, skip: 1 });
@@ -18134,6 +19024,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function roomFrame(dtReal) {
     const R = RM.R3;
     if (!R) return;
+    if (RM.moJob) {
+      if (RM.moJob.fin || !jobQ.includes(RM.moJob)) {
+        if (!RM.moJob.fin) RM.moJob = null;
+      } else if (RM.playing && RM.mode === 'sync' && sim && sim.t >= RM.moNeed) jobFinish(RM.moJob);
+    }
     if (RM.playing && RM.motion) {
       if (RM.mode === 'sync' && sim && sim.running) RM.t = sim.t;
       else RM.t += dtReal;
