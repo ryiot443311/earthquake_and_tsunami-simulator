@@ -2179,6 +2179,27 @@ details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
    ページが横に少しだけスクロールできるようになっていた。倍速で時刻の文字の幅が変わるたびに横スクロールのつまみが出て、下のタブなどが左右・上下にずれ動いていた。
    ①ページは横にはスクロールさせない（はみ出しは切る）②時刻バーは画面幅を超えないよう、スライダーと時刻の文字を縮められるようにする */
 html, body { overflow-x: hidden; overflow-x: clip; }
+/* Version 194：PC（1000px以上）は地図と下の操作・説明文で画面の一番下まで使う。地図の縦横比を固定せず、残りの高さをすべて地図に回す（--stTop は放送画面の上端の位置、--ftH は下の「実際の地震・津波情報ではありません」の高さ。JSで更新） */
+@media (min-width: 1000px) {
+  .stage {
+    min-height: calc(100vh - var(--stTop, 54px) - var(--ftH, 22px) - 12px);
+    min-height: calc(100dvh - var(--stTop, 54px) - var(--ftH, 22px) - 12px);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .stage > .tv {
+    aspect-ratio: auto;
+    height: auto;
+    max-height: none;
+    min-height: 360px;
+  }
+}
+/* 横長で縦が短い画面は、従来どおり地図の高さを優先（ページが少しスクロールしてもよい）。従来の地図の高さを下限にする */
+@media (min-width: 1100px) {
+  .stage > .tv {
+    min-height: max(360px, min(calc(100vh - 140px), calc((100vw - 32px - max(400px, (100vw - 32px) * 0.3)) * 0.5625)));
+    min-height: max(360px, min(calc(100dvh - 140px), calc((100vw - 32px - max(400px, (100vw - 32px) * 0.3)) * 0.5625)));
+  }
+}
 .seekrow { max-width: 100%; min-width: 0; }
 @media (max-width: 620px) {
   .seekrow input[type="range"] { min-width: 36px; flex: 1 1 40px; }
@@ -18610,6 +18631,23 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* ---------- boot ---------- */
   document.body.dataset.tab = curTab;
   new ResizeObserver(syncHdr).observe(document.querySelector('.stage>.tv+.bar'));
+  {
+    /* Version 194：放送画面（.stage）の上端の位置（ページの先頭から）を --stTop に。ヘッダーが折り返したり共有欄が開いたりしても下端を画面の一番下にそろえる */
+    const stg = document.querySelector('.stage');
+    const stTop = () => {
+      const y = Math.round(stg.getBoundingClientRect().top + window.scrollY);
+      const v = Math.max(0, y) + 'px',
+        de = document.documentElement,
+        ft = document.querySelector('footer.method'),
+        fv = (ft ? Math.ceil(ft.getBoundingClientRect().height) : 0) + 'px';
+      if (de.style.getPropertyValue('--stTop') !== v) de.style.setProperty('--stTop', v);
+      if (de.style.getPropertyValue('--ftH') !== fv) de.style.setProperty('--ftH', fv);
+    };
+    new ResizeObserver(stTop).observe(document.querySelector('.app > header.top'));
+    if (document.querySelector('footer.method')) new ResizeObserver(stTop).observe(document.querySelector('footer.method'));
+    window.addEventListener('resize', stTop);
+    stTop();
+  }
   new ResizeObserver(resize).observe(tv);
   resize();
   syncUI();
