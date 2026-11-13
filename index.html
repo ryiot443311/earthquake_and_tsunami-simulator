@@ -5038,6 +5038,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (sim) reset();
     const last = EQS[EQS.length - 1];
     const q = Object.assign({}, P, {
+      slip: null,
       lon: +(P.lon + 0.6).toFixed(2),
       lat: +(P.lat - 0.3).toFixed(2),
       M: Math.max(2, +(P.M - 0.8).toFixed(1)),
@@ -5127,13 +5128,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     b.textContent = n;
     b.onclick = () => {
       if (sim) reset();
-      Object.assign(P, { dip: null, rup: 'bi' }, p);
+      Object.assign(P, { dip: null, rup: 'bi', slip: null }, p);
       syncCfgUI();
       preview();
     };
     $('presets').appendChild(b);
   });
   /* 複数地震のシナリオ（dt＝最初の地震からの秒数） */
+  const SLIP_U = { k: 0, x0: 0 };
   const SCEN = [
     [
       '熊本地震 本震から64分（M7.3＋余震7）',
@@ -5162,7 +5164,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       [
         /* 2011/3/11 14:46:18.1 の本震からの秒数。震源要素は気象庁（災害時地震・津波速報、CMT解のページ）による。
            14:54 の福島県沖 M5.8 は地震の数の上限（8つ）のため省いた */
-        { lon: 142.86, lat: 38.103, depth: 24, M: 9.0, strike: 200, type: 'inter', dt: 0 },
+        { lon: 142.86, lat: 38.103, depth: 24, M: 9.0, strike: 200, type: 'inter', dt: 0, slip: { k: 1, x0: 0 } } /* 宮城沖に集中 */,
         { lon: 142.028, lat: 36.733, depth: 11, M: 6.8, strike: 200, type: 'inter', dt: 309 },
         { lon: 141.91, lat: 37.675, depth: 23, M: 6.4, strike: 200, type: 'inter', dt: 707 },
         { lon: 142.397, lat: 39.042, depth: 27, M: 6.4, strike: 200, type: 'inter', dt: 1192 },
@@ -5209,7 +5211,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     b.onclick = () => {
       if (sim) reset();
       EQS.length = 0;
-      list.forEach(p => EQS.push(Object.assign({ dip: null, rup: 'bi' }, p)));
+      /* シナリオは実際の地震・想定のすべりの形に固定（slip の無い地震は一様。Version 183） */
+      list.forEach(p => EQS.push(Object.assign({ dip: null, rup: 'bi', slip: SLIP_U }, p)));
       selQ = 0;
       P = EQS[0];
       syncCfgUI();
@@ -6184,10 +6187,16 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     tsuGeo = new Map();
   let tsuNoBuild = false,
     seaIdle = false;
+  /* 実際の津波のすべりの分布：シナリオで決めてあればそれ、無ければ「地震発生」のたびの乱数（同じ種なら同じ。Version 183） */
+  function slipOf(q, e) {
+    if (q.slip) return q;
+    const g = rng(runSeed + e.k * 7919 + 8642);
+    return Object.assign({}, q, { slip: { k: g(), x0: (g() - 0.5) * 0.7 } });
+  }
   function computeTsunami(P, qual) {
     P = P || EQS[0];
     if (!COAST.length) return null;
-    const k = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, P.dip, P.rup, !!qual].join();
+    const k = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, P.dip, P.rup, !!qual, slipKey(P)].join();
     let r = tsuMemo.get(k);
     if (!r) {
       r = computeTsunami0(P, qual);
@@ -6231,6 +6240,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return (-1 / (2 * Math.PI)) * (f(x, p) - f(x, p - W) - f(x - L, p) + f(x - L, p - W));
   }
   /* 波源：海の格子のうち、海底が大きく上下する所（最大の2割以上）。A0＝主な隆起・沈降の大きさ(m)、a＝その幅の半分(km) */
+  /* 走向方向のすべりの分布（Version 183）。P.slip＝{ k: 集中の度合い 0（一様）〜1, x0: 大きくすべる所の中心（断層の中央0、端±1） }。
+     無い（予報のデータベース・予想表示）は一様。実際の津波は「地震発生」のたびに乱数で決め（slipOf）、シナリオは実際の地震・想定の形に固定 */
+  const TAP_IN = 0.3,
+    TAP_END = 0.25,
+    ALONG_KM = 80;
+  function slipW(P, Lf) {
+    const k = P.slip ? P.slip.k : 0;
+    return Math.max(0, Math.min(1, k)) * Math.max(0, Math.min(1, (Lf - 200) / 200));
+  }
+  function slipKey(P) {
+    return P.slip ? P.slip.k.toFixed(3) + '/' + P.slip.x0.toFixed(3) : '';
+  }
   function tsuSource(P) {
     const Lf = faultLen(P.M),
       L = Lf / 2,
@@ -6259,6 +6280,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const wl = wLo + Ws * (j + 1);
       return { d: P.depth + wl * sd, u: wl * cd, U1: slip * w * Math.cos(rake), U2: slip * w * Math.sin(rake) };
     });
+    /* すべりの先細り（Version 183）：長い断層（約M8.3以上）は、大きくすべる所から両端へ向かってすべりが小さくなる（2011年は宮城沖に集中し、茨城沖・岩手北部沖は小さかった）。
+       大きくすべる所の前後 TAP_IN（割合）は一定、その外側は端で TAP_END まで滑らかに下げ、断層全体のすべりの合計（地震モーメント）はほぼ変えない。
+       長方形の断層の変位に掛けるだけなので、計算の重さは変わらない */
+    const wTap = slipW(P, Lf),
+      tMean = TAP_IN + (1 - TAP_IN) * (TAP_END + (1 - TAP_END) / 2),
+      sPk = (sr[0] + sr[1]) / 2 + (P.slip ? Math.max(-0.5, Math.min(0.5, P.slip.x0)) : 0) * (Ltot / 2),
+      tapAt = s => {
+        if (!wTap) return 1;
+        const x = Math.min(1, s >= sPk ? (s - sPk) / Math.max(1, sr[1] - sPk) : (sPk - s) / Math.max(1, sPk - sr[0])),
+          w = x <= TAP_IN ? 1 : TAP_END + (1 - TAP_END) * 0.5 * (1 + Math.cos((Math.PI * (x - TAP_IN)) / (1 - TAP_IN)));
+        return 1 - wTap + (wTap * w) / tMean;
+      };
     /* 調べる範囲：断層の長方形（走向×水平幅）の外側30kmまで */
     const mg = 30,
       s0 = sr[0] - mg,
@@ -6297,7 +6330,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         if (s < s0 || s > s1 || u < u0 || u > u1) continue;
         let uz = 0;
         for (const t of strips) uz += okadaUz(s - sr[0], t.u - u, Ltot, Ws, sd, cd, t.d, t.U1, t.U2);
-        pts.push([lo, la, uz]);
+        uz *= tapAt(s);
+        pts.push([lo, la, uz, s]);
         if (Math.abs(uz) > mx) mx = Math.abs(uz);
       }
     if (mx < 0.03) return null;
@@ -6321,12 +6355,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (D <= dc) return A * (Math.sqrt(30 + 25 * D) - Math.sqrt(30));
     return A * (Math.sqrt(30 + 25 * dc) - Math.sqrt(30)) + ((D - dc) * 1000) / Math.sqrt(9.8 * hm);
   }
-  /* 外洋の水深の目安（m）：東シナ海の大陸棚や瀬戸内海は浅い */
+  /* 外洋の水深の目安（m）：東シナ海の大陸棚・瀬戸内海・大阪湾・伊勢湾は浅い */
   function tsuHmax(lon, lat) {
     /* 九州の西（有明海・五島灘・東シナ海の大陸棚）。南西諸島（北緯31度より南）は外洋に面するので含めない */
     if (lon < 130.4 && lat < 33.6 && lat > 31.0) return 150;
     /* 瀬戸内海。紀伊水道に面する淡路島南部・徳島県南部は外洋側 */
-    if (lon > 131.2 && lon < 135.2 && lat > 33.9 && lat < 34.6 && !(lon > 134.45 && lat < 34.3)) return 60;
+    if (lon > 131.2 && lon < 135.2 && lat > 33.9 && lat < 34.75 && !(lon > 134.45 && lat < 34.3)) return 60;
+    /* 伊予灘・周防灘（Version 183）：豊後水道の北（佐田岬半島の北側）。別府湾は豊後水道に開いて深いので外洋側のまま */
+    if (lon > 130.95 && lon < 132.9 && lat < 34.1 && lat > (lon < 131.85 ? 33.48 : lon < 132 ? 33.3 : 33.34 + (lon - 132) * 0.4)) return 60;
+    /* 大阪湾（紀淡海峡より北）は水深約30m、伊勢湾・三河湾（伊良湖水道より奥）は約20m（Version 183）。
+       東京湾は湾の共振で外より高くなることがある（2011年）ので外洋側のまま */
+    if (lon > 134.95 && lon < 135.5 && lat > 34.29 && lat < 34.75) return 40;
+    if (lon > 136.5 && lon < 137.4 && lat > (lon < 137.02 ? 34.56 : 34.66) && lat < 35.15) return 30;
     return 3500;
   }
   const JSEA_REGS = new Set(['北海道日本海沿岸南部','北海道日本海沿岸北部','青森県日本海沿岸','秋田県','山形県','新潟県上中下越','佐渡','富山県','石川県能登','石川県加賀','福井県','京都府','兵庫県北部','鳥取県','島根県出雲・石見','隠岐','山口県日本海沿岸','福岡県日本海沿岸','佐賀県北部','壱岐・対馬']);
@@ -6365,7 +6405,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     /* 波源と海の上の最短距離は震源・規模・断層の向きだけで決まるので、同じ地震なら使い回す（Version 131。
        M8超は「巨大・高い」の第1報と数値の続報で2回計算するため、続報のときの一瞬の引っかかりがなくなる） */
-    const gk = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, P.dip, P.rup].join();
+    const gk = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, P.dip, P.rup, slipKey(P)].join();
     let GS = tsuGeo.get(gk);
     if (!GS) {
       const S0 = tsuSource(P);
@@ -6419,6 +6459,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           c2 = c * c;
         return 1 - wDir * (1 - (DIR_MIN + (1 - DIR_MIN) * c2 * c2));
       };
+    const wTapC = farK ? 0 : slipW(P, Lf);
     const by = new Map(),
       SP = GS.SP,
       ptH = new Float32Array(COAST.length),
@@ -6493,6 +6534,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       /* 波源は変位の大きい順に並んでいる。残りは今の最大を超えられない（上限は変位×(hm/50)^¼）ので打ち切る */
       let HF = 0;
       const gmax = Math.sqrt(Math.sqrt(hm / 50));
+      /* すべりが一様でないとき（Version 183）：海岸の高さはその海岸の正面（走向に沿って近い所）の変位でほぼ決まり、
+         走向に沿って離れた所の大きな変位は斜めに広がって弱まる。いちばん正面に近い波源からのずれ e に応じて 1/(1+(e/ALONG_KM)²) を掛ける。
+         波源どうしの比べ直しなので、断層の端より先の弱まり（dirAt）とは重ならない。一様なすべり（予報）は従来どおり */
+      const cs = wTapC ? (c.lon - P.lon) * kf * Math.sin(az) + (c.lat - P.lat) * 110.57 * Math.cos(az) : 0;
+      let eMin = 1e9;
+      if (wTapC) for (const q of S.top) eMin = Math.min(eMin, Math.abs(q[3] - cs));
       for (const q of S.top) {
         const aq = Math.abs(q[2]);
         if (aq * gmax <= HF) break;
@@ -6500,7 +6547,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           dy = (c.lat - q[1]) * 110.57,
           r = Math.max(5, Math.sqrt(dx * dx + dy * dy)) * detour,
           Hs = Math.min(hm, 30 + 25 * (r + 0.5 * S.a)),
-          v = (aq * Math.sqrt(Math.sqrt(Hs / 50)) * Math.sqrt(S.a / (S.a + r))) / (1 + r / 800);
+          eq = wTapC ? (Math.abs(q[3] - cs) - eMin) / ALONG_KM : 0,
+          v = ((aq * Math.sqrt(Math.sqrt(Hs / 50)) * Math.sqrt(S.a / (S.a + r))) / (1 + r / 800)) * (1 - wTapC + wTapC / (1 + eq * eq));
         if (v > HF) HF = v;
       }
       const fDir = dirAt(c.lon, c.lat);
@@ -7172,7 +7220,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       /* 津波：約3分後に第1報。M8を超える巨大地震は定性表現で出し、約15分後に数値へ更新 */
       if (!fake && cfg.tsu) {
         const qual = q.M > 8 && !e.farQ;
-        e.tsunami = computeTsunami(q, qual);
+        e.tsunami = computeTsunami(slipOf(q, e), qual);
         if (e.tsunami) e.tsunami.regs.forEach(r => (r.arr += e.t0));
         /* 「認知」＝緊急地震速報の第1報の発表時。第1報が出た時点で上書きする（eewTick）。出ない地震は検知＋遅延から数える */
         const tRec = e.det.length ? e.det[0] + cfg.delay : e.t0;
@@ -17166,7 +17214,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     for (const k in CFG0) if (JSON.stringify(cfg[k]) !== JSON.stringify(CFG0[k])) c[k] = cfg[k];
     return {
       v: 1,
-      q: EQS.map(q => [q.lon, q.lat, q.depth, q.M, q.strike, ty.indexOf(q.type), q.dip == null ? -1 : q.dip, rup.indexOf(q.rup), q.dt || 0]),
+      q: EQS.map(q => {
+        const a = [q.lon, q.lat, q.depth, q.M, q.strike, ty.indexOf(q.type), q.dip == null ? -1 : q.dip, rup.indexOf(q.rup), q.dt || 0];
+        if (q.slip) a.push([q.slip.k, q.slip.x0]);
+        return a;
+      }),
       c,
       s: [SITE.lon, SITE.lat],
       b: bldKey,
@@ -17219,7 +17271,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         type: ty[a[5]] || 'crustal',
         dip: dips.includes(dip) ? dip : null,
         rup: rup[a[7]] || 'bi',
-        dt: Math.round(clampN(a[8], 0, DTMAX, 0))
+        dt: Math.round(clampN(a[8], 0, DTMAX, 0)),
+        slip: Array.isArray(a[9]) ? { k: clampN(a[9][0], 0, 1, 0, 3), x0: clampN(a[9][1], -0.5, 0.5, 0, 3) } : null
       };
     });
     fixRate(qs);
