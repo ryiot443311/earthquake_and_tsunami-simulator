@@ -5016,7 +5016,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       case 32:
         return lat > 35.9 ? '隠岐' : '島根県出雲・石見';
       case 35:
-        return (lat > 34.15 && lon < 131.6) || (lon < 131.0 && lat > 33.98)
+        /* 日本海側の東の端（萩市須佐・田万川。東経131.6度より東）も日本海沿岸（Version 204。以前は瀬戸内海沿岸になり、そこだけ瀬戸内海側の区分で塗られていた）。
+           瀬戸内海側の海岸は北緯34.25度より南（岩国が最も北で約34.2度） */
+        return (lat > 34.15 && lon < 131.6) || lat > 34.4 || (lon < 131.0 && lat > 33.98)
           ? '山口県日本海沿岸'
           : '山口県瀬戸内海沿岸';
       case 38:
@@ -5129,6 +5131,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       return lat < 43.0 || /^(後志|檜山|渡島|北海道奥尻)/.test(area.name || '') ? '北海道日本海沿岸南部' : '北海道日本海沿岸北部';
     /* 渡島半島の南端：白神岬より東（福島町）は太平洋沿岸西部 */
     if (lon < 140.9 && lat < 42.6) return lon < (lat < 41.6 ? 140.2 : 140.3) ? '北海道日本海沿岸南部' : '北海道太平洋沿岸西部';
+    /* 中部と東部の境は振興局で分ける（日高＝中部、十勝・釧路・根室＝東部。Version 205。以前は東経143.3度で分け、えりも町の東海岸（庶野〜目黒）の一部が東部になっていた） */
+    if (/^日高/.test(area.name || '')) return '北海道太平洋沿岸中部';
+    if (/^(十勝|釧路|根室)/.test(area.name || '')) return '北海道太平洋沿岸東部';
     return lon >= 143.3
       ? '北海道太平洋沿岸東部'
       : lon >= 141.5
@@ -16577,246 +16582,669 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       b = p(c1);
     return 'rgb(' + a.map((v, j) => Math.round(v + (b[j] - v) * k)).join(',') + ')';
   }
-  /* 窓の外の街並み（Version 195 で作り直し。決まった乱数で作る）
-     奥・中のビル、手前の低い建物（ビルの間から空が地面まで見えないように）、手前のビルの4列。ビルごとに「事務所」（横に連なる窓の帯。夜は階ごとにまとめて点く・白い光）と
-     「住宅」（1つずつの窓。夜はまばらに点く・暖かい色、カーテンで色が少し違う）に分ける。
-     窓は階の高さと柱の間隔にそろえて並べ、遠い列ほど小さく霞ませる。
-     夕方は窓ごとに点く時刻をずらして少しずつ灯りが増える。夜は灯りのにじみ、地平の街明かり、高いビルの屋上の赤い航空障害灯、手前の街灯 */
-  let DN_CITY = null;
+  /* 窓の外の住宅街（Version 203。以前はビル街）：手前は戸建ての家並み（切妻・寄棟の屋根、ブロック塀、庭木、電柱と電線、街灯）、遠くに団地と山。
+     建物の種類と階数から目の高さを決めて透視図で描く（1階は塀と道の向かいの家が目の前、2階は道越しに家並み、高い階は屋根を見下ろす）。
+     区画は東西72mごとに幅6mの道、奥へは家2列（13m×2）と幅6mの道の32mごと。決まった乱数で作るので、時刻・階を変えても同じ町 */
   const DN_HEX = x => [1, 3, 5].map(j => parseInt(x.substr(j, 2), 16));
   const dnLerp = (a, b, k) => a.map((v, j) => v + (b[j] - v) * k);
   const dnCss = (c, a) => 'rgba(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ',' + (a == null ? 1 : a) + ')';
-  function dnCity(W, H) {
-    if (DN_CITY && DN_CITY.W === W && DN_CITY.H === H) return DN_CITY;
-    const rnd = rng(20261113),
-      s = W / 512,
-      rows = [];
-    /* 列：地面の高さ・ビルの高さ・幅・階の高さ・窓の大きさ・霞み（昼・夜）・ビルの間の空きの確率 */
-    const ROWS = [
-      { base: 0.7, hMin: 0.05, hMax: 0.24, wMin: 16, wMax: 42, fl: 4, haze: [0.5, 0.35], gap: 0.05 },
-      { base: 0.81, hMin: 0.1, hMax: 0.38, wMin: 30, wMax: 74, fl: 7, haze: [0.22, 0.14], gap: 0.12 },
-      { base: 0.93, hMin: 0.04, hMax: 0.13, wMin: 22, wMax: 46, fl: 8, haze: [0.12, 0.08], gap: 0 },
-      { base: 0.93, hMin: 0.12, hMax: 0.42, wMin: 56, wMax: 120, fl: 11, haze: [0.04, 0.03], gap: 0.45 }
-    ];
-    const WALL = ['#b9bec4', '#c9c1b2', '#a7b0ba', '#d3d0c8', '#9aa3ad', '#bfb3a3'];
-    ROWS.forEach((R, ri) => {
-      const bl = [];
-      let x = -8 * s - rnd() * 20 * s;
-      while (x < W + 8 * s) {
-        const w = (R.wMin + rnd() * (R.wMax - R.wMin)) * s;
-        if (rnd() < R.gap) {
-          x += w * 0.6;
-          continue;
+  const dnEye = () => 1.4 + (floorNo - 1) * (bldKey === 'wood' ? 2.9 : 3.0);
+  const DN_ROOF = [
+      [92, 98, 108],
+      [64, 72, 90],
+      [106, 80, 64],
+      [56, 58, 62],
+      [80, 94, 88],
+      [134, 82, 62]
+    ],
+    DN_WALLS = [
+      [236, 232, 222],
+      [226, 214, 190],
+      [206, 202, 194],
+      [214, 200, 176],
+      [180, 162, 142],
+      [242, 242, 238],
+      [198, 206, 208]
+    ],
+    DN_LIT = [
+      [255, 214, 150],
+      [255, 228, 186],
+      [246, 240, 228],
+      [255, 200, 160]
+    ],
+    DN_BX = 72,
+    DN_BD = 32,
+    DN_R0 = 4 /* 最初の道の手前の端（m）。1階の窓から塀の向こうの道 */,
+    DN_XO = 6.5; /* 区画を横へずらす（真正面が道の奥まで抜けないように） */
+  /* 団地：[西の端, 東の端, 手前の奥行き, 棟の数（奥へ）, 階数] */
+  const DN_DANCHI = [
+    [-430, -130, 430, 3, 5],
+    [260, 560, 980, 2, 11],
+    [-1500, -1100, 1700, 2, 8]
+  ];
+  function dnTown(g, W, H, n, skyHor, mk) {
+    const he = dnEye(),
+      y0 = Math.round(H * 0.47),
+      f = 420,
+      cx = W / 2,
+      night = smooth01(0.1, 0.75, n),
+      P = (x, d, z) => [cx + (f * x) / d, y0 + (f * (he - z)) / d],
+      hz = d => (1 - Math.exp(-d / 1700)) * (0.9 - 0.4 * n),
+      /* 色：昼の色→夜の暗さ（k）→遠いほど地平の空の色 */
+      tone = (c, d, k, m) => dnLerp(dnLerp(c.map(v => v * (m || 1)), [10, 13, 20], night * (k == null ? 0.9 : k)), skyHor, hz(d)),
+      fillC = (c, a) => (g.fillStyle = dnCss(c, a)),
+      poly = pts => {
+        g.beginPath();
+        g.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+        g.closePath();
+        g.fill();
+      },
+      /* 灯り・街灯は描かずに記録だけ（mk があるとき。描き置きの外で毎回描く。Version 205） */
+      light = mk ? mk.light : () => {},
+      glass = dnLerp(dnLerp([66, 78, 92], skyHor, 0.25), [6, 9, 15], smooth01(0.15, 0.7, n)),
+      xMax = d => ((cx + 30) * d) / f,
+      items = [];
+    /* 遠くの山（地平のすぐ上） */
+    {
+      const rs = rng(4242),
+        hc = tone([96, 116, 124], 9000, 0.95),
+        hill = dnLerp(hc, skyHor, 0.55);
+      fillC(hill);
+      g.beginPath();
+      g.moveTo(0, y0 + 1);
+      let h = 4;
+      for (let x = 0; x <= W + 8; x += 8) {
+        h = Math.max(1, Math.min(13, h + (rs() - 0.5) * 4));
+        g.lineTo(x, y0 - h * (H / 464));
+      }
+      g.lineTo(W, y0 + 1);
+      g.closePath();
+      g.fill();
+    }
+    /* 地面：遠くは霞み、近くは道と庭の色 */
+    {
+      const gr = g.createLinearGradient(0, y0, 0, H);
+      gr.addColorStop(0, dnCss(tone([120, 124, 114], 4000)));
+      gr.addColorStop(1, dnCss(tone([112, 116, 106], 20)));
+      g.fillStyle = gr;
+      g.fillRect(0, y0, W, H - y0);
+    }
+    /* 目の高さで、描く奥行きの範囲を決める（足元より手前は画面の外） */
+    const dNear = Math.max(DN_R0, (f * (he - 9)) / (H - y0) - 14),
+      lowP = !!(RM && RM.lowP),
+      dDet = lowP ? 260 : 330 /* ここまで家を細かく描く（先は1軒が10画素ほどになるので箱で）。スマホ等は少し手前まで */,
+      dSim = (he < 8 ? 450 : he < 20 ? 900 : 1500) * (lowP ? 0.75 : 1) /* ここまで家を箱で描く。その先は屋根の色の帯（低い階は手前の家に隠れるので描かない） */,
+      dEnd = 9000;
+    /* 区画の列（家・塀・庭木）と道（道路・電柱・電線・街灯） */
+    for (let k = 0; ; k++) {
+      const rd = DN_R0 + k * DN_BD;
+      if (rd > dSim) break;
+      if (rd + DN_BD < dNear) continue;
+      items.push({ d: rd + 8.2, road: rd }, { d: rd + 5.6, pole: rd });
+      for (let j = 0; j < 2; j++) items.push({ d: rd + 7.5 + j * 13, row: k * 2 + j });
+    }
+    /* 団地の棟 */
+    DN_DANCHI.forEach(([xa, xb, d0, nr, fl], ci) => {
+      const rs = rng(777 + ci * 53);
+      for (let r = 0; r < nr; r++)
+        for (let x = xa; x + 40 <= xb; x += 58 + rs() * 16) {
+          const d = d0 + r * (60 + rs() * 20);
+          if (d < dNear) continue;
+          items.push({ d, dan: [x, x + 44 + rs() * 10, d, fl, rs] });
         }
-        const top = Math.round(H * (R.base - (R.hMin + rnd() * (R.hMax - R.hMin)))),
-          bot = Math.round(H * R.base),
-          x0 = Math.round(x),
-          x1 = Math.round(x + w),
-          fl = Math.max(3, Math.round(R.fl * s * (0.9 + rnd() * 0.25))),
-          office = ri === 2 ? rnd() < 0.15 : rnd() < (ri === 0 ? 0.5 : 0.45),
-          wall = (f => DN_HEX(WALL[(rnd() * WALL.length) | 0]).map(v => v * f))(0.88 + rnd() * 0.16),
-          lights = [];
-        const mar = Math.max(1, Math.round(fl * 0.35)),
-          roof = top + Math.max(2, Math.round(fl * 0.6));
-        if (office) {
-          /* 事務所：階ごとの窓の帯。柱で数か所に区切る。点く・消えるは階（区切り）ごと */
-          const seg = Math.max(1, Math.round((x1 - x0) / (fl * (3 + rnd() * 3)))),
-            sw = (x1 - x0 - mar * 2) / seg,
-            wh = Math.max(1, Math.round(fl * 0.55)),
-            cool = rnd() < 0.85;
-          let floorOn = rnd() < 0.4;
-          for (let y = roof; y + wh <= bot - fl * 0.5; y += fl) {
-            if (rnd() < 0.35) floorOn = !floorOn && rnd() < 0.8;
-            for (let k = 0; k < seg; k++) {
-              const on = floorOn ? rnd() < 0.75 : rnd() < 0.06;
-              lights.push({
-                x: Math.round(x0 + mar + k * sw + (k ? 0.5 : 0)),
-                y,
-                w: Math.max(1, Math.round(sw - 1)),
-                h: wh,
-                on: on ? 0.32 + rnd() * 0.35 : 9,
-                v: 0.75 + rnd() * 0.25,
-                c: cool ? (rnd() < 0.8 ? [236, 243, 255] : [255, 246, 226]) : [255, 236, 200]
-              });
+    });
+    items.sort((a, b) => b.d - a.d);
+    /* 遠くの屋根の帯（dSim より先）。1本の高さが1〜2画素になるよう奥行きの間隔を広げる */
+    {
+      const rs = rng(31337);
+      const rows = [];
+      for (let d = dSim; he >= 8 && d < dEnd; ) {
+        const step = Math.max(14, (d * d) / (f * Math.max(he, 1.4)) * 1.6);
+        rows.push([d, step]);
+        d += step;
+      }
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const [d, step] = rows[i],
+          yt = P(0, d, 7)[1],
+          yb = P(0, d + step, 0)[1],
+          y = Math.floor(Math.min(yt, yb)),
+          h = Math.max(1, Math.ceil(Math.abs(P(0, d, 0)[1] - yt)) + 1);
+        if (y < y0 - 4 || y > H) continue;
+        const pal = DN_ROOF.concat(DN_WALLS, [[88, 110, 80]]).map(c => dnCss(tone(c, d, 0.92))),
+          nr = DN_ROOF.length,
+          nw = DN_WALLS.length;
+        for (let x = -3; x < W; ) {
+          const w = 2 + ((rs() * 3) | 0),
+            house = rs() < 0.8;
+          g.fillStyle = house ? (rs() < 0.6 ? pal[(rs() * nr) | 0] : pal[nr + ((rs() * nw) | 0)]) : pal[nr + nw];
+          g.fillRect(x, y, w, h);
+          /* 乱数は灯りの有無に関係なく同じだけ使う（夜の度合いで町の形が変わらないように） */
+          const on = rs() < 0.5 ? 0.3 + rs() * 0.4 : 9,
+            lc = DN_LIT[(rs() * DN_LIT.length) | 0],
+            lvv = 0.35 + rs() * 0.5,
+            lx = x + ((rs() * w) | 0),
+            ly = y + ((rs() * h) | 0);
+          if (house) light(lx, ly, 1, 1, on, lvv, lc, 1, 0.6, d);
+          x += w;
+        }
+      }
+    }
+    /* 列ごとの色の文字列（同じ色を何度も作らない） */
+    const palOf = (base, d, k) => {
+      const c = new Map();
+      return (i, m) => {
+        const key = i * 1000 + Math.round(m * 60);
+        let s = c.get(key);
+        if (!s) c.set(key, (s = dnCss(tone(base[i], d, k, m))));
+        return s;
+      };
+    };
+    /* 家1軒（細かく） */
+    const house = (q, d, Rp, Wp, Gp) => {
+      const { x0, x1, D, ze, zr, type } = q,
+        dm = d + D / 2,
+        xm = (x0 + x1) / 2,
+        o = 0.45 /* 軒の出 */,
+        sideX = x0 > 0 ? x0 : x1 < 0 ? x1 : null,
+        R = (k, m) => Rp(q.ri, m),
+        Wc = (k, m) => Wp(q.wi, m * q.wm);
+      /* 横の壁（中心から見える側） */
+      if (sideX !== null) {
+        g.fillStyle = Wc(0.92, 0.8);
+        poly([P(sideX, d, 0), P(sideX, d + D, 0), P(sideX, d + D, ze), P(sideX, d, ze)]);
+      }
+      /* 正面の壁 */
+      g.fillStyle = Wc(0.9, 1);
+      if (type === 1) poly([P(x0, d, 0), P(x1, d, 0), P(x1, d, ze), P(xm, d, zr), P(x0, d, ze)]);
+      else poly([P(x0, d, 0), P(x1, d, 0), P(x1, d, ze), P(x0, d, ze)]);
+      /* 窓（昼はガラス、夜は灯り） */
+      const [ax] = P(x0, d, 0),
+        [bx] = P(x1, d, 0),
+        pw = bx - ax;
+      if (pw > 14)
+        for (const w of q.win) {
+          const [wx0, wy0] = P(w[0], d - 0.02, w[3]),
+            [wx1, wy1] = P(w[1], d - 0.02, w[2]);
+          const ww = Math.max(1, wx1 - wx0),
+            wh = Math.max(1, wy1 - wy0);
+          if (w[7]) {
+            /* 玄関の扉と、夜の玄関灯 */
+            g.fillStyle = Gp[2];
+            g.fillRect(wx0, wy0, ww, wh);
+            light(wx1 + ww * 0.2, wy0, Math.max(1, ww * 0.18), Math.max(1, ww * 0.18), w[4], w[5], w[6], 1, 0, d);
+            continue;
+          }
+          /* 窓枠（白いサッシ）とガラス */
+          if (ww >= 6) {
+            g.fillStyle = Gp[1];
+            g.fillRect(wx0 - 1, wy0 - 1, ww + 2, wh + 2);
+          }
+          g.fillStyle = Gp[0];
+          g.fillRect(wx0, wy0, ww, wh);
+          if (ww >= 6) {
+            g.fillStyle = Gp[1];
+            g.fillRect(wx0 + ww / 2 - 0.5, wy0, 1, wh);
+          }
+          light(wx0, wy0, ww, wh, w[4], w[5], w[6], 0.92, 0, d);
+        }
+      /* 屋根 */
+      if (type === 0) {
+        /* 切妻（棟が横）：奥の面→正面の面→見える側の妻 */
+        g.fillStyle = R(0.95, 0.72);
+        poly([P(x0 - o, d + D + o, ze - 0.2), P(x1 + o, d + D + o, ze - 0.2), P(x1 + o, dm, zr), P(x0 - o, dm, zr)]);
+        g.fillStyle = R(0.92, 1.08);
+        poly([P(x0 - o, d - o, ze - 0.2), P(x1 + o, d - o, ze - 0.2), P(x1 + o, dm, zr), P(x0 - o, dm, zr)]);
+        if (sideX !== null) {
+          g.fillStyle = Wc(0.92, 0.76);
+          poly([P(sideX, d, ze), P(sideX, d + D, ze), P(sideX, dm, zr)]);
+        }
+      } else if (type === 1) {
+        /* 切妻（棟が奥へ）：遠い側の面→近い側の面 */
+        const L = [P(x0 - o, d - o, ze - 0.2), P(xm, d - o, zr), P(xm, d + D + o, zr), P(x0 - o, d + D + o, ze - 0.2)],
+          Rr = [P(x1 + o, d - o, ze - 0.2), P(xm, d - o, zr), P(xm, d + D + o, zr), P(x1 + o, d + D + o, ze - 0.2)],
+          near = xm > 0 ? L : Rr,
+          farS = xm > 0 ? Rr : L;
+        g.fillStyle = R(0.95, 0.74);
+        poly(farS);
+        g.fillStyle = R(0.92, 1.0);
+        poly(near);
+      } else {
+        /* 寄棟：奥→正面→見える側の三角 */
+        const r = Math.min((x1 - x0) * 0.3, D / 2);
+        g.fillStyle = R(0.95, 0.72);
+        poly([P(x0 - o, d + D + o, ze - 0.2), P(x1 + o, d + D + o, ze - 0.2), P(x1 - r, dm, zr), P(x0 + r, dm, zr)]);
+        if (sideX !== null) {
+          const sx = sideX === x0 ? x0 - o : x1 + o,
+            ix = sideX === x0 ? x0 + r : x1 - r;
+          g.fillStyle = R(0.94, 0.86);
+          poly([P(sx, d - o, ze - 0.2), P(sx, d + D + o, ze - 0.2), P(ix, dm, zr)]);
+        }
+        g.fillStyle = R(0.92, 1.08);
+        poly([P(x0 - o, d - o, ze - 0.2), P(x1 + o, d - o, ze - 0.2), P(x1 - r, dm, zr), P(x0 + r, dm, zr)]);
+      }
+    };
+    /* 区画1列の家（乱数は列と区画ごとなので、見える範囲が変わっても同じ家） */
+    const rowLots = (row, d) => {
+      const out = [],
+        xm = xMax(d),
+        b0 = Math.floor((-xm - DN_XO) / DN_BX) - 1,
+        b1 = Math.ceil((xm - DN_XO) / DN_BX);
+      for (let b = b0; b <= b1; b++) {
+        const rs = rng(100003 + row * 977 + (b + 600) * 31);
+        let x = b * DN_BX + DN_XO + 3;
+        const xe = b * DN_BX + DN_XO + DN_BX - 3;
+        while (x < xe - 6) {
+          let lw = 10 + rs() * 3.2;
+          if (xe - (x + lw) < 8) lw = xe - x;
+          const gap = 0.8 + rs() * 1.6,
+            hw = Math.max(6, lw - gap - rs() * 1.5),
+            hx = x + gap / 2 + rs() * (lw - gap - hw),
+            one = rs() < 0.1,
+            ze = one ? 2.9 : 5.5 + rs() * 0.7,
+            q = {
+              lot0: x,
+              lot1: x + lw,
+              x0: hx,
+              x1: hx + hw,
+              D: 7.5 + rs() * 2,
+              ze,
+              zr: ze + 1.5 + rs() * 1,
+              type: rs() < 0.4 ? 0 : rs() < 0.33 ? 1 : 2,
+              ri: (rs() * DN_ROOF.length) | 0,
+              wi: (rs() * DN_WALLS.length) | 0,
+              wm: 0.94 + rs() * 0.08,
+              win: [],
+              tree: rs() < 0.4 ? [x + 1 + rs() * (lw - 2), 1.3 + rs() * 1, 3 + rs() * 1.8, 0.85 + rs() * 0.3] : null,
+              fence: rs() < 0.75
+            };
+          /* 窓：階ごとに1〜3つ。[左, 右, 下, 上, 点く夜の度合い, 明るさ, 色] */
+          for (let fl = 0; fl < (one ? 1 : 2); fl++) {
+            const nw = hw > 8.5 ? 3 : hw > 6.8 ? 2 : 1,
+              ww = 1.5 + rs() * 0.4,
+              zb = fl ? 3.7 : 0.9,
+              zt = zb + (fl ? 1.2 : 1.4);
+            for (let i = 0; i < nw; i++) {
+              const wx = hx + ((i + 0.5) * hw) / nw - ww / 2,
+                on = rs() < 0.55 ? 0.28 + rs() * 0.45 : 9;
+              const door = !fl && i === 0 && nw > 1;
+              q.win.push(door ? [wx + 0.3, wx + 1.25, 0, 2.05, rs() < 0.6 ? 0.3 + rs() * 0.3 : 9, 0.8, [255, 214, 150], 1] : [wx, wx + ww, zb, zt, on, 0.55 + rs() * 0.45, DN_LIT[(rs() * DN_LIT.length) | 0]]);
             }
           }
-        } else {
-          /* 住宅：1つずつの窓（ベランダ側）。窓の幅と間隔は階の高さに合わせる */
-          const ww = Math.max(1, Math.round(fl * 0.5)),
-            wh = Math.max(1, Math.round(fl * 0.55)),
-            pitch = Math.max(ww + 1, Math.round(fl * 0.95)),
-            n = Math.max(1, Math.floor((x1 - x0 - mar * 2 + (pitch - ww)) / pitch)),
-            off = Math.round((x1 - x0 - (n * pitch - (pitch - ww))) / 2);
-          for (let y = roof; y + wh <= bot - fl * 0.4; y += fl)
-            for (let k = 0; k < n; k++) {
-              const on = rnd() < 0.42,
-                r = rnd();
-              lights.push({
-                x: x0 + off + k * pitch,
-                y,
-                w: ww,
-                h: wh,
-                on: on ? 0.3 + rnd() * 0.45 : 9,
-                v: 0.55 + rnd() * 0.45,
-                c: r < 0.55 ? [255, 214, 150] : r < 0.8 ? [255, 228, 186] : r < 0.92 ? [246, 240, 228] : [255, 196, 160]
-              });
-            }
+          q.rc = DN_ROOF[q.ri];
+          q.wc = DN_WALLS[q.wi].map(v => v * q.wm);
+          out.push(q);
+          x += lw;
         }
-        const tall = ri !== 2 && bot - top > H * 0.27;
-        bl.push({
-          x0,
-          x1,
-          top,
-          bot,
-          fl,
-          office,
-          wall,
-          lights,
-          /* 屋上の設備（四角い塔屋）と航空障害灯 */
-          ph: tall && rnd() < 0.6 ? [Math.round(x0 + (x1 - x0) * (0.2 + rnd() * 0.4)), Math.round((x1 - x0) * (0.2 + rnd() * 0.2)), Math.max(2, Math.round(fl * 0.8))] : null,
-          red: tall && ri > 0 && rnd() < 0.7
-        });
-        x += w + (ri === 3 ? rnd() * 10 : ri === 2 ? 0 : rnd() * 3) * s;
       }
-      rows.push({ R, bl });
-    });
-    /* 手前の街灯 */
-    const st = [];
-    for (let x = rnd() * 30 * s; x < W; x += (36 + rnd() * 30) * s) st.push(Math.round(x));
-    DN_CITY = { W, H, rows, st };
-    return DN_CITY;
+      return out;
+    };
+    for (const it of items) {
+      const d = it.d;
+      if (it.row != null) {
+        const lots = rowLots(it.row, d);
+        if (d <= dDet) {
+          /* 中心から遠い家から（隣の家の横の壁が手前の家に重ならないように） */
+          lots.sort((a, b) => Math.abs(b.x0 + b.x1) - Math.abs(a.x0 + a.x1));
+          const Rp = palOf(DN_ROOF, d, 0.93),
+            Wp = palOf(DN_WALLS, d, 0.9),
+            Gp = [dnCss(dnLerp(glass, skyHor, hz(d)), 0.92), dnCss(tone([236, 236, 230], d, 0.9)), dnCss(tone([118, 92, 72], d, 0.92))];
+          for (const q of lots) house(q, d, Rp, Wp, Gp);
+          /* 庭木 */
+          if (d < 260)
+            for (const q of lots)
+              if (q.tree) {
+                const [tx, tz, r, sh] = [q.tree[0], q.tree[2], q.tree[1], q.tree[3]],
+                  [px, py] = P(tx, d - 1.2, tz),
+                  pr = (r * f) / (d - 1.2);
+                fillC(tone([96, 78, 62], d, 0.95));
+                const [, gy] = P(tx, d - 1.2, 0);
+                g.fillRect(px - Math.max(0.5, pr * 0.08), py, Math.max(1, pr * 0.16), gy - py);
+                fillC(tone([64, 96, 60], d, 0.95, sh));
+                g.beginPath();
+                g.ellipse(px, py, pr, pr * 0.9, 0, 0, Math.PI * 2);
+                g.fill();
+                fillC(tone([96, 130, 84], d, 0.95, sh), 0.5 * (1 - n));
+                g.beginPath();
+                g.ellipse(px - pr * 0.25, py - pr * 0.3, pr * 0.5, pr * 0.4, 0, 0, Math.PI * 2);
+                g.fill();
+              }
+          /* ブロック塀・生け垣 */
+          if (d < 200)
+            for (const q of lots)
+              if (q.fence) {
+                const [a, b] = P(q.lot0 + 0.3, d - 2, 1.2),
+                  [c, e] = P(q.lot1 - 0.3, d - 2, 0);
+                fillC(tone([178, 174, 166], d, 0.92));
+                g.fillRect(a, b, c - a, e - b);
+                fillC(tone([140, 136, 128], d, 0.92), 0.8);
+                g.fillRect(a, b, c - a, Math.max(1, (e - b) * 0.12));
+              }
+        } else {
+          /* 箱の家：壁と屋根の2つ（色の文字列は列ごとに作る） */
+          const rp = DN_ROOF.map(c => dnCss(tone(c, d, 0.92, 1.05))),
+            wp = DN_WALLS.map(c => dnCss(tone(c, d, 0.9)));
+          for (const q of lots) {
+            const [a, yr] = P(q.x0 - 0.4, d + q.D / 2, q.zr),
+              [b, ye] = P(q.x1 + 0.4, d, q.ze),
+              [, yg] = P(q.x0, d, 0),
+              top = Math.min(yr, ye),
+              rb = Math.max(yr, ye);
+            g.fillStyle = wp[q.wi];
+            g.fillRect(a, rb, Math.max(1, b - a), Math.max(1, yg - rb));
+            g.fillStyle = rp[q.ri];
+            g.fillRect(a, top, Math.max(1, b - a), Math.max(1, rb - top));
+            const w = q.win[0];
+            light((a + b) / 2, (rb + yg) / 2, 1, 1, w[4], w[5], w[6], 1, 0.5, d);
+          }
+        }
+      } else if (it.road != null) {
+        /* 道の路面（家の列より先に描き、塀の下を隠さない） */
+        const rd = it.road,
+          [, ya] = P(0, rd + 6, 0),
+          [, yb] = P(0, rd, 0);
+        if (yb > y0) {
+          fillC(tone([104, 106, 108], rd, 0.92));
+          g.fillRect(0, ya, W, Math.max(1, Math.min(H, yb) - ya));
+        }
+      } else if (it.pole != null) {
+        /* 道沿いの電柱・電線、街灯 */
+        const rd = it.pole;
+        if (rd > 220) continue;
+        const pd = rd + 5.6,
+          xm = xMax(pd),
+          poles = [];
+        for (let b = Math.floor((-xm - DN_XO) / DN_BX) - 1; b <= Math.ceil((xm - DN_XO) / DN_BX); b++)
+          for (const o of [2.4, 38]) poles.push(b * DN_BX + DN_XO + o);
+        const lw = Math.max(0.6, Math.min(1.6, 60 / pd));
+        g.strokeStyle = dnCss(tone([36, 40, 46], pd, 0.6), 0.85);
+        g.lineWidth = lw * 0.7;
+        /* 電線（電柱の間でたるむ。2本） */
+        for (let i = 1; i < poles.length; i++)
+          for (const z of [9.3, 8.5]) {
+            const [ax, ay] = P(poles[i - 1], pd, z),
+              [bx, by] = P(poles[i], pd, z),
+              [, my] = P(0, pd, z - 1.1);
+            if (bx < -20 || ax > W + 20) continue;
+            g.beginPath();
+            g.moveTo(ax, ay);
+            g.quadraticCurveTo((ax + bx) / 2, my, bx, by);
+            g.stroke();
+          }
+        for (const x of poles) {
+          const [px, pt] = P(x, pd, 10.2),
+            [, pb] = P(x, pd, 0),
+            pw = Math.max(1, (0.3 * f) / pd);
+          if (px < -10 || px > W + 10) continue;
+          fillC(tone([150, 150, 146], pd, 0.9));
+          g.fillRect(px - pw / 2, pt, pw, pb - pt);
+          const [ca, cy] = P(x - 0.8, pd, 9.3),
+            [cb] = P(x + 0.8, pd, 9.3);
+          fillC(tone([70, 72, 76], pd, 0.9));
+          g.fillRect(ca, cy - lw / 2, cb - ca, Math.max(1, lw));
+          /* 街灯（夜。位置だけ記録） */
+          if (mk) {
+            const [lx, ly] = P(x + 0.9, pd, 6.5);
+            mk.lamp(lx, ly, Math.min(36, Math.max(3, (3.5 * f) / pd)), Math.max(2, (0.6 * f) / pd), Math.max(1, (0.2 * f) / pd));
+          }
+        }
+      } else if (it.dan) {
+        /* 団地の棟：屋上・横の壁・正面（ベランダの並び） */
+        const [x0, x1, , fl, rs] = it.dan,
+          zt = fl * 2.9 + 0.8,
+          D = 10,
+          sideX = x0 > 0 ? x0 : x1 < 0 ? x1 : null,
+          base = [222, 220, 210];
+        fillC(tone(base, d, 0.9, 0.82));
+        if (sideX !== null) poly([P(sideX, d, 0), P(sideX, d + D, 0), P(sideX, d + D, zt), P(sideX, d, zt)]);
+        fillC(tone([150, 152, 150], d, 0.9));
+        poly([P(x0, d, zt), P(x1, d, zt), P(x1, d + D, zt), P(x0, d + D, zt)]);
+        const [ax, ay] = P(x0, d, zt),
+          [bx, by] = P(x1, d, 0);
+        fillC(tone(base, d, 0.9));
+        g.fillRect(ax, ay, bx - ax, by - ay);
+        const units = Math.round((x1 - x0) / 3.6),
+          uw = (bx - ax) / units,
+          fh = (by - ay) / (fl + 0.3),
+          gls = dnCss(dnLerp(glass, skyHor, hz(d)), 0.8);
+        for (let k = 0; k < fl; k++) {
+          const yy = ay + fh * (k + 0.3);
+          /* ベランダの手すりの影の帯 */
+          fillC(tone([120, 124, 130], d, 0.92), 0.55);
+          g.fillRect(ax, yy + fh * 0.62, bx - ax, Math.max(1, fh * 0.12));
+          for (let u = 0; u < units; u++) {
+            const on = rs() < 0.5 ? 0.28 + rs() * 0.45 : 9,
+              vv = 0.5 + rs() * 0.5,
+              wx = ax + u * uw + uw * 0.15,
+              ww = Math.max(1, uw * 0.7),
+              wh = Math.max(1, fh * 0.55);
+            if (uw >= 1.5) {
+              g.fillStyle = gls;
+              g.fillRect(wx, yy, ww, wh);
+            }
+            light(wx, yy, ww, wh, on, vv, DN_LIT[(u + k) & 3], 0.95, 0.4, d);
+          }
+        }
+      }
+    }
+    /* 自分の建物の手前：1階は庭とブロック塀、マンションの2階以上はベランダの手すり */
+    if (floorNo === 1) {
+      const [, yt] = P(0, 3, 1.1),
+        [, yb] = P(0, 3, 0);
+      fillC(tone([172, 168, 160], 3, 0.93));
+      g.fillRect(0, yt, W, yb - yt);
+      fillC(tone([132, 128, 122], 3, 0.93));
+      g.fillRect(0, yt, W, Math.max(2, (yb - yt) * 0.1));
+      fillC(tone([118, 120, 114], 3, 0.93), 0.5);
+      for (let x = 0; x < W; x += Math.round((0.4 * f) / 3)) g.fillRect(x, yt, 1, yb - yt);
+      fillC(tone([92, 116, 80], 2, 0.95));
+      g.fillRect(0, yb, W, H - yb);
+    } else if (bldKey !== 'wood') {
+      const ry = Math.round(H * 0.86);
+      fillC(dnLerp([96, 100, 106], [8, 10, 16], night));
+      g.fillRect(0, ry, W, Math.max(3, Math.round(H * 0.012)));
+      fillC(dnLerp([110, 114, 120], [8, 10, 16], night), 0.9);
+      for (let x = 4; x < W; x += Math.round(W / 46)) g.fillRect(x, ry, Math.max(1.5, W / 300), H - ry);
+    }
+  }
+  /* 窓の外の描き置き（Version 205）：町の絵は目の高さ（建物・階）ごとに、夜の度合い 0・0.5・1 の絵を必要になったときに1回だけ描いて取っておき、
+     空と同じ割合で前後の2枚を重ねる。灯りは「どの画素にどの灯りが見えるか」を番号の絵に1回だけ描いておき（手前の家に隠れる灯りは番号が消える）、
+     毎回その画素だけ塗る。以前は夕方に明るさが変わるたびに町を全部描き直していた（1回40〜120ms） */
+  let DN_TC = null;
+  const dnCv = (W, H) => Object.assign(document.createElement('canvas'), { width: W, height: H });
+  function dnTownCache(W, H) {
+    const key = W + ',' + H + ',' + dnEye() + ',' + !!(RM && RM.lowP);
+    if (!DN_TC || DN_TC.key !== key) DN_TC = { key, W, H, lay: new Map(), L: null, lamps: [] };
+    return DN_TC;
+  }
+  function dnLayer(C, kf) {
+    let cv = C.lay.get(kf);
+    if (cv) return cv;
+    const { W, H } = C,
+      skyHor = DN_HEX(DN.sky[Math.round(kf * 2)][2]),
+      a = (cv = dnCv(W, H)).getContext('2d');
+    if (C.L) dnTown(a, W, H, kf, skyHor, null);
+    else {
+      /* 初めての1枚：色の絵と番号の絵に同じ形を描く（番号の絵では灯り以外はすべて黒＝灯りを隠す物） */
+      const b = dnCv(W, H).getContext('2d', { willReadFrequently: true }),
+        L = { on: [], v: [], A: [], hk: [], d: [], c: [] },
+        lamps = [];
+      b.fillStyle = b.strokeStyle = '#000';
+      const mk = {
+          light(x, y, w, h, on, v, c, A, hk, d) {
+            if (on > 1) return;
+            const id = L.on.length + 1;
+            L.on.push(on);
+            L.v.push(v);
+            L.c.push(c);
+            L.A.push(A);
+            L.hk.push(hk);
+            L.d.push(d);
+            b.fillStyle = 'rgb(' + ((id >> 16) & 255) + ',' + ((id >> 8) & 255) + ',' + (id & 255) + ')';
+            b.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+            b.fillStyle = '#000';
+          },
+          /* 街灯：電球の画素にも番号を描き、見えている街灯だけ光らせる（手前の家に隠れる街灯の光を出さない） */
+          lamp: (lx, ly, rr, bw, bh) => {
+            mk.light(lx - 1, ly, bw, bh, 0, 0, [0, 0, 0], 0, 0, 0);
+            lamps.push([lx, ly, rr, bw, bh, L.on.length - 1]);
+          }
+        },
+        both = {
+          set fillStyle(v) {
+            a.fillStyle = v;
+          },
+          set strokeStyle(v) {
+            a.strokeStyle = v;
+          },
+          set lineWidth(v) {
+            a.lineWidth = b.lineWidth = v;
+          },
+          fillRect: (x, y, w, h) => {
+            a.fillRect(x, y, w, h);
+            b.fillRect(x, y, w, h);
+          },
+          beginPath: () => {
+            a.beginPath();
+            b.beginPath();
+          },
+          moveTo: (x, y) => {
+            a.moveTo(x, y);
+            b.moveTo(x, y);
+          },
+          lineTo: (x, y) => {
+            a.lineTo(x, y);
+            b.lineTo(x, y);
+          },
+          quadraticCurveTo: (p, q, x, y) => {
+            a.quadraticCurveTo(p, q, x, y);
+            b.quadraticCurveTo(p, q, x, y);
+          },
+          ellipse: (...p) => {
+            a.ellipse(...p);
+            b.ellipse(...p);
+          },
+          closePath: () => {
+            a.closePath();
+            b.closePath();
+          },
+          fill: () => {
+            a.fill();
+            b.fill();
+          },
+          stroke: () => {
+            a.stroke();
+            b.stroke();
+          },
+          createLinearGradient: (...p) => a.createLinearGradient(...p),
+          createRadialGradient: (...p) => a.createRadialGradient(...p)
+        };
+      dnTown(both, W, H, kf, skyHor, mk);
+      /* 見えている灯りの画素（不透明な所だけ。縁で色が混ざった画素は使わない） */
+      const D = b.getImageData(0, 0, W, H).data,
+        N = L.on.length,
+        pix = [],
+        pid = [];
+      for (let p = 0, o = 0; p < W * H; p++, o += 4) {
+        if (D[o + 3] < 250) continue;
+        const id = (D[o] << 16) | (D[o + 1] << 8) | D[o + 2];
+        if (id > 0 && id <= N) {
+          pix.push(p);
+          pid.push(id - 1);
+        }
+      }
+      C.L = Object.assign(L, { n: N, pix: Int32Array.from(pix), pid: Int32Array.from(pid), al: new Float32Array(N) });
+      const seen = new Uint8Array(N);
+      for (const i of pid) seen[i] = 1;
+      C.lamps = lamps.filter(q => seen[q[5]]);
+    }
+    C.lay.set(kf, cv);
+    return cv;
+  }
+  /* 灯り：窓ごとに点く夜の度合いをずらす。見えている画素だけ塗る */
+  function dnLights(g, C, n) {
+    const L = C.L,
+      { W, H } = C;
+    if (n > 0.2 && L.pix.length) {
+      if (!C.img) {
+        C.lc = dnCv(W, H);
+        C.lx = C.lc.getContext('2d');
+        C.img = C.lx.createImageData(W, H);
+      }
+      const al = L.al,
+        hzF = 0.9 - 0.4 * n;
+      for (let i = 0; i < L.n; i++) {
+        const on = L.on[i],
+          v = smooth01(on - 0.06, on + 0.06, n);
+        al[i] = v > 0 ? v * L.v[i] * L.A[i] * (1 - L.hk[i] * (1 - Math.exp(-L.d[i] / 1700)) * hzF) : 0;
+      }
+      const data = C.img.data;
+      data.fill(0);
+      for (let k = 0; k < L.pix.length; k++) {
+        const i = L.pid[k],
+          a = al[i];
+        if (a <= 0.01) continue;
+        const o = L.pix[k] * 4,
+          c = L.c[i];
+        data[o] = c[0];
+        data[o + 1] = c[1];
+        data[o + 2] = c[2];
+        data[o + 3] = Math.min(255, a * 255);
+      }
+      C.lx.putImageData(C.img, 0, 0);
+      g.drawImage(C.lc, 0, 0);
+    }
+    if (n > 0.3) {
+      const v = smooth01(0.3, 0.55, n);
+      for (const [lx, ly, rr, bw, bh] of C.lamps) {
+        const lg = g.createRadialGradient(lx, ly, 0, lx, ly, rr);
+        lg.addColorStop(0, 'rgba(255,214,150,' + 0.38 * v + ')');
+        lg.addColorStop(1, 'rgba(255,214,150,0)');
+        g.fillStyle = lg;
+        g.fillRect(lx - rr, ly - rr, rr * 2, rr * 2);
+        g.fillStyle = 'rgba(255,236,196,' + v + ')';
+        g.fillRect(lx - 1, ly, bw, bh);
+      }
+    }
   }
   function dnSky(g, W, H, n) {
     const S = DN.sky,
       k = n < 0.5 ? n * 2 : (n - 0.5) * 2,
       a = n < 0.5 ? S[0] : S[1],
       b = n < 0.5 ? S[1] : S[2],
-      skyTop = dnLerp(DN_HEX(a[0]), DN_HEX(b[0]), k),
-      skyHor = dnLerp(DN_HEX(a[2]), DN_HEX(b[2]), k),
-      gr = g.createLinearGradient(0, 0, 0, H * 0.9);
+      gr = g.createLinearGradient(0, 0, 0, H * 0.5);
     gr.addColorStop(0, dnMix(a[0], b[0], k));
     gr.addColorStop(0.62, dnMix(a[1], b[1], k));
     gr.addColorStop(1, dnMix(a[2], b[2], k));
     g.fillStyle = gr;
     g.fillRect(0, 0, W, H);
-    /* 夜空の星（街の明かりで少しだけ） */
+    /* 夜空の星（住宅街なので少し多め） */
     if (n > 0.7) {
       const rs = rng(77);
-      for (let i = 0; i < 26; i++) {
+      for (let i = 0; i < 40; i++) {
         g.fillStyle = 'rgba(220,230,255,' + (n - 0.7) * (1.2 + rs() * 1.5) + ')';
-        g.fillRect(rs() * W, rs() * H * 0.32, 1, 1);
+        g.fillRect(rs() * W, rs() * H * 0.3, 1, 1);
       }
     }
-    /* 地平の街明かり（光害）：夜は地平近くの空が街の灯りでぼんやり明るい */
+    /* 地平の街明かり（光害）：住宅街なのでビル街より弱め */
     const glow = smooth01(0.3, 0.9, n);
     if (glow > 0) {
-      const lg = g.createLinearGradient(0, H * 0.4, 0, H * 0.75);
+      const lg = g.createLinearGradient(0, H * 0.28, 0, H * 0.48);
       lg.addColorStop(0, 'rgba(255,160,100,0)');
-      lg.addColorStop(1, 'rgba(210,140,100,' + 0.22 * glow + ')');
+      lg.addColorStop(1, 'rgba(210,140,100,' + 0.14 * glow + ')');
       g.fillStyle = lg;
-      g.fillRect(0, H * 0.4, W, H * 0.35);
+      g.fillRect(0, H * 0.28, W, H * 0.2);
     }
-    const C = dnCity(W, H),
-      nightWall = [
-        [22, 28, 40],
-        [14, 19, 30],
-        [12, 15, 22],
-        [9, 12, 20]
-      ],
-      glass = dnLerp([44, 58, 76], skyTop, 0.2);
-    C.rows.forEach(({ R, bl }, ri) => {
-      /* 霞み：遠い列ほど空（地平）の色に寄せる */
-      const hz = R.haze[0] + (R.haze[1] - R.haze[0]) * n,
-        far = ri === 0 ? 0.65 : ri === 3 ? 1 : 0.85;
-      for (const q of bl) {
-        const wl = dnLerp(dnLerp(q.wall, nightWall[ri], smooth01(0.1, 0.75, n)), skyHor, hz),
-          bw = q.x1 - q.x0;
-        g.fillStyle = dnCss(wl);
-        /* 壁は地面まで（遠いビルの足元が手前の建物の隙間から空になって見えないように） */
-        g.fillRect(q.x0, q.top, bw, Math.round(H * 0.93) - q.top);
-        if (q.ph) g.fillRect(q.ph[0], q.top - q.ph[2], q.ph[1], q.ph[2]);
-        /* 昼：日の当たる側（左の面）をわずかに明るく、右端に細い影。夜はほぼ見えない */
-        if (ri > 0) {
-          g.fillStyle = 'rgba(255,255,255,' + 0.07 * (1 - n) + ')';
-          g.fillRect(q.x0, q.top, Math.max(1, Math.round(bw * 0.08)), q.bot - q.top);
-          g.fillStyle = 'rgba(0,0,0,' + (0.12 - 0.08 * n) + ')';
-          g.fillRect(q.x1 - Math.max(1, Math.round(bw * 0.06)), q.top, Math.max(1, Math.round(bw * 0.06)), q.bot - q.top);
-          /* 屋上の縁（パラペット） */
-          g.fillStyle = 'rgba(0,0,0,' + (0.18 - 0.1 * n) + ')';
-          g.fillRect(q.x0, q.top + 1, bw, 1);
-        }
-        /* 消えている窓：昼は空を映すガラス、夜は暗いガラス（壁より少し暗い） */
-        const off = dnLerp(dnLerp(glass, [6, 9, 15], smooth01(0.15, 0.7, n)), skyHor, hz * 0.8);
-        g.fillStyle = dnCss(off, q.office ? 0.85 : 0.7);
-        for (const L of q.lights) g.fillRect(L.x, L.y, L.w, L.h);
-        /* 昼の事務所：ガラスの帯に空の映り込みの筋 */
-        if (q.office && n < 0.5 && ri > 0) {
-          g.fillStyle = 'rgba(210,228,245,' + 0.16 * (1 - n * 2) + ')';
-          for (const L of q.lights) g.fillRect(L.x, L.y, Math.max(1, Math.round(L.w * 0.3)), 1);
-        }
-      }
-      /* 灯り：窓ごとに点く時刻（夜の度合い）をずらす */
-      if (n > 0.25) {
-        g.globalCompositeOperation = 'lighter';
-        for (const q of bl)
-          for (const L of q.lights) {
-            if (L.on > 1) continue;
-            const v = smooth01(L.on - 0.06, L.on + 0.06, n) * L.v * far;
-            if (v <= 0.01) continue;
-            /* にじみ（手前の2列だけ）：窓より少し大きい淡い光 */
-            if (ri > 0) {
-              g.fillStyle = dnCss(L.c, 0.1 * v);
-              g.fillRect(L.x - 1, L.y - 1, L.w + 2, L.h + 2);
-            }
-            g.fillStyle = dnCss(L.c, 0.9 * v);
-            g.fillRect(L.x, L.y, L.w, L.h);
-            /* 住宅の窓は上の方を少し明るく（天井の照明）・事務所は下に窓枠の暗い線 */
-            if (L.h >= 3) {
-              g.fillStyle = dnCss(L.c, 0.25 * v);
-              g.fillRect(L.x, L.y, L.w, 1);
-            }
-          }
-        g.globalCompositeOperation = 'source-over';
-        for (const q of bl)
-          if (q.office)
-            for (const L of q.lights) {
-              if (L.on > 1 || L.h < 3) continue;
-              const v = smooth01(L.on - 0.06, L.on + 0.06, n);
-              if (v <= 0.01) continue;
-              g.fillStyle = 'rgba(0,0,0,' + 0.22 * v + ')';
-              for (let xx = L.x + 3; xx < L.x + L.w - 1; xx += 4) g.fillRect(xx, L.y, 1, L.h);
-            }
-      }
-      /* 航空障害灯（赤） */
-      if (n > 0.35) {
-        const v = smooth01(0.35, 0.6, n);
-        for (const q of bl)
-          if (q.red) {
-            const tx = q.ph ? q.ph[0] + (q.ph[1] >> 1) : (q.x0 + q.x1) >> 1,
-              ty = (q.ph ? q.top - q.ph[2] : q.top) - 2;
-            g.fillStyle = 'rgba(255,40,30,' + 0.25 * v + ')';
-            g.fillRect(tx - 2, ty - 1, 5, 4);
-            g.fillStyle = 'rgba(255,70,50,' + v + ')';
-            g.fillRect(tx - 1, ty, 2, 2);
-          }
-      }
-    });
-    /* 手前の地面（ベランダの手すりの影のように暗い帯）と街灯 */
-    g.fillStyle = dnMix('#5c6670', '#05080e', n);
-    g.fillRect(0, H * 0.93, W, H * 0.07);
-    if (n > 0.3) {
-      const v = smooth01(0.3, 0.55, n),
-        y = Math.round(H * 0.93);
-      for (const x of C.st) {
-        const lg = g.createRadialGradient(x, y + 1, 0, x, y + 1, 9);
-        lg.addColorStop(0, 'rgba(255,200,130,' + 0.55 * v + ')');
-        lg.addColorStop(1, 'rgba(255,200,130,0)');
-        g.fillStyle = lg;
-        g.fillRect(x - 9, y - 8, 18, 18);
-        g.fillStyle = 'rgba(255,225,170,' + v + ')';
-        g.fillRect(x - 1, y, 2, 2);
-      }
+    /* 町：夜の度合いの前後2枚を、空と同じ割合で重ねる */
+    const C = dnTownCache(W, H),
+      ka = n < 0.5 ? 0 : 0.5;
+    if (k < 0.998) g.drawImage(dnLayer(C, ka), 0, 0);
+    if (k > 0.002) {
+      g.globalAlpha = k < 0.998 ? k : 1;
+      g.drawImage(dnLayer(C, ka + 0.5), 0, 0);
+      g.globalAlpha = 1;
     }
+    dnLights(g, C, n);
   }
   /* 0.5秒ごとに時刻を見て、変わったときだけ光・空を直す（光の数は変えない＝シェーダーは作り直さない） */
   function dnApply(force) {
@@ -16832,7 +17260,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       n = Math.round((1 - smooth01(p.r - 0.35, p.r + 0.35, p.h) * (1 - smooth01(p.s - 0.35, p.s + 0.35, p.h))) * 40) / 40,
       alt = Math.round(p.alt * 2) / 2,
       A = Math.round(p.A * 100) / 100,
-      key = n + ',' + alt + ',' + A;
+      key = n + ',' + alt + ',' + A + ',' + dnEye();
     if (key === D.key) return;
     D.key = key;
     /* 照明：夕方（夜の度合い0.15〜0.5）で点ける */
@@ -16883,9 +17311,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           }
         }
     }
-    /* 窓の外の景色は夜の度合いだけで決まるので、変わったときだけ描き直す */
-    if (n !== D.skyN) {
-      D.skyN = n;
+    /* 窓の外の景色は夜の度合いと目の高さ（建物・階）で決まるので、変わったときだけ描き直す（Version 203） */
+    const ek = n + ',' + dnEye();
+    if (ek !== D.skyN) {
+      D.skyN = ek;
       const cv = D.skyTex.image;
       dnSky(cv.getContext('2d'), cv.width, cv.height, n);
       D.skyTex.needsUpdate = true;
@@ -17023,7 +17452,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     room.add(box(0.012, 0.07, RD * 2, trim, -RW + 0.006, 0.035, 0));
     /* 窓：空のグラデーション、白い枠と中央の縦の框、窓台。左右にリネンのカーテン（腰までの丈） */
     /* 窓の外の景色（Version 191）：空と街並み。時刻で描き直す（dnSky）。窓は景色の画像そのまま光らせ（室内の光は当てない）、夜はガラスに室内が映る */
-    const skyTex = cvTex('sky', 512, 464, (g, W, H) => dnSky(g, W, H, 0));
+    /* 最初は空の色だけ（街並みはすぐ後の dnApply で今の時刻・階で描く。2回描かない。Version 203） */
+    const skyTex = cvTex('sky', 512, 464, (g, W, H) => {
+      g.fillStyle = '#8fb3d9';
+      g.fillRect(0, 0, W, H);
+    });
     const win = new THREE.Mesh(
       new THREE.PlaneGeometry(1.1, 1.0),
       new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffffff, emissiveMap: skyTex, emissiveIntensity: DN.winI[0], roughness: 0.06, userData: { env: 0.01 } })
