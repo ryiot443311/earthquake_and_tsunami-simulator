@@ -7807,11 +7807,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         e.mwSteps.push({ t: tf, f: 1, fin: true });
         e.endT = Math.max(e.endT, tf + 20);
       }
-      e.tauConv = Math.max(
-        10,
-        Math.pow(10, (Mt - 3.7) / 2) / (cfg.grow * VR) + 3,
-        faultLen(q.M) / (1.5 * VR)
-      );
+      /* Version 206：推定Mが Mt に届く時刻（破壊の進み方・M8.5超の緩やかな増え方を含む）から求める */
+      e.tauConv = Math.max(10, mReachT(q, Mt) + 3, faultLen(q.M) / (1.5 * VR));
       if (e.farEew) e.tauConv = 12;
       e.ang = (q.lon * 97 + q.lat * 31 + e.k * 1.7) % 6.283;
       /* 予報（データベース）でも津波が予想されるか（Version 160）。Mは発表時点の見込み（M8超は最大級を見込む）。
@@ -8010,15 +8007,35 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     preview();
   }
 
-  /* 推定M：破壊が広がるにつれて大きくなる（観測データの時間長に依存）。上限はない */
-  function mRup(tau) {
-    return (
-      2 * Math.log10(Math.max(0.5, cfg.grow * VR * Math.max(0.1, tau))) + 3.7 - 2.2 * Math.exp(-tau / 3.5)
-    );
+  /* 推定M：破壊が広がるにつれて大きくなる（観測データの時間長に依存）。上限はない。
+     Version 206：①その時点までに破壊した断層の長さ（一方向破壊は片側にしか伸びない）に相当するMをなぞる。
+     「推定Mの立ち上がり」（cfg.grow）は時間の進みを 0.5・1・2倍にする（標準＝1倍）。
+     ②M8.5を超える分は増え方を2/3に緩める（M_SOFT・M_SOFT_K。上限は作らない。M9.5級は破壊の終わり近くでしか出ない） */
+  const M_SOFT = 8.5,
+    M_SOFT_K = 2 / 3;
+  /* 破壊の長さ（推定M用）：両側破壊は 2×VR×t（従来どおり断層の端で打ち切らない。小さな地震の立ち上がりを変えないため）。
+     一方向破壊は、短い側が端（0.15L）で止まり、長い側だけが伸びる */
+  function rupLenAt(q, t) {
+    const d = VR * Math.max(0, t);
+    if (q.rup !== 'fw' && q.rup !== 'bw') return 2 * d;
+    const sr = sRange(q, faultLen(q.M) / 2);
+    return Math.min(-sr[0], sr[1], d) + d;
   }
-  /* 巨大地震（M8以上）は、最初の揺れの振幅だけでも「かなり大きい」とわかるため、第1報から低すぎない値になる（2011年の東北沖は第1報M7.2）。M9.0でM7.2、規模が下がるほど1ずつ下がる */
-  function mFloor(Mq) {
-    return Mq >= 8 ? 6.2 + (Mq - 8) : 0;
+  function mRup(q, tau) {
+    let m = 2 * Math.log10(Math.max(0.5, rupLenAt(q, (Math.max(0.1, tau) * cfg.grow) / 2))) + 3.7;
+    if (m > M_SOFT) m = M_SOFT + (m - M_SOFT) * M_SOFT_K;
+    return m - 2.2 * Math.exp(-tau / 3.5);
+  }
+  /* 推定Mが Mt に届くまでの秒数（e.tauConv 用） */
+  function mReachT(q, Mt) {
+    let t = 0;
+    while (t < 1200 && mRup(q, t) < Mt - 0.05) t += 1;
+    return t;
+  }
+  /* 巨大地震（M8以上）は、最初の揺れの振幅だけでも「大きい」とわかるため、最初の数秒は破壊の長さより少し大きく推定する。
+     Version 206：破壊の長さに相当するM＋1.0まで、かつ 6.0＋0.5×(M−8)まで（M9.0で6.5、M10で7.0）。破壊が進むとすぐ効かなくなる */
+  function mFloor(q, tau) {
+    return q.M >= 8 ? Math.min(6.0 + 0.5 * (q.M - 8), mRup(q, tau) + 1.0) : 0;
   }
   /* 震源に最も近い観測点（海底含む有効な全観測網）が遠いほど、震源の誤差が大きい。陸の近くは約1倍 */
   function errFactor(q) {
@@ -8139,7 +8156,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       qq = Math.min(1.4, 1.6 / Math.sqrt(Math.max(1, nDet)));
     /* 推定Mには、最後まで残る誤差（e.mErr、±0.35程度）がある。巨大地震は実際より小さめ（e.mBias）。上限はない */
     let M =
-      Math.min(Mt, Math.max(mRup(tau), mFloor(q.M))) +
+      Math.min(Mt, Math.max(mRup(q, tau), mFloor(q, tau))) +
       e.mJit * Math.exp(-tau / 6) * Math.min(1, 1.5 / Math.sqrt(Math.max(1, nDet))) +
       (e.mErr || 0);
     if (misOn(e, t)) {
@@ -8341,7 +8358,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       maxLp !== last.maxLp ||
       added.length > 0 ||
       (warnNow && !last.warn);
-    const converged = s.fake || mis ? false : est.tau >= e.tauConv && est.off < 1.5;
+    /* Version 206：最後まで残る震央の誤差（e.offR）は収束の判定から除く（offR が1.5km以上だと最終報が出なかった） */
+    const converged = s.fake || mis ? false : est.tau >= e.tauConv && est.off - (e.offR || 0) < 1.5;
     if (!changed && !converged) return;
     const final = (!changed && converged) || e.reports.length >= 59;
     const plum = added.some(i => pr[i].src === 1);
