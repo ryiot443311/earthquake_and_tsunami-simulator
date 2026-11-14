@@ -9964,8 +9964,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (s.infoShown) {
       $('tsu').hidden = false;
       $('info').classList.add('short');
-      /* 切替後に津波情報が更新されたら、津波情報の表示に戻す */
-      if (s.ivView) ivView('tsu');
+      /* 切替後に津波情報が更新されたら、津波情報の表示に戻す。
+         Version 212（ユーザーの依頼）：震度速報の後に津波情報（若干の海面変動以上）が入ってきたときも、1つの地震でもすぐ「震度｜津波」の切替で津波側を出す
+         （以前は震度速報と津波情報を縦に並べ、INFO_TO_TSU 秒後に切替へ移っていた） */
+      if (s.ivView || top >= 1) {
+        s.ivAuto = false;
+        ivView('tsu');
+      }
       let x0 = e.q.lon,
         x1 = e.q.lon,
         y0 = e.q.lat,
