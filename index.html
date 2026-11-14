@@ -8045,7 +8045,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* 津波予報の引き直し（M8超の数値への更新・Mの速報値の更新）で使うデータベースの計算（1回で約0.1〜0.4秒）を、
      緊急地震速報が終わってMの見込みが決まったら、必要になる少し前から毎コマの空き時間で先に済ませておく（Version 200。結果は tsuMemo に残り、発表の時にそれを使う） */
   function tsuPrefetch(e, t) {
-    if (e.farQ || !e.eewDone || !cfg.tsu || sim.fake) return;
+    if (e.farQ || !(e.eewDone || e.infoDone) || !cfg.tsu || sim.fake) return;
     if (!e.tsPre) {
       const L = [],
         add = (tt, M) => {
@@ -8182,6 +8182,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     MW_FINAL = 3600, /* 地震を認知してからの秒数と、緊急地震速報の最後のMから実際のMまでの差を詰める割合 */
     MW_JIT = [120, 180, 240, 300]; /* 各段階の時刻のばらつき（±秒。Version 140） */
   function eewLastM(e) {
+    if (e.infoBaseM != null) return e.infoBaseM;
     return e.reports.length ? e.reports[e.reports.length - 1].M : e.q.M;
   }
   /* 段階 i で出すM：最後の報のMから実際のMへ割合 f だけ近づける（f は段階ごとに増えるので、値は実際のMへ向かって単調に動く）。
@@ -8452,7 +8453,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       return;
     }
-    if (s.infoShown) newPhase();
+    /* 震度速報の後の続報（Version 211）は震度速報を消さない */
+    if (s.infoShown && !e.infoDone) newPhase();
     const added = [];
     let warnNow = e.warn;
     const hit = o => o.v >= cfg.warnTh || (cfg.lpw && o.lp >= 3);
@@ -8541,7 +8543,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         if (!s.warnRegs.includes(rg)) s.warnRegs.push(rg);
       });
     }
-    if (added.length) {
+    if (added.length && !e.infoDone) {
       paintWarn();
       fitWarn(est);
     }
@@ -8720,6 +8722,15 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           : '') +
         '</div></div>'
     );
+    /* 震度速報の後の続報（Version 211）：横テロップは出さず、縦テロップを書き直す（対象地域が増えたら ✕ で閉じていても出し直す） */
+    if (e.infoDone) {
+      /* 別の地震の速報で震度速報が隠れている間は出さない */
+      if (s.infoShown && (added.length || !$('eewMini').hidden)) {
+        const ml = s.evs.filter(v => v.warn && v.reports.length && eewActive(v, rep.t));
+        if (ml.length) showEEWMini(ml);
+      }
+      return;
+    }
     if (fresh || (e.warn && (s.shown === e.k || s.shown == null))) showEEW(e, rep, added);
     else if (!e.warn && !s.warn) showEEW(e, rep, added);
     else renderSw();
@@ -12021,7 +12032,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         const sWait = act.some(e => t < e.sFirstT);
         if (!hold && !sWait && act.every(e => e.eewDone || (pend.includes(e) && t > e.infoT + 20))) {
           pend.forEach(e => {
-            e.eewDone = true;
+            /* Version 211（ユーザーの依頼）：続報の途中で震度速報を出した地震（巨大地震）は、震度速報の後も緊急地震速報の続報（対象地域の追加）を続ける。
+               画面は震度速報のまま、縦テロップ・室内の速報・ログ・警報音で伝え、最終報の後は「S波が対象地域のすべての市町村に届いてから30秒」で消える。
+               震度速報以降の情報のM（infoM・Mの更新・津波）は、震度速報を出した時点の緊急地震速報のM（e.infoBaseM）から進める */
+            e.infoBaseM = eewLastM(e);
+            if (!e.reports.length) e.eewDone = true;
             e.infoDone = true;
           });
           /* 横テロップと縦テロップは一続きの表示：縦テロップに切り替わっても、同じ時刻（eewEndT）で消える */
