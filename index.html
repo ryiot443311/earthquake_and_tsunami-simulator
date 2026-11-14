@@ -3320,6 +3320,33 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const toWorld = (x, y) => [(x - W / 2) / view.s + view.cx, (y - H / 2) / view.s + view.cy];
   let dirty = true,
     baseKey = '';
+  /* Version 209：自動で寄せている間の下地（draw の説明）。baseRef＝下地を描いた位置と余白、baseXfC＝下地の画像を今の画面へ写す [倍率, x, y] */
+  const BASE_MG = 0.16,
+    BASE_LK = 1.25,
+    BASE_SH = 0.08,
+    BXF_ID = [1, 0, 0];
+  let baseRef = null,
+    baseXfC = BXF_ID,
+    compKey = '';
+  const compCv = document.createElement('canvas'),
+    compWCv = document.createElement('canvas');
+  /* 下地 R を今の位置へ写す変換。画面を覆えない・3%より大きく拡大するなら null（描き直す） */
+  function baseXf(R) {
+    const r = view.s / R.s;
+    if (!(r > 0) || r > 1.06) return null;
+    const ex = -r * (R.mx + (DPR * W) / 2) + DPR * ((R.cx - view.cx) * view.s + W / 2),
+      ey = -r * (R.my + (DPR * H) / 2) + DPR * ((R.cy - view.cy) * view.s + H / 2);
+    if (ex > 0.01 || ey > 0.01) return null;
+    if (r * (cv.width + 2 * R.mx) + ex < cv.width - 0.01 || r * (cv.height + 2 * R.my) + ey < cv.height - 0.01) return null;
+    return [r, ex, ey];
+  }
+  function blitBase(c, img) {
+    const [r, ex, ey] = baseXfC;
+    c.setTransform(r, 0, 0, r, ex, ey);
+    if (r !== 1) c.imageSmoothingEnabled = true;
+    c.drawImage(img, 0, 0);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+  }
   let landClip = null;
   const baseCv = document.createElement('canvas'),
     lineCv = document.createElement('canvas');
@@ -3513,41 +3540,83 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     /* 動かない地図（海・陸・地盤・県境・海岸線）は表示位置が変わったときだけ描き直す。
        カメラが自動で動いている間（警報で震源へ寄せるとき）は、位置を1px・拡大率を0.3%の刻みにそろえ、
        それ未満の動きでは描き直さない（県境・海岸線の線描画が重いため）。動きが止まったら正確な位置で必ず描き直す */
+    /* Version 209：自動で寄せている間（警報の第1報で震源・対象地域へ寄せるときなど）は、下地を「少し先の位置」で画面より一回り大きく描いておき、
+       毎コマはそれを今の位置へ拡大・移動して写す。画面を覆えなくなるか、拡大で粗くなる前にだけ描き直す
+       （以前は1px・0.3%の刻みで描き直していて、寄せている約1.5秒の間に十数回、県の塗り・地盤の切り抜き・県境の線を描き直して重かった）。
+       止まったら従来どおり正確な位置で描き直す */
+    const bsig = cv.width + ',' + cv.height + ',' + W + ',' + H + ',' + DPR + ',' + layers.amp + ',' + !!coastPath;
     let bcx = view.cx,
       bcy = view.cy,
-      bs = view.s;
+      bs = view.s,
+      bmx = 0,
+      bmy = 0;
+    baseXfC = BXF_ID;
     if (autoView.on && autoView.t && view.s > 0) {
-      bs = Math.exp(Math.round(Math.log(view.s) / 0.003) * 0.003);
-      bcx = Math.round(view.cx * bs) / bs;
-      bcy = Math.round(view.cy * bs) / bs;
+      let xf = baseRef && baseRef.sig === bsig ? baseXf(baseRef) : null;
+      /* テロップを出したコマ（eewHeavy）は、今ある下地を使えるならそのまま使い、新しくは描かない */
+      if (!xf && !eewHeavy) {
+        const T = autoView.t,
+          cw = cv.width,
+          ch = cv.height;
+        bmx = Math.ceil(cw * BASE_MG);
+        bmy = Math.ceil(ch * BASE_MG);
+        const lr = Math.log(T.s / view.s),
+          dx = Math.abs(T.cx - view.cx) * view.s * DPR,
+          dy = Math.abs(T.cy - view.cy) * view.s * DPR;
+        /* 寄せる道のり（中心と拡大率は同じ割合で目標へ近づく）の上で、拡大は BASE_LK 倍・移動は画面の BASE_SH まで先の位置 */
+        const a = Math.min(
+          1,
+          lr > 0 ? Math.log(BASE_LK) / lr : 1,
+          dx > 0 ? (BASE_SH * cw) / dx : 1,
+          dy > 0 ? (BASE_SH * ch) / dy : 1
+        );
+        baseRef = {
+          cx: view.cx + (T.cx - view.cx) * a,
+          cy: view.cy + (T.cy - view.cy) * a,
+          s: lr > 0 ? view.s * Math.exp(lr * a) : view.s,
+          mx: bmx,
+          my: bmy,
+          sig: bsig
+        };
+        xf = baseXf(baseRef);
+        if (!xf) {
+          baseRef = { cx: view.cx, cy: view.cy, s: view.s, mx: bmx, my: bmy, sig: bsig };
+          xf = baseXf(baseRef);
+        }
+      }
+      if (xf) {
+        bcx = baseRef.cx;
+        bcy = baseRef.cy;
+        bs = baseRef.s;
+        bmx = baseRef.mx;
+        bmy = baseRef.my;
+        baseXfC = xf;
+      } else {
+        baseRef = null;
+        bmx = bmy = 0;
+      }
+    } else baseRef = null;
+    /* 寄せ終わったら、重ねておいた画像を手放す */
+    if (!baseRef && compCv.width) {
+      compCv.width = compCv.height = compWCv.width = compWCv.height = 0;
+      compKey = '';
     }
-    const bk =
-      bcx +
-      ',' +
-      bcy +
-      ',' +
-      bs +
-      ',' +
-      cv.width +
-      ',' +
-      cv.height +
-      ',' +
-      layers.amp +
-      ',' +
-      !!coastPath;
+    const bk = bcx + ',' + bcy + ',' + bs + ',' + bmx + ',' + bmy + ',' + bsig;
     if (bk !== baseKey) {
       baseKey = bk;
+      const bw = cv.width + 2 * bmx,
+        bh = cv.height + 2 * bmy;
       for (const c of [baseCv, lineCv]) {
-        if (c.width !== cv.width || c.height !== cv.height) {
-          c.width = cv.width;
-          c.height = cv.height;
+        if (c.width !== bw || c.height !== bh) {
+          c.width = bw;
+          c.height = bh;
         }
       }
       const b = baseCv.getContext('2d');
       b.setTransform(1, 0, 0, 1, 0, 0);
       b.fillStyle = '#0c2344';
-      b.fillRect(0, 0, cv.width, cv.height);
-      b.setTransform(DPR * bs, 0, 0, DPR * bs, DPR * (W / 2 - bcx * bs), DPR * (H / 2 - bcy * bs));
+      b.fillRect(0, 0, bw, bh);
+      b.setTransform(DPR * bs, 0, 0, DPR * bs, DPR * (W / 2 - bcx * bs) + bmx, DPR * (H / 2 - bcy * bs) + bmy);
       b.fillStyle = '#4b585f';
       for (const p of prefPaths) b.fill(p);
       b.imageSmoothingEnabled = false;
@@ -3561,8 +3630,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       const l = lineCv.getContext('2d');
       l.setTransform(1, 0, 0, 1, 0, 0);
-      l.clearRect(0, 0, cv.width, cv.height);
-      l.setTransform(DPR * bs, 0, 0, DPR * bs, DPR * (W / 2 - bcx * bs), DPR * (H / 2 - bcy * bs));
+      l.clearRect(0, 0, bw, bh);
+      l.setTransform(DPR * bs, 0, 0, DPR * bs, DPR * (W / 2 - bcx * bs) + bmx, DPR * (H / 2 - bcy * bs) + bmy);
       l.strokeStyle = 'rgba(20,28,36,.75)';
       l.lineWidth = 0.9 / bs;
       for (const p of prefPaths) l.stroke(p);
@@ -3610,8 +3679,39 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           -(view.cy - H / (2 * view.s))
         ]);
     const paintStatic = () => {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(baseCv, 0, 0);
+      /* Version 209：自動で寄せている間は、下地・警報の塗り・県境と海岸線を下地と同じ位置で1枚に重ねておき、毎コマはその1枚を写すだけにする
+         （震度の塗り・津波の表示があるときは従来どおり重ねる） */
+      if (baseRef && !landSrc && !tsuOn && !(wvOn && ((wvOut && wvAnyO) || wvAny))) {
+        const ck = baseKey + '|' + (warnOn ? warnVer + ',' + nhkLive : '');
+        if (ck !== compKey) {
+          compKey = ck;
+          const bw = baseCv.width,
+            bh = baseCv.height;
+          for (const c of warnOn ? [compCv, compWCv] : [compCv])
+            if (c.width !== bw || c.height !== bh) {
+              c.width = bw;
+              c.height = bh;
+            }
+          const c = compCv.getContext('2d');
+          c.setTransform(1, 0, 0, 1, 0, 0);
+          c.globalCompositeOperation = 'copy';
+          c.drawImage(baseCv, 0, 0);
+          c.globalCompositeOperation = 'source-over';
+          if (warnOn) {
+            const w = compWCv.getContext('2d');
+            w.setTransform(1, 0, 0, 1, 0, 0);
+            w.clearRect(0, 0, bw, bh);
+            paintWarnTo(w, [DPR * bs, 0, 0, DPR * bs, DPR * (W / 2 - bcx * bs) + bmx, DPR * (H / 2 - bcy * bs) + bmy]);
+            c.globalAlpha = nhkLive ? 0.92 : 0.55;
+            c.drawImage(compWCv, 0, 0);
+            c.globalAlpha = 1;
+          }
+          c.drawImage(lineCv, 0, 0);
+        }
+        blitBase(ctx, compCv);
+        return;
+      }
+      blitBase(ctx, baseCv);
       ctx.setTransform(
         DPR * view.s,
         0,
@@ -3654,8 +3754,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       // 県境（細）→ 海岸線（明るく）
       ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(lineCv, 0, 0);
+      blitBase(ctx, lineCv);
       ctx.restore();
       // 津波予報区の色分け
       if (tsuOn) {
@@ -4397,13 +4496,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       seaKey = '';
     }
     const xf = [DPR * view.s, 0, 0, DPR * view.s, DPR * (W / 2 - view.cx * view.s), DPR * (H / 2 - view.cy * view.s)];
-    const key = xf.join(',') + ',' + cw + ',' + ch + ',' + baseKey;
+    const key = xf.join(',') + ',' + cw + ',' + ch + ',' + baseKey + ',' + baseXfC.join(',');
     if (key !== seaKey) {
       seaKey = key;
       const m = seaCv.getContext('2d');
       m.setTransform(1, 0, 0, 1, 0, 0);
       m.globalCompositeOperation = 'copy';
-      m.drawImage(baseCv, 0, 0);
+      blitBase(m, baseCv);
       m.globalCompositeOperation = 'destination-out';
       m.setTransform(...xf);
       m.fillStyle = '#000';
@@ -4434,6 +4533,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const c = warnScr.getContext('2d');
       c.setTransform(1, 0, 0, 1, 0, 0);
       c.clearRect(0, 0, warnScr.width, warnScr.height);
+      paintWarnTo(c, xf);
+    }
+    return warnScr;
+  }
+  /* 警報の塗り（県ごとの形）を、変換 xf で c に描く */
+  function paintWarnTo(c, xf) {
+    {
       c.setTransform(...xf);
       c.imageSmoothingEnabled = true;
       warnPref.forEach((m, p) => {
@@ -4444,8 +4550,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         c.drawImage(m.cv, (G.lon0 + m.x0 * G.dx) * K, -G.lat1 + m.y0 * G.dy, m.w * G.dx * K, m.h * G.dy);
         c.restore();
       });
+      c.setTransform(1, 0, 0, 1, 0, 0);
     }
-    return warnScr;
   }
   const CLS_RGB = CLS_COLOR.map(c =>
     c ? [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)] : null
@@ -8674,6 +8780,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     $('eew').classList.toggle('nhk', nhk);
     const multi = EQS.length > 1 && !s.fake,
       srcTxt = name + 'で地震';
+    if (e.warn && ($('telop').hidden && $('band').hidden)) eewHeavy = true;
     if (e.warn && nhk) {
       $('eew').hidden = true;
       $('band').hidden = true;
@@ -8768,6 +8875,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* テロップ左の小地図：対象地域を含む都道府県を黄色、推定震源を赤い× */
   /* 小地図の描き直しは次のフレームにまとめる（DOMを書き換えた直後に寸法を測ると、その場でレイアウトを強制計算してしまうため） */
   let insetQ = false;
+  /* Version 209：緊急地震速報のテロップ（警報）を新しく出したコマ。このコマでは、後に回せる処理（机の上のスマホの通知の描画・分けた計算）を次のコマへ回す */
+  let eewHeavy = false;
   function queueInset() {
     insetQ = true;
   }
@@ -8911,6 +9020,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const T = $('telop');
     T.style.setProperty('--telw', tw.toFixed(1) + 'px');
     T.style.setProperty('--telb', Math.max(base * 0.0585, 8).toFixed(1) + 'px');
+    if (T.hidden) telWarmQ();
   }
   /* 見出しの文字の大きさと上下位置を、実際に描かれた結果から合わせる。
      ①文字がブラウザに拡大されていたら（端末の文字サイズ設定など）--tk で元の大きさに戻す（テロップ内の文字すべてに掛かる）。
@@ -8956,13 +9066,54 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const k2 = fs / ((THEAD_FS / 100) * cw);
     if (Math.abs(k2 - 1) <= 0.03 || tk <= 0.6 || tk >= 1.3) telHeadKey = key;
   }
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitTelopText());
+  if (document.fonts && document.fonts.ready)
+    document.fonts.ready.then(() => {
+      fitTelopText();
+      telWarmQ();
+    });
+  /* Version 209：テロップを初めて出すときは、文字の形・配置の計算と見出しの合わせ込み（fitTelopHead）で重かった（第1報のコマの約3割）。
+     手が空いたときに見えないまま一度組んでおき、見出しの合わせ込みも済ませておく（書体の読み込み・画面の大きさが変わったときもやり直す） */
+  let telWarmT = 0;
+  function telWarmQ() {
+    if (telWarmT) return;
+    telWarmT = 1;
+    (window.requestIdleCallback ? f => requestIdleCallback(f, { timeout: 2000 }) : f => setTimeout(f, 500))(() => {
+      telWarmT = 0;
+      telWarm();
+    });
+  }
+  function telWarm() {
+    const T = $('telop');
+    if (!T.hidden || !$('band').hidden) return;
+    const hs = $('tHead').firstChild,
+      src = $('tSrc'),
+      R = $('tRegs');
+    if (!hs) return;
+    const old = [hs.textContent, src.textContent, R.innerHTML, T.className];
+    T.style.visibility = 'hidden';
+    T.classList.remove('cancel');
+    T.hidden = false;
+    hs.textContent = '緊急地震速報（気象庁）';
+    src.textContent = '東京湾で地震　強い揺れに警戒';
+    R.innerHTML = '<span>東京</span><span>神奈川</span><span>千葉</span>';
+    try {
+      fitTelopText();
+    } finally {
+      T.hidden = true;
+      hs.textContent = old[0];
+      src.textContent = old[1];
+      R.innerHTML = old[2];
+      T.className = old[3];
+      T.style.visibility = '';
+    }
+  }
   /* 文字の書体が読み込まれたら、地名の幅の記録と描いておいた画像を作り直す */
   if (document.fonts && document.fonts.addEventListener)
     document.fonts.addEventListener('loadingdone', () => {
       fontVer++;
       labW.clear();
       dirty = true;
+      telWarmQ();
     });
   /* テロップ内の文字が枠に収まらないとき（対象地域が多い・震央地名が長い）だけ、文字を小さくする */
   const TSRC_FS = 4.05,
@@ -12130,7 +12281,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const d = new Date();
       setClock(d.getHours() + '時' + String(d.getMinutes()).padStart(2, '0') + '分');
     }
-    if (autoView.on && autoView.t) {
+    /* Version 209：テロップを出したコマ（eewHeavy）では寄せ始めない（次のコマから。下地の描き直しを重ねない） */
+    if (autoView.on && autoView.t && !eewHeavy) {
       const k = Math.min(1, dt * 2.5),
         T = autoView.t;
       view.cx += (T.cx - view.cx) * k;
@@ -12164,7 +12316,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     /* 分けた計算を、このコマの残りの時間で進める（Version 200）。コマの間隔（60Hzで約17ms、120Hzで約8ms）の約半分まで。
        描画などで既に使い切っていても、少しは進める（終わらないままにしない） */
-    if (jobQ.length) {
+    if (jobQ.length && !eewHeavy) {
       if (dt > 0 && dt < 0.05) frIv += (dt * 1000 - frIv) * 0.1;
       const t1 = performance.now();
       /* 必要な時刻が近いジョブ（実時間で約3秒以内）があるときは、そのコマの時間を多めに使う（間に合わずに一気に計算して止まるのを減らす） */
@@ -12175,6 +12327,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
       jobTick(Math.max(t1 + (urg ? 4 : 2), now + (urg ? Math.min(14, frIv * 0.8) : Math.min(10, frIv * 0.55))));
     }
+    eewHeavy = false;
     requestAnimationFrame(frame);
   }
   let frIv = 16.7;
@@ -19703,7 +19856,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* スマホの画面：緊急地震速報の通知は地図のテロップと同じ時刻に消す。この地点の県に津波注意報以上が出たら津波の通知（リセットまで残す）。
      手前に出すのは新しい方：速報の表示中に津波が出たら津波、その後に別の地震の速報がこの地点に出たら速報（速報が消えたら津波に戻る） */
   function phSync() {
-    if (!RM.phScr) return;
+    if (!RM.phScr || eewHeavy) return;
     if (RM.mode !== 'sync' || !sim || !sim.evs) {
       if (!sim) phSet(null);
       return;
