@@ -2206,7 +2206,15 @@ html, body { overflow-x: hidden; overflow-x: clip; }
   .seekrow .stime { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 }
 .tv :focus:not(:focus-visible), .tv:focus:not(:focus-visible) { outline: none; }
+/* ===== Version 213：新しい版のお知らせ（clone して使っている人向け） ===== */
+.updbar { position: fixed; z-index: 9000; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 8px); width: max-content; max-width: min(92vw, 560px); box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; background: var(--panel); color: var(--fg); border: 1px solid var(--warn); border-radius: 10px; font: 12.5px/1.5 var(--ui); box-shadow: 0 4px 16px rgba(0,0,0,.45); }
+.updbar[hidden] { display: none !important; }
+.updbar span { min-width: 0; overflow-wrap: anywhere; }
+.updbar button { flex: none; min-width: 32px; min-height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 15px; cursor: pointer; }
+.updbar button:hover { color: var(--fg); background: var(--panel2); }
 </style>
+
+<div class="updbar" id="updBar" role="status" hidden><span id="updTxt"></span><button type="button" id="updClose" aria-label="お知らせを閉じる">✕</button></div>
 
 <div class="app">
   <header class="top">
@@ -5800,6 +5808,34 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       L.appendChild(b);
     });
   }
+  /* ===== Version 213：新しい版のお知らせ =====
+     リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
+     画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
+     公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
+  const APP_VERSION = 213;
+  const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
+  if (window.fetch && !/\.github\.io$/.test(location.hostname))
+    fetch(VERSION_URL, { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then(d => {
+        const v = Number(d && d.version);
+        if (!Number.isInteger(v) || v <= APP_VERSION) return;
+        let seen = false;
+        try {
+          seen = localStorage.getItem('eqsim-upd') === String(v);
+        } catch (e) {}
+        if (seen) return;
+        const bar = document.getElementById('updBar');
+        document.getElementById('updTxt').textContent = '新しいバージョン（v' + v + '）があります。git pull で更新してください。';
+        document.getElementById('updClose').onclick = () => {
+          bar.hidden = true;
+          try {
+            localStorage.setItem('eqsim-upd', String(v));
+          } catch (e) {}
+        };
+        bar.hidden = false;
+      })
+      .catch(() => {});
   renderRec();
   if (/\.github\.io$/.test(location.hostname) && window.fetch)
     fetch('https://api.p2pquake.net/v2/history?codes=551&limit=100')
