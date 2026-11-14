@@ -7566,7 +7566,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* 実行ごとの乱数の種（誤認・検知の遅れ）。「地震発生」のたびに変わり、時刻を戻したときは同じ結果を再現する */
   let runSeed = 1,
     runClock = 0; /* 開始時の時計。時刻を戻したときも同じ値を使う（以前は戻すたびに発表時刻の表示がずれていた。Version 130） */
+  const INFO_MAX = 118;
   function start(fake) {
+    /* Version 207：複数の地震は発生順（dt の小さい順）に並べ直し、①から順に番号を振る（一覧の並び・共有URLも発生順になる）。
+       同じ時刻は元の順のまま */
+    if (!fake && EQS.length > 1 && EQS.some((q, i) => i && (q.dt || 0) < (EQS[i - 1].dt || 0))) {
+      const o = EQS.map((q, i) => [q, i]).sort((a, b) => (a[0].dt || 0) - (b[0].dt || 0) || a[1] - b[1]);
+      EQS.length = 0;
+      o.forEach(([q]) => EQS.push(q));
+      selQ = Math.max(0, EQS.indexOf(P));
+      renderQList();
+    }
     if (!seeking || !runClock) {
       if (!seeking) runSeed = 1 + Math.floor(Math.random() * 2147483000);
       runClock = Date.now();
@@ -7694,6 +7704,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         if (c.Iq[e.k] >= 2.5) it = Math.max(it, c.tSq[e.k] - e.t0 + 4);
         if (c.Iq[e.k] >= 0.5) first = Math.min(first, c.tSq[e.k] - e.t0 + 4);
       });
+      /* Version 207：遠くの震度3以上の地域まで待たず、最大でも発生から約2分（INFO_MAX）で出す（その時点で揺れが届いた地域の震度。
+         後から届いた地域は地図の震度アイコンで追加される）。陸に揺れが届くのがそれより遅い地震は、届いてから */
+      it = Math.min(it, INFO_MAX);
       if (first < 1e9) it = Math.max(it, first);
       it = Math.min(it, 880);
       let en = it + 8;
@@ -7716,9 +7729,24 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       /* 揺れ（S波）が最初に陸の地点に届く時刻。震度速報は、発生中のどの地震もこの時刻を過ぎてから出す */
       e.sFirstT = fake ? 0 : e.farQ ? e.t0 : first < 1e9 ? e.t0 + first - 4 : e.t0;
       e.endT = fake ? 1e9 : e.t0 + en;
+      /* Version 207：津波の定性表現の判定に使うため、津波の計算より前で決める。推定Mの誤差（mBias・mJit・mErr）は「地震発生」のたびに変わる（runSeed。時刻を戻したときは同じ値を再現）。最初の数個は捨てる */
+      const rj = rng(runSeed + e.k * 7919 + 31337);
+      rj();
+      rj();
+      rj();
+      /* 巨大地震（M7.5超）は、緊急地震速報の間は規模を小さめに推定する（破壊が長く続き、P波の初めの数秒ではMが決まりきらないため）。
+         上限は設けない。M9.0で約0.3〜0.6小さい（最終報はM8.4〜8.7程度）。実際のMには、後の情報の速報値の更新で近づける（e.mwSteps） */
+      e.mBias = q.M > 7.5 ? (0.2 + 0.2 * rj()) * (q.M - 7.5) : 0;
+      const Mt = q.M - e.mBias;
+      /* 初期段階の誤差（±0.5、観測点が増え時間がたつと小さくなる）と、最後まで残る誤差（±0.35、巨大地震は±0.17） */
+      e.mJit = (rj() - 0.5) * 1.0;
+      e.mErr = (Math.round((rj() + rj() - 1) * 3.5) / 10) * (q.M >= 8 ? 0.5 : 1);
+      e.errF = errFactor(q);
       /* 津波：約3分後に第1報。M8を超える巨大地震は定性表現で出し、約15分後に数値へ更新 */
       if (!fake && cfg.tsu) {
-        const qual = q.M > 8 && !e.farQ;
+        /* Version 207：定性表現（巨大・高い）にするかは、緊急地震速報で推定したM（最後の報の見込み＝Mt＋最後まで残る誤差）が8.0以上かで決める
+           （以前は設定した本当のM＞8で判定していた） */
+        const qual = !e.farQ && Math.round((Mt + e.mErr) * 10) / 10 >= 8.0;
         /* 実際の津波の計算（M9で約0.1〜0.5秒）は、近地の地震は「地震発生」の後に毎コマの空き時間で進める（Version 200。tsuStartG）。
            時刻の移動中と遠地地震は従来どおりここで計算する */
         e.tsLazy = !seeking && !e.farQ;
@@ -7753,19 +7781,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (e.tobs && e.tsunami.regs[0].cat >= 2 && e.tobs.end > 0)
         e.endT = Math.max(e.endT, Math.min(e.t0 + TOBS_MAX, e.tobs.end + TOBS_DELAY + 60));
       if (e.farQ) farSched(e);
-      /* 推定Mの誤差（mBias・mJit・mErr）は「地震発生」のたびに変わる（runSeed。時刻を戻したときは同じ値を再現）。最初の数個は捨てる */
-      const rj = rng(runSeed + e.k * 7919 + 31337);
-      rj();
-      rj();
-      rj();
-      /* 巨大地震（M7.5超）は、緊急地震速報の間は規模を小さめに推定する（破壊が長く続き、P波の初めの数秒ではMが決まりきらないため）。
-         上限は設けない。M9.0で約0.3〜0.6小さい（最終報はM8.4〜8.7程度）。実際のMには、後の情報の速報値の更新で近づける（e.mwSteps） */
-      e.mBias = q.M > 7.5 ? (0.2 + 0.2 * rj()) * (q.M - 7.5) : 0;
-      const Mt = q.M - e.mBias;
-      /* 初期段階の誤差（±0.5、観測点が増え時間がたつと小さくなる）と、最後まで残る誤差（±0.35、巨大地震は±0.17） */
-      e.mJit = (rj() - 0.5) * 1.0;
-      e.mErr = (Math.round((rj() + rj() - 1) * 3.5) / 10) * (q.M >= 8 ? 0.5 : 1);
-      e.errF = errFactor(q);
       /* 推定の深さ（Version 142）：最初は浅め（深い地震ほど大きく外れる）、時間とともに実際の深さへ近づき、最後まで少し誤差が残る。
          残る誤差の目安は ±(3＋深さ×0.04)km（最大その2倍。推定は700kmまで。10kmで±3.4km＝10km単位に丸めるとほぼ正しい、680kmで±30km程度）。近づく速さは深いほど遅い。
          乱数は別の系列（ほかの誤差の値を変えないため） */
@@ -7782,7 +7797,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         e.offR = (0.6 + 2.4 * rd()) * (e.errF || 1) * (cfg.err / 15);
         /* 震源に関する情報の深さ（Version 142）：10km単位（気象庁と同じ）。小さな誤差 ±(1＋深さ×0.015)km（最大その2倍） */
         const si = 1 + 0.015 * D;
-        e.infoDep = Math.max(10, Math.round((D + Math.max(-2 * si, Math.min(2 * si, (rd() + rd() + rd() - 1.5) * 2 * si))) / 10) * 10);
+        const dq = Math.round((D + Math.max(-2 * si, Math.min(2 * si, (rd() + rd() + rd() - 1.5) * 2 * si))) / 10) * 10;
+        e.infoDep = Math.max(10, dq);
+        /* Version 207：10km単位に丸めて0kmになる浅い地震は、気象庁と同じく「ごく浅い」と表示する（計算に使う infoDep は10kmのまま） */
+        e.infoShallow = dq <= 0;
       }
       /* 巨大地震は、情報で出すMを段階的に更新する（認知から約7分・20分・40分で速報値を更新、約60分で実際のM）。
          各段階のMは、緊急地震速報の最後のMと実際のMの差を詰めた値（mwM。最後の報のMが決まってから求める） */
@@ -8340,6 +8358,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         if ((o.v >= cfg.areaTh || (cfg.lpw && o.lp >= 3)) && !e.warnAreas.has(i)) {
           e.warnAreas.set(i, o.v);
           added.push(i);
+          /* 地震ごとの、その地域に警報が出た時刻（室内の速報バナーの猶予に使う。Version 207） */
+          (e.warnAt || (e.warnAt = new Map())).set(i, t);
           if (!s.warnAreas.has(i)) {
             s.warnAreas.set(i, o.v);
             s.warnAt.set(i, t);
@@ -9424,12 +9444,16 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
     }
   }
+  /* 情報（震度速報の後）の深さの表記：「○km」か「ごく浅い」（Version 207） */
+  function infoDepTx(e) {
+    return e.infoShallow ? 'ごく浅い' : (e.infoDep || e.q.depth || 10) + 'km';
+  }
   function showFar(t, e) {
     const s = sim,
       n = e.farIdx++,
       r = e.farRep[n],
       fin = n === 2,
-      dep = fin ? e.infoDep || e.q.depth || 10 : r.depth,
+      dep = fin ? infoDepTx(e) : r.depth + 'km',
       /* 地域名は大まかなので、報ごとに変わらないよう実際の震央で決める */
       nm = farName(e.q.lon, e.q.lat);
     e.infoDone = true;
@@ -9463,7 +9487,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       nm +
       '　深さ ' +
       dep +
-      'km　M' +
+      '　M' +
       r.M.toFixed(1) +
       (maxC ? '<br>最大震度 ' + CLS_LABEL[maxC] : '') +
       (tx ? '<br><span id="farTsu">' + tx + '</span>' : '');
@@ -9599,8 +9623,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
             '震源 ' +
             epiName(e.q.lon, e.q.lat) +
             '　深さ ' +
-            (e.infoDep || e.q.depth || 10) +
-            'km　M' +
+            infoDepTx(e) +
+            '　M' +
             infoM(e, t).toFixed(1)
         )
         .join('<br>') +
@@ -9729,13 +9753,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const o = prev && prev.regs.find(x => x.name === r.name);
       return !o || r.cat > o.cat;
     });
-    /* 見直し・観測による発表は、注意報以上の追加か区分の引き上げがあるときだけ */
-    if (
-      (upd === 'M' || upd === 'obs' || upd === 'for') &&
-      prev &&
-      !up.some(r => r.cat >= 2)
-    )
-      return;
+    /* 見直し・観測による発表は、追加か区分の引き上げがあるときだけ。
+       Version 208：若干の海面変動（津波予報）だけの追加でも、その地震の情報としてその場で発表する
+       （以前は発表せずに予報だけ書き換わり、後で別の地震の津波情報に「切り替え・追加」として混ざって出ていた） */
+    if ((upd === 'M' || upd === 'obs' || upd === 'for') && prev && !up.length) return;
     s.tsunami = ts;
     s.tsuShown = true;
     s.tsuAt = t;
@@ -9827,7 +9848,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       ? TSU_NAME[top]
       : upd === true
         ? '津波情報の更新（予想される高さを数値で発表）'
-        : up.length
+        : up.length && !up.some(r => r.cat >= 2)
+          ? '津波予報（若干の海面変動）の追加' +
+            (upd === 'obs' ? '（観測された津波から）' : upd === 'for' ? '（海外で観測された津波から）' : upd === 'M' ? '（地震の規模の更新から）' : '')
+          : up.length
           ? '津波警報・注意報の切り替え・追加' +
             (upd === 'obs' ? '（観測された津波から引き上げ）' : upd === 'for' ? '（海外で観測された津波から引き上げ）' : upd === 'M' ? '（地震の規模の更新から引き上げ）' : '')
           : '津波情報の更新';
@@ -11880,10 +11904,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           }
           if (!sim.infoShown || st.M === prev) continue;
           const nm = epiName(e.q.lon, e.q.lat),
-            dp = e.infoDep || e.q.depth || 10,
+            dp = infoDepTx(e),
             el = $('infoMeta'),
-            a = '震源 ' + nm + '　深さ ' + dp + 'km　M' + prev.toFixed(1),
-            b = '震源 ' + nm + '　深さ ' + dp + 'km　M' + st.M.toFixed(1);
+            a = '震源 ' + nm + '　深さ ' + dp + '　M' + prev.toFixed(1),
+            b = '震源 ' + nm + '　深さ ' + dp + '　M' + st.M.toFixed(1);
           if (el.innerHTML.includes(a)) el.innerHTML = el.innerHTML.replace(a, b);
           addLog(
             '<div class="r"><div class="h">震源・震度に関する情報（Mの更新）　' +
@@ -19702,14 +19726,19 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const ban = $('roomEew'),
       mo = RM.motion;
     const mapEew = mapEewOn();
-    if (mo && RM.mode === 'sync' && mapEew && sim.warnAt && sim.warnAt.has(RM.siteArea)) {
+    /* Version 207：表示中の速報の地震（siteEew）について、その地震がこの地域に警報を出した時刻と、その地震のS波がこの地点に届く時刻で判定する
+       （以前は最初の地震の値を使い、2つ目以降の地震で揺れが来る前に「警報より先に強い揺れが到達」と出ていた） */
+    const ev = mo && RM.mode === 'sync' && mapEew ? siteEew() : null,
+      tw = ev && ev.warnAt ? ev.warnAt.get(RM.siteArea) : null;
+    if (tw != null) {
       if (t == null) t = sim.t;
-      const tw = sim.warnAt.get(RM.siteArea),
-        lead = mo.tS - tw;
+      const a = (mo.arr || []).find(q => q.k === ev.k),
+        tS = a ? a.tS : mo.tS,
+        lead = tS - tw;
       if (ban.hidden) ban.hidden = false;
       setTx('roomEewMsg',
-        t < mo.tS
-          ? '強い揺れまで　あと ' + Math.ceil(mo.tS - t) + ' 秒'
+        t < tS
+          ? '強い揺れまで　あと ' + Math.ceil(tS - t) + ' 秒'
           : lead > 0
             ? '強い揺れに警戒（猶予 ' + lead.toFixed(1) + ' 秒）'
             : '警報より先に強い揺れが到達');
