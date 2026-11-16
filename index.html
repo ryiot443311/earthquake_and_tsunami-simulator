@@ -6546,40 +6546,92 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       for (let c = 0; c < SG.w; c++)
         if (seaG[r * SG.w + c] && tsuHmax(SG.lon0 + (c + 0.5) * SG.d, SG.lat0 + (r + 0.5) * SG.d) < 3000) seaSh[r * SG.w + c] = 1;
     seaMv = new Uint16Array(SG.w * SG.h);
-    for (let r = 0; r < SG.h; r++)
-      for (let c = 0; c < SG.w; c++) {
-        const n = r * SG.w + c;
-        if (!seaG[n]) continue;
-        const lo = SG.lon0 + (c + 0.5) * SG.d,
-          la = SG.lat0 + (r + 0.5) * SG.d;
-        for (let dr = -1; dr <= 1; dr++)
-          for (let dc = -1; dc <= 1; dc++) {
-            if (!dr && !dc) continue;
+    /* Version 215：陸を通り抜ける道を減らす。以前は、格子の中心どうしを結ぶ線が陸を 4.5km 以上続けて横切るときだけ通さなかったため、
+       幅 1〜4km の半島（渥美半島・島原半島・佐田岬など）を波が通り抜けていた。さらに、中心が陸で海が一部だけの格子（半島・湾の奥）を
+       続けて経由すると、数kmずつの陸を重ねて抜けられた。
+       そこで ①線は、中心が陸の格子ではその格子の向こう端まで延ばして測る ②陸を MV_STRICT（1.5km）より続けて横切る線は通さない
+       ③ただしそうすると外の海から切り離される海（湾・内海）は、陸の横切りが短い線から順に、つながるのに必要な分だけ通す（MV_BRIDGE まで）。
+       つなぐ水道 seaLk に触れる線は以前と同じ判定 */
+    {
+      const W = SG.w,
+        NC2 = W * SG.h,
+        lcen = new Uint8Array(NC2);
+      for (let r = 0; r < SG.h; r++)
+        for (let c = 0; c < W; c++) {
+          const n = r * W + c;
+          if (seaG[n] && !seaLk[n] && !isSeaCell(SG.lon0 + (c + 0.5) * SG.d, SG.lat0 + (r + 0.5) * SG.d)) lcen[n] = 1;
+        }
+      const par = new Int32Array(NC2);
+      for (let n = 0; n < NC2; n++) par[n] = n;
+      const find = x => {
+        while (par[x] !== x) {
+          par[x] = par[par[x]];
+          x = par[x];
+        }
+        return x;
+      };
+      const cand = []; // 通せなかった線 [陸の横切り, n, m, 向きのビット n→m, 逆向きのビット]
+      for (let r = 0; r < SG.h; r++)
+        for (let c = 0; c < W; c++) {
+          const n = r * W + c;
+          if (!seaG[n]) continue;
+          const lo = SG.lon0 + (c + 0.5) * SG.d,
+            la = SG.lat0 + (r + 0.5) * SG.d;
+          for (const [dr, dc] of [[0, 1], [1, -1], [1, 0], [1, 1]]) {
             const rr = r + dr,
-              cc = c + dc,
-              bit = 1 << ((dr + 1) * 3 + dc + 1);
-            if (rr < 0 || cc < 0 || rr >= SG.h || cc >= SG.w || !seaG[rr * SG.w + cc]) continue;
-            /* 逆向きを既に調べていればそれを使う */
-            if (dr < 0 || (dr === 0 && dc < 0)) {
-              const m = rr * SG.w + cc,
-                back = 1 << ((-dr + 1) * 3 - dc + 1);
-              if (seaMv[m] & back) seaMv[n] |= bit;
+              cc = c + dc;
+            if (rr >= SG.h || cc < 0 || cc >= W || !seaG[rr * W + cc]) continue;
+            const m = rr * W + cc,
+              bit = 1 << ((dr + 1) * 3 + dc + 1),
+              back = 1 << ((-dr + 1) * 3 - dc + 1),
+              km = dr ? (dc ? SKD[r] : SKY) : SK[r];
+            let mx = 0;
+            if (seaLk[n] || seaLk[m]) {
+              /* つなぐ水道に触れる線：以前と同じ（中心どうし、4.5km） */
+              const k = Math.max(4, Math.ceil(km / 1));
+              let run = 0;
+              for (let i = 1; i < k; i++) {
+                if (isSeaCell(lo + (dc * SG.d * i) / k, la + (dr * SG.d * i) / k)) run = 0;
+                else if ((run += km / k) > mx) mx = run;
+              }
+              if (mx <= MV_LAND) {
+                seaMv[n] |= bit;
+                seaMv[m] |= back;
+                par[find(n)] = find(m);
+              }
               continue;
             }
-            const km = dr ? (dc ? SKD[r] : SKY) : SK[r],
-              k = Math.max(4, Math.ceil(km / 1));
-            let run = 0,
-              ok = true;
-            for (let i = 1; i < k; i++) {
-              if (isSeaCell(lo + (dc * SG.d * i) / k, la + (dr * SG.d * i) / k)) run = 0;
-              else if ((run += km / k) > MV_LAND) {
-                ok = false;
-                break;
+            /* 中心が陸の格子は、その格子の向こう端（半格子）まで延ばして測る */
+            const t0 = lcen[n] ? -0.5 : 0,
+              t1 = lcen[m] ? 1.5 : 1,
+              len = km * (t1 - t0),
+              k = Math.max(4, Math.ceil(len / 1));
+            let run = 0;
+            for (let i = 0; i <= k; i++) {
+              const t = t0 + ((t1 - t0) * i) / k;
+              if (isSeaCell(lo + dc * SG.d * t, la + dr * SG.d * t)) run = 0;
+              else if ((run += len / k) > mx) {
+                mx = run;
+                if (mx > MV_BRIDGE) break;
               }
             }
-            if (ok) seaMv[n] |= bit;
+            if (mx <= MV_STRICT) {
+              seaMv[n] |= bit;
+              seaMv[m] |= back;
+              par[find(n)] = find(m);
+            } else if (mx <= MV_BRIDGE) cand.push([mx, n, m, bit, back]);
           }
+        }
+      cand.sort((p, q) => p[0] - q[0]);
+      for (const [, n, m, bit, back] of cand) {
+        const a = find(n),
+          b = find(m);
+        if (a === b) continue;
+        par[a] = b;
+        seaMv[n] |= bit;
+        seaMv[m] |= back;
       }
+    }
     coastNode = new Int32Array(COAST.length).fill(-1);
     COAST.forEach((p, i) => {
       coastNode[i] = coastSeaNode(p.lon, p.lat);
@@ -6835,6 +6887,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      ③列島・海峡（seaX）はそのまま足す */
   /* 隣の格子へ進めない陸の長さ（km）。地盤の格子は海岸で約1〜2km陸側に太るので、幅4km程度の海峡は通し、幅5km以上の半島は通さない */
   const MV_LAND = 4.5,
+    MV_STRICT = 1.5,
+    MV_BRIDGE = 12,
     MV_KM = 40,
     MV_LOSS = 0.3;
   const LOSS_SAT = 2.0,
@@ -11025,6 +11079,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       }
     }
     const R0 = ns0 ? Math.min(40, (0.6 * sp0) / ns0) : 0;
+    /* 波源の点から種を置く格子までの直線が、陸を MV_STRICT より続けて横切るときは種を置かない（Version 216）。
+       以前は直線の距離だけで近くの海に種を置いていたため、半島（佐田岬半島など）の向こう側の海に、回り込む前から波が出ていた。
+       置かなかった格子へは、陸をまたがない道（wvSpreadG）で届く */
+    const wvSeen = (x0, y0, x1, y1, dd) => {
+      const k = Math.max(2, Math.ceil(dd / 0.7));
+      let run = 0;
+      for (let i = 1; i < k; i++) {
+        if (isSeaCell(x0 + ((x1 - x0) * i) / k, y0 + ((y1 - y0) * i) / k)) run = 0;
+        else if ((run += dd / k) > MV_STRICT) return false;
+      }
+      return true;
+    };
     const seedOne = (q, i) => {
       const c = Math.floor((q[0] - SG.lon0) / SG.d),
         r = Math.floor((q[1] - SG.lat0) / SG.d);
@@ -11043,8 +11109,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           if (!seaG[m]) continue;
           const ex = (lonOf(m) - q[0]) * kx,
             ey = (latOf(m) - q[1]) * 110.57,
-            km = Math.max(0, Math.sqrt(ex * ex + ey * ey) - R0),
+            dd = Math.sqrt(ex * ex + ey * ey),
+            km = Math.max(0, dd - R0),
             t = (km * 1000) / sp[m];
+          if (t < T[m] && dd > 1 && !wvSeen(q[0], q[1], lonOf(m), latOf(m), dd)) continue;
           if (t < T[m]) {
             T[m] = t;
             Dk[m] = km;
