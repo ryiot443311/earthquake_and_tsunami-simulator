@@ -5948,7 +5948,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 222;
+  const APP_VERSION = 223;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -12842,6 +12842,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return true;
   }
   /* ===== 時刻の移動（巻き戻し・先へワープ） ===== */
+  let seekPend = null /* Version 223：まとめて移動する行き先（seekSoon） */,
+    seekTmr = 0,
+    seekSim = null;
   let seekDrag = false,
     seekTxt = '';
   function fmtT(s) {
@@ -12869,8 +12872,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     } else {
       const mx = Math.ceil(sim.endT);
       if (+el.max !== mx) el.max = mx;
-      if (!seekDrag) el.value = Math.min(sim.t, mx);
-      txt = fmtT(seekDrag ? +el.value : sim.t) + ' / ' + fmtT(mx);
+      if (!seekDrag) el.value = Math.min(seekPend != null ? seekPend : sim.t, mx);
+      txt = fmtT(seekPend != null ? seekPend : seekDrag ? +el.value : sim.t) + ' / ' + fmtT(mx);
       if (txt === seekTxt) return;
       seekTxt = txt;
     }
@@ -12916,12 +12919,36 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     seekDrag = true;
     syncSeek();
   });
+  /* Version 223：時刻の移動をまとめる。「◀ 30秒」「30秒 ▶」の連打や、時刻バーのキー操作で1回ずつ移動すると、
+     戻るたびに最初から計算し直すため（1回 0.5〜2秒）、連打した回数だけ画面が固まっていた。
+     押している間は行き先だけ動かして表示し、最後の操作から SEEK_WAIT ミリ秒たったら1回だけ移動する */
+  const SEEK_WAIT = 180;
+  function seekFlush() {
+    clearTimeout(seekTmr);
+    seekTmr = 0;
+    const T = seekPend,
+      s0 = seekSim;
+    seekPend = seekSim = null;
+    /* 待つ間にリセット・「地震発生」で別のシミュレーションになっていたら移動しない */
+    if (T != null && sim && sim === s0) seekTo(T);
+    else syncSeek();
+  }
+  function seekSoon(T) {
+    /* 終わった後も時刻バーで戻して見直せる（seekTo が最初からやり直す） */
+    if (!sim || sim.fake) return;
+    if (seekSim !== sim) seekPend = null;
+    seekSim = sim;
+    seekPend = Math.max(0, Math.min(T, sim.endT));
+    clearTimeout(seekTmr);
+    seekTmr = setTimeout(seekFlush, SEEK_WAIT);
+    syncSeek();
+  }
   $('seek').addEventListener('change', () => {
     seekDrag = false;
-    seekTo(+$('seek').value);
+    seekSoon(+$('seek').value);
   });
-  $('skBack').onclick = () => sim && seekTo(sim.t - 30);
-  $('skFwd').onclick = () => sim && seekTo(sim.t + 30);
+  $('skBack').onclick = () => sim && seekSoon((seekPend != null && seekSim === sim ? seekPend : sim.t) - 30);
+  $('skFwd').onclick = () => sim && seekSoon((seekPend != null && seekSim === sim ? seekPend : sim.t) + 30);
   /* 次の地震の直前（発生の5秒前）まで進む。次の地震まで5秒以内、または次の地震が無ければ押せない */
   const SKIP_LEAD = 5;
   function nextQuakeT() {
@@ -12931,6 +12958,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   $('skNext').onclick = () => {
     if (!sim || sim.fake || !sim.running) return;
+    if (seekPend != null) seekFlush(); /* 待っている移動を先に済ませる */
     const n = nextQuakeT();
     if (n != null) seekTo(n - SKIP_LEAD);
   };
