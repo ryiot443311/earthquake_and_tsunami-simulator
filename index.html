@@ -5965,7 +5965,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 229;
+  const APP_VERSION = 232;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -6076,7 +6076,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     };
   });
   /* 速度：1回押しで ×1→×2→×4→×8→×1（×16以上のときは ×1 に戻る）。長押し（または右クリック・↓キー）で一覧を出して選ぶ。
-     ×16〜×64は津波の観測（発生から最長4時間）を早送りで見るため一覧からだけ選べる */
+     ×16〜×64は津波の観測（最長300分）を早送りで見るため一覧からだけ選べる */
   const SPEEDS = [1, 2, 4, 8, 16, 32, 64];
   function setSpeed(v) {
     speed = v;
@@ -6446,9 +6446,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return { gen: regs.length > 0, regs };
   }
   /* 遠地地震（Version 144）：推定震源から日本の陸地（最も近い市区町村）まで800km以上の地震は、震度速報ではなく「遠地地震に関する情報」を出す。
-     シミュレーション全体の長さは最大240分（津波の到達もこれより後の海岸は扱わない） */
+     シミュレーション全体の長さは最大300分（Version 230。以前は240分）。津波情報が出る地震は一律で300分まで続ける（tsuWill。津波の到達もこれより後の海岸は扱わない） */
   const FAR_KM = 800,
-    SIM_MAX = 14400;
+    SIM_MAX = 18000;
   function nearCity(lon, lat) {
     let d = 1e9,
       c = null;
@@ -7534,7 +7534,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         arr =
           (shF < 1 ? tsuTime(Dp * shF, hmT) + (Dp * (1 - shF) * 1000) / Math.sqrt(9.8 * 3500) : tsuTime(bestR, farK && hmT > 3000 ? 4500 : hmT)) +
           tDelay;
-      /* シミュレーションは最大240分。それより後に届く海岸は扱わない（Version 144） */
+      /* シミュレーションは最大300分（Version 230）。それより後に届く海岸は扱わない（Version 144） */
       if (arr > SIM_MAX) return;
       /* 津波観測点用：この海岸の点の高さ・到達時間・押し引き（最初に届く波の波源が隆起なら押し） */
       ptH[ci] = Math.min(H, 30);
@@ -8414,7 +8414,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         });
       /* 臨時情報・後発地震注意情報（Version 217）：発表まではシミュレーションを続ける */
       if (e.ntq) e.endT = Math.min(SIM_MAX, Math.max(e.endT, e.ntq.tB + 30));
-      /* 津波観測：注意報以上が出る地震は、観測点の波が収まるまで（発生から最長4時間（SIM_MAX。Version 144））シミュレーションを続ける */
+      /* 津波観測：注意報以上が出る地震は、観測点の波が収まるまで（発生から最長300分（SIM_MAX。Version 230））シミュレーションを続ける */
       e.tobs = !fake && e.tsunami && e.tsunami.gen ? tobsBuild(e) : null;
       if (e.tobs && e.tsunami.regs[0].cat >= 2 && e.tobs.end > 0)
         e.endT = Math.max(e.endT, Math.min(e.t0 + TOBS_MAX, e.tobs.end + TOBS_DELAY + 60));
@@ -8484,7 +8484,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.firstDet = e.det.length ? e.det[0] : null;
       e.nextTick = e.det.length ? e.det[0] + cfg.delay : 0;
       e.eewDone = !e.det.length;
-      e.endT = Math.min(e.endT, SIM_MAX);
+      /* Version 230：津波情報が出る地震は、観測の収まり方に関わらず一律で SIM_MAX（300分）まで続ける */
+      e.endT = tsuWill(e) ? SIM_MAX : Math.min(e.endT, SIM_MAX);
     }
     if (!fake) setMis(evs);
     const sarv = siteArv(SITE.lon, SITE.lat) || 1;
@@ -8625,7 +8626,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       x = Math.max(x, a);
       x0 = Math.max(x0, a);
     }
-    e.endT = Math.min(x, SIM_MAX);
+    e.endT = tsuWill(e) ? SIM_MAX : Math.min(x, SIM_MAX); /* Version 230：津波情報が出る地震は一律300分 */
     e.endT0 = x0;
     /* 計算中に緊急地震速報の第1報が出ていたら、そこで延ばすはずだった分（eewTick）をここで */
     if (e.tsRepPend && tsuWill(e)) e.endT = Math.max(e.endT, e.tsT + 25, e.tsT2 ? e.tsT2 + 20 : 0);
@@ -9050,7 +9051,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (e.tsQual) e.tsT2 = t + (e.tsOff2 || 900);
       if (e.tsJob) e.tsRepPend = true;
       else if (tsuWill(e)) {
-        e.endT = Math.max(e.endT, e.tsT + 25, e.tsT2 ? e.tsT2 + 20 : 0);
+        e.endT = SIM_MAX; /* Version 230：津波情報が出る地震は一律300分 */
         s.endT = Math.min(SIM_MAX, Math.max(s.endT, e.endT));
       }
     }
@@ -9865,14 +9866,22 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function obsUpdate(t, force) {
     const s = sim,
       ks = s.infoKs;
-    let ch = !!force;
+    /* Version 232：次にどこかの市区町村の値が変わる時刻（s.obsNext）までは全市区町村を見直さない（揺れが収まった後の長い津波の観測の間に毎回約1900件を回していた）。
+       表示中の地震（infoKs）が変わるときは force で呼ばれる */
+    if (!force && t < s.obsNext) return false;
+    let ch = !!force,
+      nx = 1e9;
     CITIES.forEach(c => {
       let I = -9,
         lp = 0,
         Ip = -9,
         lpP = 0;
       for (const e of s.evs) {
-        if (e.t0 > t || !(c.tSq[e.k] + (c.dlq ? c.dlq[e.k] : 0) <= t)) continue;
+        const na = Math.max(e.t0, c.tSq[e.k] + (c.dlq ? c.dlq[e.k] : 0));
+        if (!(na <= t)) {
+          if (na < nx) nx = na;
+          continue;
+        }
         if (c.Iq[e.k] > I) I = c.Iq[e.k];
         if (c.lpq[e.k] > lp) lp = c.lpq[e.k];
         if (ks && ks.has(e.k)) {
@@ -9886,6 +9895,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       c.Ip = Ip;
       c.lpP = lpP;
     });
+    s.obsNext = nx;
     if (!ch) return false;
     obsVer++;
     AREAS.forEach(a => {
@@ -10122,7 +10132,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         const a = (k * Math.PI) / 8;
         hit = ntHokuSrc(q.lon + (L * Math.cos(a)) / kx, q.lat + (L * Math.sin(a)) / 110.57);
       }
-      if (hit) return { kind: 'hoku', Mw, res: Mw >= 7 ? 'chui' : 'below', tA: 0, tB: e.t0 + 6600 + 1800 * u2, stA: true, stB: false };
+      /* Version 231：北海道・三陸沖も、地震から約10〜25分後に調査開始を上部のテロップで知らせる（南海トラフの調査中と同じ時刻の幅） */
+      if (hit) return { kind: 'hoku', Mw, res: Mw >= 7 ? 'chui' : 'below', tA: e.t0 + 600 + 900 * u1, tB: e.t0 + 6600 + 1800 * u2, stA: false, stB: false };
     }
     return null;
   }
@@ -10200,19 +10211,30 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         );
         notifyLog();
       }
+      if (n.kind === 'hoku' && !n.stA && t >= n.tA) {
+        n.stA = true;
+        tickSet('注意情報', 'chk', '【北海道・三陸沖後発地震注意情報】' + nm + 'の地震（M' + infoM(e, t).toFixed(1) + '）を受けて、北海道・三陸沖後発地震注意情報の発表基準（Mw7.0以上）を満たすかどうか、気象庁が調査を開始しました。結果は2時間程度で発表される見込みです。今後の情報に注意してください。');
+        addLog('<div class="r ntq"><div class="h">北海道・三陸沖後発地震注意情報の調査開始　' + clockStr(t) + '</div>' + qTag(e) + nm + 'の地震（M' + infoM(e, t).toFixed(1) + '）を受けて、北海道・三陸沖後発地震注意情報の発表基準を満たすかどうか調査を開始しました。</div>');
+        notifyLog();
+      }
       if (!n.stB && t >= n.tB) {
         n.stB = true;
         if (n.kind === 'hoku' && n.res === 'below') {
+          /* Version 232：まとめた評価では、Mw の大きい方の地震（e2）の名前で出す（結果の発表と同じ） */
+          const eB = n.e2 || e,
+            nmB = epiName(eB.q.lon, eB.q.lat);
           addLog(
             '<div class="r"><div class="h">北海道・三陸沖後発地震注意情報（発表基準未満）　' +
               clockStr(t) +
               '</div>' +
-              qTag(e) +
-              nm +
+              qTag(eB) +
+              nmB +
               'の地震のモーメントマグニチュードはMw' +
               n.Mw.toFixed(1) +
               'で、北海道・三陸沖後発地震注意情報の発表基準（Mw7.0以上）を満たしませんでした。</div>'
           );
+          /* Version 231：調査開始のテロップを出しているので、結果（発表しない）もテロップで知らせる */
+          tickSet('注意情報', 'end', '【北海道・三陸沖後発地震注意情報】' + nmB + 'の地震のモーメントマグニチュードはMw' + n.Mw.toFixed(1) + 'で、発表基準（Mw7.0以上）を満たさなかったため、北海道・三陸沖後発地震注意情報は発表しません。');
           continue;
         }
         const T = NT_TXT[n.kind === 'hoku' ? 'hoku' : n.res],
@@ -11269,7 +11291,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      発表：観測から約2分後の値で、変化があれば発表（続報は5分以上あける）。 */
   const TOBS_DELAY = 120,
     TOBS_GAP = 300,
-    TOBS_MAX = 14400,
+    TOBS_MAX = 18000,
     TOBS_CHK = 10;
   let TS = null;
   function tstnInit() {
