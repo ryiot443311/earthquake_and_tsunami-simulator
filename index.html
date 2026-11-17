@@ -2848,6 +2848,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return Math.min(1500, Math.pow(10, 0.5 * M - 1.85));
   }
   /* 断層面：走向方向に長さL、傾斜方向（走向+90°）に幅W。海溝型は低角、スラブ内は中角、内陸は高角で上端を浅くする */
+  /* 指向性・上盤効果の強さ（震度の単位。dirTerm、Version 234） */
+  const DIR_A = 0.45,
+    HW_A = 0.3;
+  const clamp01 = x => (x < 0 ? 0 : x > 1 ? 1 : x);
   const DIP = { crustal: 80, inter: 15, intra: 45 },
     WMAX = { crustal: 20, inter: 200, intra: 60 };
   function dipOf(p) {
@@ -2897,6 +2901,23 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       cd: Math.cos(dip),
       W2: Wd / 2
     };
+    /* 指向性・上盤効果の定数（Version 234） */
+    const sr0 = g.sr,
+      wLo = g.sd > 1e-6 ? Math.max(-g.W2, (3 - p.depth) / g.sd) : -g.W2,
+      dipD = dipOf(p),
+      ztor = Math.max(3, p.depth + wLo * g.sd);
+    g.Lf = sr0[1] - sr0[0];
+    /* 巨大な海溝型地震（プレート境界、M7.5〜8.3で弱め、M8.3以上は0）は小さな破壊の重なりで、震度の分布に指向性がほとんど出ない（2011年は震源の真横の宮城県が最も強い） */
+    g.dirK =
+      DIR_A * clamp01((p.M - 5.5) / 1.5) * (1 - 0.5 * clamp01(p.M - 8)) * (p.type === 'inter' ? clamp01((8.3 - p.M) / 0.8) : 1);
+    g.dirX = 30 + g.Lf / 2;
+    g.dirY = 120 + g.Lf;
+    g.uTop = wLo * g.cd;
+    g.uBot = Math.max(wLo, g.W2) * g.cd;
+    g.hwK =
+      p.type === 'inter' || dipD >= 70
+        ? 0
+        : HW_A * clamp01((70 - dipD) / 25) * clamp01(p.M - 6) * clamp01((20 - ztor) / 15);
     try {
       Object.defineProperty(p, '_g', { value: g, writable: true, configurable: true, enumerable: false });
     } catch (e) {}
@@ -2979,13 +3000,23 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const w = (lv - 0.6) / 0.4;
     return (2.68 + 1.72 * lv) * (1 - w) + q * w;
   }
-  /* 地盤の非線形性：強い揺れでは軟らかい地盤の増幅が頭打ちになる（基盤の最大速度が約20cm/sを超えると増幅率を割り引く） */
+  /* 地盤の非線形性：強い揺れでは軟らかい地盤の増幅が頭打ちになる（Version 234で地盤の軟らかさに合わせた形に）。
+     軟らかい地盤（増幅の大きい所）ほど弱い揺れから増幅が下がり始め（基盤の最大速度 約13cm/s〜、硬い所は約28cm/s〜）、下がり方も大きい（増幅の常用対数の35〜70%まで）。
+     増幅が1以下の硬い地盤（岩盤）は変えない。lb＝工学的基盤の最大速度の常用対数 */
+  const NL = { b0: 1.45, b1: 0.35, k0: 0.3, k1: 0.4, f0: 0.7, f1: 0.35, sa: 0.45, lp: 0.3 };
   function siteLog(arv, lb) {
     const la = Math.log10(arv);
     if (la <= 0 || !cfg.nl) return la;
-    return la * Math.max(0.5, Math.min(1, 1 - NLK * Math.max(0, lb - 1.3)));
+    const s = Math.min(1, la / NL.sa) /* 軟らかさ 0〜1 */,
+      x = lb - (NL.b0 - NL.b1 * s);
+    if (x <= 0) return la;
+    return la * Math.max(NL.f0 - NL.f1 * s, 1 - (NL.k0 + NL.k1 * s) * x);
   }
-  let NLK = 0.5;
+  /* 長周期地震動（周期1.5〜8秒）の地盤の増幅：非線形性で地盤の固有周期が長くなるため、周期の長い揺れは弱まりにくい（短い周期の割り引きの30%だけ） */
+  function siteLogLP(arv, lb, sl) {
+    const la = Math.log10(arv);
+    return la - NL.lp * (la - (sl !== undefined ? sl : siteLog(arv, lb)));
+  }
   function intensity(p, X, arv, adj) {
     if (!arv) arv = 1;
     const lb = pgvBase(p, X) + (adj || 0);
@@ -3130,7 +3161,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     M = Math.min(M, 10);
     return LPK.m1 * (Math.min(M, 8) - 7) + LPK.m2 * Math.max(0, M - 8) + LPK.c0;
   }
-  /* [経度, 緯度, 東西の半径(度), 南北の半径(度), 回転(度・反時計回り), 中心の増幅（常用対数）] */
+  /* [経度, 緯度, 東西の半径(度), 南北の半径(度), 回転(度・反時計回り), 中心の増幅（常用対数）]
+     Version 234：気象庁の長周期地震動階級（2011年東北沖の地域の最大、2022年福島県沖の全地域）に合わせて平野・盆地ごとに調整。
+     2011年に階級4だった山形県村山・山梨県東部・富士五湖・静岡県東部（御殿場）、階級3だった十勝・胆振（苫小牧）・甲府・諏訪で小さすぎたので上げ、
+     猪苗代・福島・郡山の盆地を足した。階級のずれの合計：2011年（階級3以上の地域）12→3、2022年 35→33 */
   const BASIN = [
     [139.82, 35.75, 0.78, 0.52, -15, 0.6] /* 関東平野（東京湾北部〜千葉県北西部が最も厚い） */,
     [136.75, 35.12, 0.32, 0.38, 0, 0.42] /* 濃尾平野・伊勢湾岸 */,
@@ -3139,8 +3173,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     [135.8, 34.58, 0.09, 0.14, 0, 0.2] /* 奈良盆地 */,
     [136.1, 35.15, 0.22, 0.3, 30, 0.25] /* 近江盆地 */,
     [141.55, 43.12, 0.25, 0.35, 0, 0.4] /* 石狩低地 */,
-    [141.75, 42.66, 0.3, 0.14, 0, 0.55] /* 勇払平野 */,
-    [143.2, 42.85, 0.4, 0.35, 0, 0.45] /* 十勝平野 */,
+    [141.75, 42.66, 0.3, 0.14, 0, 0.8] /* 勇払平野（Version 234で調整） */,
+    [143.2, 42.85, 0.4, 0.35, 0, 0.75] /* 十勝平野（Version 234で調整） */,
     [144.35, 43.02, 0.2, 0.1, 0, 0.3] /* 釧路平野 */,
     [139.15, 37.85, 0.42, 0.3, 40, 0.55] /* 新潟平野 */,
     [138.85, 37.42, 0.22, 0.25, 30, 0.4] /* 長岡・小千谷 */,
@@ -3148,9 +3182,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     [137.2, 36.66, 0.26, 0.18, 0, 0.35] /* 富山平野 */,
     [136.6, 36.55, 0.12, 0.25, 0, 0.25] /* 金沢平野 */,
     [136.2, 36.1, 0.15, 0.15, 0, 0.25] /* 福井平野 */,
-    [140.95, 38.2, 0.15, 0.25, 0, 0.3] /* 仙台平野 */,
-    [141.08, 38.58, 0.25, 0.15, 0, 0.45] /* 大崎平野 */,
-    [140.3, 38.35, 0.12, 0.2, 0, 0.35] /* 山形盆地 */,
+    [140.95, 38.2, 0.15, 0.25, 0, 0.55] /* 仙台平野（Version 234で調整） */,
+    [141.08, 38.58, 0.25, 0.15, 0, 0.7] /* 大崎平野（Version 234で調整） */,
+    [140.3, 38.4, 0.12, 0.28, 0, 0.9] /* 山形盆地（Version 234で調整） */,
     [139.9, 38.85, 0.12, 0.25, 0, 0.35] /* 庄内平野 */,
     [140.1, 39.75, 0.12, 0.25, 0, 0.3] /* 秋田平野 */,
     [140.05, 40.2, 0.1, 0.1, 0, 0.4] /* 能代平野 */,
@@ -3159,9 +3193,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     [140.75, 40.8, 0.12, 0.1, 0, 0.4] /* 青森平野 */,
     [141.4, 40.5, 0.15, 0.15, 0, 0.35] /* 八戸・五戸 */,
     [141.12, 39.4, 0.1, 0.5, 0, 0.25] /* 北上盆地 */,
-    [138.55, 35.65, 0.15, 0.12, 0, 0.2] /* 甲府盆地 */,
-    [138.85, 35.38, 0.17, 0.16, 0, 0.45] /* 富士山東麓・北麓（火山噴出物の厚い層） */,
-    [138.1, 36.05, 0.07, 0.07, 0, 0.5] /* 諏訪盆地 */,
+    [138.55, 35.65, 0.15, 0.12, 0, 0.6] /* 甲府盆地（Version 234で調整） */,
+    [138.85, 35.38, 0.2, 0.2, 0, 1.45] /* 富士山東麓・北麓（火山噴出物の厚い層）（Version 234で調整） */,
+    [138.1, 36.05, 0.07, 0.07, 0, 1] /* 諏訪盆地（Version 234で調整） */,
     [138.2, 36.65, 0.1, 0.15, 0, 0.25] /* 長野盆地 */,
     [137.95, 36.25, 0.08, 0.15, 0, 0.25] /* 松本盆地 */,
     [138.4, 34.97, 0.15, 0.1, 0, 0.25] /* 静岡平野 */,
@@ -3180,7 +3214,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     [130.68, 32.8, 0.15, 0.18, 0, 0.35] /* 熊本平野 */,
     [131.6, 33.2, 0.12, 0.08, 0, 0.3] /* 大分平野 */,
     [131.4, 31.95, 0.12, 0.25, 0, 0.3] /* 宮崎平野 */,
-    [131.07, 31.73, 0.13, 0.12, 0, 0.4] /* 都城盆地 */
+    [131.07, 31.73, 0.13, 0.12, 0, 0.4] /* 都城盆地 */,
+    [140.08, 37.56, 0.1, 0.08, 0, 0.6] /* 猪苗代盆地（Version 234で追加） */,
+    [140.45, 37.78, 0.1, 0.15, 0, 0.4] /* 福島盆地（Version 234で追加） */,
+    [140.37, 37.38, 0.1, 0.15, 0, 0.4] /* 郡山盆地（Version 234で追加） */
   ].map(b => {
     const r = (b[4] * Math.PI) / 180;
     return { lon: b[0], lat: b[1], rx: b[2], ry: b[3], c: Math.cos(r), s: Math.sin(r), L: b[5] };
@@ -3200,9 +3237,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     return b * LPK.bs;
   }
-  /* 室内の揺れの周期の形・遠地の表面波に使う増幅の目安（以前と同じ範囲：平野の中で約2倍） */
+  /* 室内の揺れの周期の形・遠地の表面波に使う増幅の目安（以前と同じ範囲：平野の中で約2倍）。
+     Version 234で富士山麓・諏訪などの増幅を大きくしたが、揺れの形・長さに使う値は以前の上限（関東平野の中央 0.33）で頭打ちにする（揺れが十数分も続かないように） */
+  const BL_SHAPE = 0.33;
   function basinAmp(lon, lat) {
-    return 1 + 1.8 * basinLog(lon, lat);
+    return 1 + 1.8 * Math.min(BL_SHAPE, basinLog(lon, lat));
   }
   /* 規模による平野の増幅の効き（M6以下で0.3、M7で0.6、M8で0.9、M8.3以上で1） */
   function basinW(M) {
@@ -3221,7 +3260,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* 長周期地震動（周期1.5〜8秒の絶対速度応答Sva、cm/s）。bl＝その地点の basinLog（格子では計算済みの値を使う） */
   function lpSvaB(p, X, bl, arv, adj) {
     const lb = pgvBase(p, X) + (adj || 0),
-      lv = lb + 0.117 + siteLog(arv || 1, lb);
+      lv = lb + 0.117 + siteLogLP(arv || 1, lb);
     return Math.pow(10, lv + lpMk(p.M) + lpFar(X, p.depth) + lpNear(X, p.M) + bl * basinW(p.M));
   }
   function lpSva(p, X, lon, lat, arv, adj) {
@@ -3232,14 +3271,34 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   const LP_COLOR = [null, '#7ad0ff', '#ffe600', '#ff8a00', '#d0004f'],
     LP_TXT = [null, '#111', '#111', '#111', '#fff'];
-  /* 破壊の指向性：一方向破壊では進む先が強く、後ろが弱くなる（M6以上で効く） */
-  function dirTerm(p, m) {
-    if (p.rup !== 'fw' && p.rup !== 'bw') return 0;
-    const h = Math.hypot(m.s, m.u);
-    if (h < 1) return 0;
-    const c = ((p.rup === 'fw' ? 1 : -1) * m.s) / h,
-      tp = Math.max(0, Math.min(1, (p.M - 5.5) / 1.5));
-    return 0.35 * c * tp;
+  /* 震源の効果（震度の単位）＝破壊の指向性＋上盤効果（Version 234で作り直し）
+     指向性：破壊が地点に向かって進んだ長さの割合 X と、地点の向きと断層の走向のなす角 θ から XC＝X·cosθ（Somerville ほか 1997 の考え方）。
+     破壊が向かってくる側（断層の端の先）は強く、断層の真横（特に震源の真横）は弱い。全方位の平均がほぼ0になるよう 0.32 を引く。
+     両側破壊（震源が断層の中央）にも効く（両端の先がやや強い）。一方向破壊は進む先が最も強い。
+     M5.5〜7で効き始め、M8を超える巨大地震は弱める（小さな破壊の重なりで短い周期の揺れの向きがそろいにくい）。断層から離れると弱める。
+     上盤効果：傾いた逆断層・正断層（プレート境界を除く、傾斜70度未満、断層の上端が浅い）で、断層面の真上（上盤側）は同じ距離でも揺れが強い（Abrahamson・Silva 2008 などの考え方）。 */
+  function dirTerm(p, m, g) {
+    g = g || geo(p);
+    if (!g.dirK && !g.hwK) return 0;
+    let r = 0;
+    if (g.dirK) {
+      const h = Math.sqrt(m.s * m.s + m.u * m.u);
+      if (h > 0.5) {
+        const xc = (Math.abs(m.sc) / g.Lf) * (Math.abs(m.s) / h),
+          w = clamp01(1 - (m.X - g.dirX) / g.dirY);
+        r = g.dirK * (xc - 0.32) * w;
+      }
+    }
+    if (g.hwK) {
+      const rx = m.u - g.uTop;
+      if (rx > 0) {
+        const wp = Math.max(1, g.uBot - g.uTop),
+          ta = clamp01(1 - Math.abs(m.s - m.sc) / 15),
+          tr = rx < wp ? 0.4 + 0.6 * clamp01(rx / (0.5 * wp)) : clamp01(1 - (rx - wp) / 15);
+        r += g.hwK * ta * tr;
+      }
+    }
+    return r;
   }
   /* 揺れのばらつき：空間的に滑らかなノイズ（約15km規模＋約4km規模） */
   function hash2(i, j, k) {
@@ -5059,18 +5118,19 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           arv = cellArv[i],
           m = metrics(q, lon, lat),
           nz = nzA[i],
-          dt = dirTerm(q, m),
+          dt = dirTerm(q, m, g),
           aa = arcAdj(q, lon, lat, i);
         const lb = pgvBase(q, m.X) + aa,
-          lv = lb + 0.117 + siteLog(arv, lb),
+          sl = siteLog(arv, lb),
+          lv = lb + 0.117 + sl,
           e = nz + dt + bias,
-          lp = Math.pow(10, lv + mk + lpFar(m.X, q.depth) + lpNear(m.X, q.M) + bsA[i] * bw + e * 0.38);
+          lp = Math.pow(10, lb + 0.117 + siteLogLP(arv, lb, sl) + mk + lpFar(m.X, q.depth) + lpNear(m.X, q.M) + bsA[i] * bw + e * 0.38);
         let I = iFromLogV(lv) + e,
           ts = m.tS,
           du = durOf(q.M, m.X, dur0);
         /* 遠地の巨大地震の表面波（swAt） */
         if (sw) {
-          const w = swAt(q, lon, lat, arv, 1 + 1.8 * bsA[i], nz);
+          const w = swAt(q, lon, lat, arv, 1 + 1.8 * Math.min(BL_SHAPE, bsA[i]), nz);
           if (w.I > I) {
             I = w.I;
             ts = w.tR;
@@ -5965,7 +6025,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 233;
+  const APP_VERSION = 234;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -12579,19 +12639,48 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return { mx, tMx, rising, sat };
   }
   /* 地震ごとの観測点の波（start で作る） */
+  /* 港・湾の共振（Version 234）：[観測点名, 湾・港の固有周期(分), 共振したときの倍率]。
+     入ってくる津波の周期が湾・港の固有周期に近いと、湾の中で往復する波が重なって観測点の津波が大きくなり、長く続く。
+     2010年チリ地震（周期の長い遠地津波）では、周りの観測点が0.3〜0.8mのところ、須崎港・久慈港1.2m、仙台港・志布志港1.1m、根室市花咲1.0m、八戸0.9m。
+     2025年カムチャツカ半島付近の地震（M8.8）では久慈港1.3m、仙台港0.9m、根室市花咲・八戸港0.8m（周りは0.4〜0.7m）。
+     固有周期は文献の目安（大船渡湾・広田湾 約40分、尾鷲湾 約35分など）。周期の短い津波（近くの小さな地震）では共振しない。
+     大きな津波（数m以上）は砕波・越流で頭打ちになるので、倍率を弱める。予報（データベース方式）には入れない（観測点の値だけ） */
+  const RESO = [
+    ['根室市花咲', 22, 1.4],
+    ['浜中町霧多布港', 30, 1.5],
+    ['八戸港', 40, 2.3],
+    ['久慈港', 35, 2.8],
+    ['大船渡', 40, 1.9],
+    ['仙台港', 60, 2.0],
+    ['須崎港', 45, 2.0],
+    ['尾鷲', 35, 1.6],
+    ['志布志港', 50, 1.7]
+  ];
+  const RESO_M = new Map(RESO.map(r => [r[0], r]));
+  /* 倍率。perM＝入ってくる津波の周期（分）、H＝共振なしの高さ(m) */
+  function resoAmp(name, perM, H) {
+    const r = RESO_M.get(name);
+    if (!r) return 1;
+    const x = Math.log(perM / r[1]) / (perM < r[1] ? 0.35 : 1.0) /* 固有周期より長い波は緩やかに、短い波は急に弱まる */,
+      a = (r[2] - 1) * Math.exp(-x * x);
+    return 1 + a / (1 + Math.max(0, H - 0.5) / 1.5);
+  }
   function tobsBuild(e) {
     const R = e.tsunami && e.tsunami.raw;
     if (!R || !R.ptH) return null;
     const T = tstnInit(),
       g = rng(runSeed + e.k * 7919 + 4242),
-      per = 60 * Math.max(8, Math.min(50, 6 + 0.3 * R.a));
+      per = 60 * Math.max(8, Math.min(50, 6 + 0.3 * R.a)),
+      perR = (per / 60) * (e.farQ ? 1.5 : 1) /* 遠地の津波は周期の長い波が目立つ */;
     let end = 0;
     const co = T.co.map(st => {
       const e1 = gauss(g);
       if (st.far || st.ci < 0) return null;
       const H0 = R.ptH[st.ci],
-        H = Math.min(30, (H0 / 1.4) * Math.exp(0.3 * e1));
-      const w = tWave(e.t0 + R.ptA[st.ci], H, R.ptS[st.ci], per * (0.85 + 0.3 * g()), g, true, COAST[st.ci].enc);
+        H1 = (H0 / 1.4) * Math.exp(0.3 * e1),
+        ra = resoAmp(st.name, perR, H1),
+        H = Math.min(30, H1 * ra);
+      const w = tWave(e.t0 + R.ptA[st.ci], H, R.ptS[st.ci], per * (0.85 + 0.3 * g()), g, true, ra > 1.15 ? Math.max(COAST[st.ci].enc || 0, 0.8) : COAST[st.ci].enc);
       if (!(H0 > 0.02) || H < 0.03) return null;
       end = Math.max(end, w.end);
       return w;
@@ -13449,7 +13538,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       tpl = 0.5 * Td,
       tau = 0.4 * Td;
     /* 堆積平野・盆地では周期の長い揺れが長く続く（Version 217）。周期1秒より長い成分だけ、山を長く・減り方を緩くする */
-    const bl = basinLog(SITE.lon, SITE.lat) * basinW(P.M),
+    const bl = Math.min(BL_SHAPE, basinLog(SITE.lon, SITE.lat)) * basinW(P.M),
       kL = 1 + 3.5 * bl,
       lpLong = kL > 1.02,
       tplL = tpl * Math.sqrt(kL),
