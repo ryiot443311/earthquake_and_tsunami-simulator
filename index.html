@@ -5948,7 +5948,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 221;
+  const APP_VERSION = 222;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -9843,8 +9843,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
        巨大地震警戒＝想定震源域のプレート境界でモーメントマグニチュード（Mw）8.0以上（半割れ）、巨大地震注意＝監視領域でMw7.0以上（一部割れ）、それ以外は調査終了。
      北海道・三陸沖：日本海溝・千島海溝沿いの想定震源域（根室沖〜三陸沖）か、地震の影響範囲（震央からMwの断層の長さ 10^(0.5Mw−1.85) km の円）が想定震源域にかかる所で
        Mw7.0以上なら、Mwを精査した約2時間後に「北海道・三陸沖後発地震注意情報」（2025年12月の青森県東方沖M7.5（Mw7.4）、2026年4月の三陸沖M7.7（Mw7.4））。
-     想定震源域は海溝・トラフの軸（TRENCH_AX）から陸側への距離で近似した。Mw は気象庁のM（このシミュレーターのM）より0〜0.3小さめ（M8以上は同じ。2024年日向灘 M7.1・Mw7.1、2025年青森県東方沖 M7.5・Mw7.4、2026年三陸沖 M7.7・Mw7.4） */
+     想定震源域は海溝・トラフの軸（TRENCH_AX）から陸側への距離で近似した。
+     Version 222：南海トラフの陸側の端は一律の距離をやめ、想定震源域の陸側の端（深部低周波地震が起きている帯の北端。中央防災会議 2013）の線 NT_NANKAI_IN に。
+       監視領域は想定震源域にトラフ軸の外側（海側）約50kmを足した範囲で、陸側には広げない（以前は軸から陸側へ230kmで、熊本・岡山・大阪なども入っていた）。Mw は気象庁のM（このシミュレーターのM）より0〜0.3小さめ（M8以上は同じ。2024年日向灘 M7.1・Mw7.1、2025年青森県東方沖 M7.5・Mw7.4、2026年三陸沖 M7.7・Mw7.4） */
   const NT_NANKAI = [[138.72, 35.08], [138.6, 34.4], [137.8, 33.9], [136.8, 33.5], [135.5, 33.0], [134.5, 32.7], [133.5, 32.3], [132.6, 31.8], [132.0, 31.0]];
+  /* 想定震源域の陸側の端（東→西。富士川河口断層帯の北端〜東海・紀伊半島・四国・豊後水道〜九州の東部。公表の図から読んだ近似） */
+  const NT_NANKAI_IN = [[139.4, 35.3], [138.65, 35.32], [138.0, 35.4], [137.5, 35.25], [137.1, 35.1], [136.75, 34.85], [136.35, 34.62], [135.9, 34.42], [135.45, 34.3], [135.0, 34.25], [134.5, 34.15], [134.0, 34.0], [133.5, 33.88], [133.0, 33.72], [132.55, 33.45], [132.15, 33.15], [131.75, 32.95], [131.35, 32.6], [131.05, 32.15], [130.85, 31.6], [130.8, 31.0], [130.8, 30.4]];
   let NT_JT = null; /* 千島海溝＋日本海溝の軸（TRENCH_AX は後で定義されるので、使うときに作る） */
   /* 軸から陸側への距離（km。海側は負） */
   function ntLand(L, lon, lat) {
@@ -9873,14 +9877,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     return end ? -1e9 : sg * best;
   }
-  const ntNankaiSrc = (lon, lat) => {
-    const d = ntLand(NT_NANKAI, lon, lat);
-    return d >= 0 && d <= 180;
+  /* 想定震源域の陸側の端より海側か（線の両端より外は対象外） */
+  const ntNankaiIn = (lon, lat) => {
+    const d = ntLand(NT_NANKAI_IN, lon, lat);
+    return d !== -1e9 && d <= 0;
   };
-  const ntNankaiMon = (lon, lat) => {
-    const d = ntLand(NT_NANKAI, lon, lat);
-    return d >= -50 && d <= 230;
-  };
+  const ntNankaiSrc = (lon, lat) => ntLand(NT_NANKAI, lon, lat) >= 0 && ntNankaiIn(lon, lat);
+  const ntNankaiMon = (lon, lat) => ntLand(NT_NANKAI, lon, lat) >= -50 && ntNankaiIn(lon, lat);
   const ntHokuSrc = (lon, lat) => {
     if (lat < 38.5 || lat > 45 || lon > 149) return false;
     if (!NT_JT) NT_JT = TRENCH_AX[0].concat(TRENCH_AX[1].slice(1));
