@@ -5965,7 +5965,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 232;
+  const APP_VERSION = 233;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -14605,7 +14605,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     ];
     for (const [prof, rr, hh, n, m, x, z, ms, fr] of plates) {
       const geo = latheGeo(prof, 16);
-      for (let k = 0; k < n; k++)
+      let lead = null;
+      for (let k = 0; k < n; k++) {
         put(new THREE.Mesh(geo, m), x, y1 + hh + 0.0005 + k * (2 * hh + 0.0002), z, {
           half: [rr, hh, rr],
           cyl: [rr, hh],
@@ -14613,6 +14614,20 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           frag: fr,
           mu: k === 0 ? 0.36 : 0.22 + r() * 0.06
         });
+        /* Version 233：重ねた皿は高台が重なって互いにずれにくいので、いちばん下の皿と一緒に滑り、一緒に縁から傾いて落ちる
+           （以前は1枚ずつ別に滑り、下の皿が先に落ちると上の皿が宙に残ることがあった）。落ちてからは1枚ずつの剛体 */
+        const it = o.items[o.items.length - 1];
+        if (!k) {
+          lead = it;
+          lead.stack = [];
+          lead.stM = ms * n;
+          lead.stH = (n * (2 * hh + 0.0002)) / 2;
+        } else {
+          it.lead = lead;
+          it.dy = k * (2 * hh + 0.0002);
+          lead.stack.push(it);
+        }
+      }
     }
     /* ティーポット（白磁・注ぎ口は右、取っ手は左）。断面は当たり判定の筒（半径0.07・高さの半分0.0675）の中心に合わせる */
     {
@@ -19298,6 +19313,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           it.s = 0;
           it.sv = 0;
           it.th = it.om = 0;
+          /* Version 233：縁を支点に傾く角度・速さ、物ごとの摩擦のばらつき（±15%） */
+          it.et = it.eo = 0;
+          it.fk = 0.85 + 0.3 * Math.random();
           if (it.mesh.parent !== o.body) o.body.add(it.mesh);
           it.mesh.visible = !it.bt;
           it.mesh.position.copy(it.home);
@@ -20572,37 +20590,64 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     R.sorted.push(b);
   }
   /* 棚の縁を越えた収納物を落下物にする（前へ倒れ込む回転を付ける） */
-  function ejectItem(o, it) {
+  /* 落下物にするときの傾きの上限（ラジアン。約34度）。縁を支点に傾く間は1自由度で計算し、ここで剛体に引き継ぐ（Version 233） */
+  const ITEM_TH = 0.6;
+  let ITQ = null,
+    ITX = null;
+  /* 棚の中の物の姿勢：前の縁（奥行きの半分 hd の位置）を支点に th だけ前へ傾き、重心が縁より c だけ前にある。重ねた皿は一緒に動かす */
+  function itemPose(it, th, c, hd) {
+    if (!ITQ) {
+      ITQ = new THREE.Quaternion();
+      ITX = new THREE.Vector3(1, 0, 0);
+    }
+    const yb = it.home.y - it.half[1],
+      C = Math.cos(th),
+      S = Math.sin(th);
+    const one = (x, h1) => {
+      if (th === 0) x.mesh.position.set(x.home.x, x.home.y, x.home.z + (it.s || 0));
+      else x.mesh.position.set(x.home.x, yb + h1 * C - c * S, hd + h1 * S + c * C);
+      ITQ.setFromAxisAngle(ITX, th);
+      x.mesh.quaternion.copy(ITQ).multiply(x.homeQ);
+    };
+    one(it, it.half[1]);
+    if (it.stack) for (const x of it.stack) one(x, it.half[1] + x.dy);
+  }
+  /* 棚の縁を越えた収納物を落下物にする。vr：棚から見た重心の速度（棚の座標）、wr：棚の左右の軸まわりの回転の速さ（前へ傾く向きが正）。
+     Version 233：以前は決まった回転（毎秒1.2ラジアン以上）と前向きの速さを付けていた。今は傾いていた動きをそのまま引き継ぎ、物ごとの小さなばらつきだけ足す */
+  function ejectItem(o, it, vr, wr) {
     const R = RM.R3,
       b = o.b;
     it.out = true;
     applyPose(o);
     o.root.updateMatrixWorld(true);
+    const lp = it.mesh.position.clone();
     R.room.attach(it.mesh);
     it.mesh.visible = true;
-    const lx = it.home.x,
-      ly = it.home.y,
-      lz = it.home.z + it.s;
-    /* その点の速度 = 重心の速度 + ω×r + 棚の中での滑り */
+    /* その点の速度 = 家具の重心の速度 + ω×r + 棚から見た速度 */
     const Rm = b.R,
-      x = lx,
-      y = ly - b.com[1],
-      z = lz;
+      x = lp.x,
+      y = lp.y - b.com[1],
+      z = lp.z;
     const rx = Rm[0] * x + Rm[1] * y + Rm[2] * z,
       ry = Rm[3] * x + Rm[4] * y + Rm[5] * z,
       rz = Rm[6] * x + Rm[7] * y + Rm[8] * z;
     const w = b.w,
-      fwd = Math.max(0.05, it.sv),
+      jx = (Math.random() - 0.5) * 0.08,
+      lv = [jx + vr[0], vr[1], vr[2] * (0.9 + 0.2 * Math.random())],
       v = [
-        b.v[0] + w[1] * rz - w[2] * ry + Rm[2] * fwd,
-        b.v[1] + w[2] * rx - w[0] * rz + Rm[5] * fwd,
-        b.v[2] + w[0] * ry - w[1] * rx + Rm[8] * fwd
+        b.v[0] + w[1] * rz - w[2] * ry + Rm[0] * lv[0] + Rm[1] * lv[1] + Rm[2] * lv[2],
+        b.v[1] + w[2] * rx - w[0] * rz + Rm[3] * lv[0] + Rm[4] * lv[1] + Rm[5] * lv[2],
+        b.v[2] + w[0] * ry - w[1] * rx + Rm[6] * lv[0] + Rm[7] * lv[1] + Rm[8] * lv[2]
       ];
-    /* 前へ倒れ込む回転（棚の横の軸まわり） */
-    const spin = Math.max(1.2 + fwd * 4, it.om || 0),
-      sr = (Math.random() - 0.5) * 0.6;
-    const wv = [w[0] + Rm[0] * spin + Rm[1] * sr, w[1] + Rm[3] * spin + Rm[4] * sr, w[2] + Rm[6] * spin + Rm[7] * sr];
-    const pb = partBody({ m: it.m || 0.4, half: it.half, cyl: it.cyl, xS: it.xS, mu: it.mu, frag: it.frag || 0 });
+    /* 回転：前へ傾く回転＋小さなばらつき（左右・ねじれ。毎秒±0.4ラジアン程度） */
+    const lw = [wr * (0.85 + 0.3 * Math.random()), (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8];
+    const wv = [
+      w[0] + Rm[0] * lw[0] + Rm[1] * lw[1] + Rm[2] * lw[2],
+      w[1] + Rm[3] * lw[0] + Rm[4] * lw[1] + Rm[5] * lw[2],
+      w[2] + Rm[6] * lw[0] + Rm[7] * lw[1] + Rm[8] * lw[2]
+    ];
+    /* 跳ね返り：本（紙・厚紙）はほとんど跳ねない（0.1）、陶磁器・ガラスは0.25（Version 233） */
+    const pb = partBody({ m: it.m || 0.4, half: it.half, cyl: it.cyl, xS: it.xS, mu: it.mu, frag: it.frag || 0, e: it.frag ? 0.25 : 0.1 });
     /* 透明なガラスは影を落とさない（Version 196） */
     it.mesh.traverse(m => (m.castShadow = !RM.lowP && !(m.material && m.material.transparent)));
     pb.ref = { it, o };
@@ -20782,23 +20827,89 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           if (Math.abs(d.om) > 0.005) act = true;
         }
       }
-      // 収納物：棚板の上を少しずつ滑り、重心が縁を越えたら落ちる
+      // 収納物：棚板の上を少しずつ滑り、重心が縁を越えたら縁を支点に傾いて落ちる
       if (o.items) {
         const open = i => !o.doors[i].latched && o.doors[i].phi > 0.55;
         /* 前面が下を向いて床に伏せているときは、床にふさがれて出られない */
         const frontDown = Rm[5] < -0.5;
         for (const it of o.items) {
-          if (it.out) continue;
+          /* 重ねた皿の2枚目から上は、いちばん下の皿と一緒に動く（Version 233） */
+          if (it.out || it.lead) continue;
           feltAt(b, G, it.home.x, it.home.y, it.home.z + (it.s || 0));
           const ar = FT[2] - (it.home.y / f.h) * o.ua,
             N = Math.max(0, -FT[1]),
             sv = it.sv,
-            /* 滑り止めシート（転倒防止対策あり） */
-            imu = fixOn ? Math.max(GRIP, it.mu) : it.mu * RCAL.itemMu;
-          /* 前へ倒れる（背の高い本など。Version 152）：棚の前の縁に立つ物は、前向きの揺れ×重心の高さが重さ×奥行きの半分を超えると
-             前の下の角を支点に傾き（1自由度の転がり）、倒れ切る角度を越えたら落下物になる。戻ったときは止まる（後ろへは傾かない） */
+            /* 滑り止めシート（転倒防止対策あり）。物ごとの摩擦のばらつき fk（Version 233：同じ物が同じ時刻にそろって落ちないように） */
+            imu = fixOn ? Math.max(GRIP, it.mu) : it.mu * RCAL.itemMu * (it.fk || 1);
           /* 閉じた扉（食器棚のガラス扉）の前の物は扉に支えられて倒れない（Version 196。開くと倒れる） */
           const held = o.doors && it.door && !it.door.every(open);
+          /* 縁から傾いている途中で扉が閉じたら、棚の上に戻す */
+          if (it.et > 0 && (held || frontDown)) {
+            it.et = it.eo = 0;
+            it.s = Math.min(it.s || 0, hd - 0.012 - (it.home.z + it.half[2]));
+            it.sv = 0;
+            itemPose(it, 0, 0, hd);
+          }
+          /* 縁を支点に傾く（Version 233）：重心が棚板の前の縁 ITEM_EDGE を越えると、縁を支点に前へ傾きながら（1自由度の回転）、
+             傾いた底面に沿って縁の外へ滑る。傾きが ITEM_TH を越えるか、物の奥の端が縁を越えたら落下物にする。
+             以前は重心が縁を越えた瞬間に、決まった回転（毎秒1.2ラジアン以上）を付けて落としていたため、並んだ物が同じ向き・同じ速さで隊列のように落ちた */
+          const c = it.home.z + (it.s || 0) - hd;
+          if (!held && !frontDown && (it.et > 0 || c > 0)) {
+            act = true;
+            const H = it.stH || it.half[1],
+              hz = it.half[2];
+            let th = it.et || 0,
+              om = it.eo || 0,
+              v = sv;
+            const cs = Math.cos(th),
+              sn = Math.sin(th),
+              ry = H * cs - c * sn,
+              rz = H * sn + c * cs,
+              Ic = it.cyl ? (hz * hz) / 4 + (H * H) / 3 : (H * H + hz * hz) / 3;
+            om += ((ry * ar + rz * N) / (Ic + H * H + c * c) - 0.6 * om) * dt;
+            /* 傾いた底面に沿った滑り（見かけの重力の斜面方向の成分と、縁での摩擦） */
+            const at = ar * cs + N * sn,
+              nf = Math.max(0, N * cs - ar * sn),
+              fr = imu * 0.85 * nf;
+            v += (at - (Math.abs(v) > 1e-3 ? Math.sign(v) : Math.sign(at)) * fr) * dt;
+            if (Math.abs(v) <= 1e-3 && Math.abs(at) <= imu * nf) v = 0;
+            th += om * dt;
+            it.s = (it.s || 0) + v * dt;
+            it.sv = v;
+            if (th <= 0) {
+              th = 0;
+              if (om < 0) om = 0;
+            }
+            it.et = th;
+            it.eo = om;
+            const c2 = it.home.z + it.s - hd;
+            if (th === 0 && c2 <= 0) {
+              /* 重心が棚の上に戻った：平らに置かれた状態に戻る */
+              it.et = it.eo = 0;
+              itemPose(it, 0, 0, hd);
+              continue;
+            }
+            itemPose(it, th, c2, hd);
+            if (th > ITEM_TH || c2 > hz) {
+              if (R.parts.length + (it.stack ? it.stack.length : 0) < PHY.maxParts) {
+                const ejOne = (x, h1) => {
+                  const C = Math.cos(th),
+                    S = Math.sin(th);
+                  ejectItem(o, x, [0, om * (-h1 * S - c2 * C) - v * S, om * (h1 * C - c2 * S) + v * C], om);
+                };
+                ejOne(it, it.half[1]);
+                if (it.stack) for (const x of it.stack) ejOne(x, it.half[1] + x.dy);
+              } else {
+                /* 落下物が多すぎるときは、縁で止める（計算が重くなりすぎないように） */
+                it.et = it.eo = it.sv = 0;
+                it.s = hd - it.home.z;
+                itemPose(it, 0, 0, hd);
+              }
+            }
+            continue;
+          }
+          /* 前へ倒れる（背の高い本など。Version 152）：棚の前の縁に立つ物は、前向きの揺れ×重心の高さが重さ×奥行きの半分を超えると
+             前の下の角を支点に傾き（1自由度の転がり）、倒れ切る角度を越えたら落下物になる。戻ったときは止まる（後ろへは傾かない） */
           if (it.tp && held && it.th > 0) {
             it.th = it.om = 0;
             it.mesh.rotation.set(0, 0, 0);
@@ -20830,8 +20941,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
               it.th = th;
               it.om = om;
               if (th > al + 0.2) {
-                if (R.parts.length < PHY.maxParts) ejectItem(o, it);
-                else {
+                if (R.parts.length < PHY.maxParts) {
+                  /* Version 233：倒れ込む速さ（前の下の角を支点にした回転）を、そのまま落下物の速さ・回転にする */
+                  const C = Math.cos(th),
+                    S = Math.sin(th);
+                  ejectItem(o, it, [0, om * (-hh * S + hz * C), om * (hh * C + hz * S)], om);
+                } else {
                   it.th = it.om = 0;
                   it.mesh.rotation.set(0, 0, 0);
                   it.mesh.position.set(it.home.x, it.home.y, it.home.z + (it.s || 0));
@@ -20864,21 +20979,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
               if (o.doors && it.door && !frontDown)
                 for (const i of it.door) {
                   const d = o.doors[i];
-                  d.om += (it.sv * it.m * 1.5) / d.dw;
+                  d.om += (it.sv * (it.stM || it.m) * 1.5) / d.dw;
                   if (it.sv > 0.4 && !fixOn) d.latched = false;
                 }
               it.sv = -it.sv * 0.1;
             }
           }
           it.mesh.position.z = it.home.z + it.s;
-          if (it.home.z + it.s > hd) {
-            /* 落下物が多すぎるときは、縁で止める（計算が重くなりすぎないように） */
-            if (R.parts.length < PHY.maxParts) ejectItem(o, it);
-            else {
-              it.s = hd - it.home.z;
-              it.sv = 0;
-            }
-          }
+          if (it.stack) for (const x of it.stack) x.mesh.position.z = x.home.z + it.s;
         }
       }
     }
