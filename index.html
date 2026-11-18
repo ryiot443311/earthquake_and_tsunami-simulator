@@ -1361,6 +1361,20 @@ input[type="range"] {
 .qlist.recl button span i { font-style: normal; white-space: nowrap; }
 .qlist.recl button small { margin-left: auto; }
 .qlist.recl button small { white-space: nowrap; }
+/* Version 246：直近の地震を月ごとに分けて表示（月ごとに開閉） */
+.qlist.recl { gap: 8px; }
+details.recm > summary { cursor: pointer; font-size: 0.86rem; color: var(--muted); padding: 2px 0; list-style: none; }
+details.recm > summary::-webkit-details-marker { display: none; }
+details.recm > summary::before { content: '▸ '; }
+details.recm[open] > summary::before { content: '▾ '; }
+details.recm > summary b { color: var(--fg); font-weight: 700; margin-right: 0.5em; }
+details.recm > .recmb { display: grid; gap: 6px; margin-top: 4px; }
+/* Version 248：直近の地震をタップしたときの「取得中」（地図の中央） */
+#recLoad { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 40; display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-radius: 10px; background: rgba(8, 14, 28, 0.86); color: #fff; font-weight: 700; font-size: 0.95rem; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
+#recLoad[hidden] { display: none; }
+#recLoad::before { content: ''; width: 16px; height: 16px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.3); border-top-color: #fff; animation: recSpin 0.8s linear infinite; }
+@keyframes recSpin { to { transform: rotate(360deg); } }
+.qlist.recl button i.noobs { color: var(--muted); }
 .presets {
   display: flex;
   flex-wrap: wrap;
@@ -1690,6 +1704,17 @@ details.grp > summary small {
   font-size: 0.8rem;
   padding: 5px 9px;
 }
+/* Version 243：詳細設定の「既定の設定」と項目ごとの「既定に戻す」 */
+.advtop .preset { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.advtop .preset span { white-space: nowrap; }
+.advtop .preset select { min-width: 0; max-width: 100%; }
+.rsRow { display: none; }
+/* Version 245：グループごとの「既定の設定／カスタム」 */
+.grpSet { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; padding-bottom: 10px; border-bottom: 1px solid var(--line, rgba(127,127,127,.25)); }
+.grpSet span { white-space: nowrap; }
+.grpSet select { min-width: 0; max-width: 100%; }
+#p-adv .opt.chg .rsRow { display: flex; justify-content: flex-end; }
+.rsOne { font-size: 0.78rem; padding: 3px 9px; }
 .advtop {
   display: flex;
   justify-content: space-between;
@@ -2373,6 +2398,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
     <section class="stage" aria-label="放送画面">
       <div class="tv" id="tv">
         <canvas id="cv"></canvas>
+        <div id="recLoad" role="status" aria-live="polite" hidden>地震のデータを取得中…</div>
         <div class="ov tick" id="tick" role="status" aria-live="polite" hidden><span class="tkl" id="tickLab">臨時情報</span><div class="tkw"><span class="tkt" id="tickTxt"></span></div></div>
         <div class="ov clock" id="clock"></div>
         <div class="ov yohou" id="yohou" hidden></div>
@@ -2537,7 +2563,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
       </div>
 
       <div class="pane" role="tabpanel" id="p-adv" aria-labelledby="tab-adv" hidden>
-        <div class="advtop"><p class="note">変更は次の「地震発生」から反映されます。揺れの計算の設定はプレビューにもすぐ反映されます。</p><button id="cfgReset">既定に戻す</button></div>
+        <div class="advtop"><label class="preset" for="cPreset"><span>全体設定</span><select id="cPreset"><option value="def">既定の設定（実際の運用に近い）</option><option value="cus">カスタム</option></select></label><p class="note">変更は次の「地震発生」から反映されます。揺れの計算の設定はプレビューにもすぐ反映されます。</p></div>
 
         <details class="grp" open><summary>よく使う設定<em class="chgN"></em><small>ばらつき・誤認・表示</small></summary><div class="grpb">
           <div class="opt"><div class="ctl"><label for="cSig">揺れのばらつき</label><select id="cSig"><option value="0">なし（平均値）</option><option value="0.3">標準（震度±0.3程度）</option><option value="0.5">大きい（震度±0.5程度）</option></select></div></div>
@@ -2550,11 +2576,11 @@ html, body { overflow-x: hidden; overflow-x: clip; }
         <div class="advsub">細かい設定</div>
 
         <details class="grp"><summary>揺れの計算<em class="chgN"></em><small>断層・強さ</small></summary><div class="grpb">
-          <div class="opt"><div class="ctl"><label for="cDip">断層の傾斜角</label><select id="cDip"><option value="">自動（タイプ別）</option><option>10</option><option>20</option><option>30</option><option>45</option><option>60</option><option>75</option><option>90</option></select></div></div>
-          <div class="opt"><div class="ctl"><label for="cRup">破壊の進み方</label><select id="cRup"><option value="bi">両側へ（震源が中央）</option><option value="fw">一方向（断層の向きへ）</option><option value="bw">一方向（逆向きへ）</option></select></div></div>
+          <div class="opt"><div class="ctl"><label for="cDip">断層の傾斜角</label><select id="cDip"><option value="">ランダム（既定）</option><option>10</option><option>20</option><option>30</option><option>45</option><option>60</option><option>75</option><option>90</option></select></div></div>
+          <div class="opt"><div class="ctl"><label for="cRup">破壊の進み方</label><select id="cRup"><option value="">ランダム（既定）</option><option value="bi">両側へ（震源が中央）</option><option value="fw">一方向（断層の向きへ）</option><option value="bw">一方向（逆向きへ）</option></select></div></div>
           <div class="opt"><div class="ctl"><label for="cBias">揺れの強さ補正</label><input id="cBias" type="range" min="-1" max="1" step="0.1"><output id="cBiaso"></output></div></div>
           <div class="opt"><div class="ctl"><label for="cArc">異常震域</label><select id="cArc"><option value="1">考慮する</option><option value="0">考慮しない</option></select></div></div>
-          <div class="btns"><button id="cSeed">ばらつきの分布を変える</button></div>
+          <div class="btns"><button id="cSeed">ばらつきの分布を変える</button><button id="cSeedRs" class="rsOne" data-id="cSeed" hidden>↺ 既定の分布に戻す</button></div>
         </div></details>
 
         <details class="grp"><summary>緊急地震速報<em class="chgN"></em><small>観測網・発表の基準</small></summary><div class="grpb">
@@ -3102,18 +3128,68 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const clamp01 = x => (x < 0 ? 0 : x > 1 ? 1 : x);
   const DIP = { crustal: 80, inter: 15, intra: 45 },
     WMAX = { crustal: 20, inter: 200, intra: 60 };
+  /* Version 244：断層の傾斜角・破壊の進み方の既定。
+     ・過去の地震・想定（プリセット・シナリオ・直近の地震、p.pre）は、その地震のデータの値（傾斜角が無ければタイプ別、破壊は無ければ両側）＝これまでと同じ
+     ・自分で置いた地震は「ランダム」：震源・規模・深さ・走向・タイプとばらつきの分布（cfg.seed）で決まる乱数（同じ地震ならプレビューと地震発生で同じ。
+       「ばらつきの分布を変える」で変わる）。傾斜角はタイプごとの範囲（内陸 35〜90°・プレート境界 10〜25°・プレート内 30〜70°、5°刻み）、
+       破壊の進み方は両側 40%・一方向（断層の向きへ）30%・一方向（逆向きへ）30%
+     ・詳細設定で選んだ値（p.dipU・p.rupU）はどちらよりも優先する。データの値（p.dip・p.rup・p.fwr）は書き換えない */
+  const DIP_RND = { crustal: [35, 90], inter: [10, 25], intra: [30, 70] };
+  function qRnd(p) {
+    const r = p._r;
+    if (r && r.lon === p.lon && r.lat === p.lat && r.depth === p.depth && r.M === p.M && r.strike === p.strike && r.type === p.type && r.seed === cfg.seed)
+      return r;
+    const s = [p.lon, p.lat, p.depth, p.M, p.strike, p.type, cfg.seed].join('|');
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    const nx = () => {
+      h ^= h << 13;
+      h ^= h >>> 17;
+      h ^= h << 5;
+      return (h >>> 0) / 4294967296;
+    };
+    nx();
+    const [a, b] = DIP_RND[p.type] || [30, 60],
+      u1 = nx(),
+      u2 = nx();
+    const o = {
+      lon: p.lon, lat: p.lat, depth: p.depth, M: p.M, strike: p.strike, type: p.type, seed: cfg.seed,
+      dip: Math.min(b, a + 5 * Math.floor(u1 * ((b - a) / 5 + 1))),
+      rup: u2 < 0.4 ? 'bi' : u2 < 0.7 ? 'fw' : 'bw'
+    };
+    Object.defineProperty(p, '_r', { value: o, writable: true, configurable: true, enumerable: false });
+    return o;
+  }
   function dipOf(p) {
-    return p.dip != null ? p.dip : DIP[p.type];
+    return p.dipU != null ? p.dipU : p.dip != null ? p.dip : p.pre || !(p.type in DIP_RND) ? DIP[p.type] : qRnd(p).dip;
+  }
+  function rupOf(p) {
+    return p.rupU || p.rup || (p.pre ? 'bi' : qRnd(p).rup);
+  }
+  /* 震源の前にある断層の割合（実際の地震だけ）。破壊の進み方を選んだら使わない */
+  function fwrOf(p) {
+    return p.rupU ? null : p.fwr;
+  }
+  /* 自分で震源・規模などを動かしたら、過去の地震・想定ではなくなる（断層の傾斜角・破壊の進み方・長さはランダムの既定に） */
+  function unPre(p) {
+    if (!p.pre) return;
+    p.pre = 0;
+    p.dip = p.rup = p.len = p.fwr = null;
   }
   /* 走向方向の断層の範囲（震源=0）。一方向破壊では震源が断層の端にくる */
   function sRange(p, L) {
     /* Version 237：震源の前（走向の向き）にある断層の割合 fwr を指定した地震（プリセット・シナリオの実際の地震） */
-    if (p.fwr != null) return [-(1 - p.fwr) * 2 * L, p.fwr * 2 * L];
-    return p.rup === 'fw' ? [-0.15 * L, 1.85 * L] : p.rup === 'bw' ? [-1.85 * L, 0.15 * L] : [-L, L];
+    const fw = fwrOf(p),
+      ru = rupOf(p);
+    if (fw != null) return [-(1 - fw) * 2 * L, fw * 2 * L];
+    return ru === 'fw' ? [-0.15 * L, 1.85 * L] : ru === 'bw' ? [-1.85 * L, 0.15 * L] : [-L, L];
   }
   /* 地震ごとに変わらない断層の形は1回だけ計算して使い回す（高速化） */
   function geo(p) {
-    const o = p._g;
+    const o = p._g,
+      dd = dipOf(p),
+      rr = rupOf(p),
+      ff = fwrOf(p);
     if (
       o &&
       o.lon === p.lon &&
@@ -3122,10 +3198,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       o.depth === p.depth &&
       o.strike === p.strike &&
       o.type === p.type &&
-      o.dip === p.dip &&
-      o.rup === p.rup &&
+      o.dip === dd &&
+      o.rup === rr &&
       o.len === p.len &&
-      o.fwr === p.fwr
+      o.fwr === ff
     )
       return o;
     const Lf = fLen(p),
@@ -3140,10 +3216,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       depth: p.depth,
       strike: p.strike,
       type: p.type,
-      dip: p.dip,
-      rup: p.rup,
+      dip: dd,
+      rup: rr,
       len: p.len,
-      fwr: p.fwr,
+      fwr: ff,
       kx: 111.32 * Math.cos(p.lat * D2R),
       ux: Math.sin(az),
       uy: Math.cos(az),
@@ -3703,7 +3779,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     type: 'crustal',
     dip: null,
     rup: 'bi',
-    dt: 0
+    dt: 0,
+    pre: 1 /* Version 244：最初の地震はプリセット「首都直下 M7.3」と同じ */
   };
   const EQS = [P];
   let selQ = 0;
@@ -6033,7 +6110,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     lockRun();
   }
   /* 地震発生中は、実行中のシミュレーションに反映されない設定（震源・計算・速報の設定）を動かせないようにする。表示の設定は変更可 */
-  const RUN_LOCK = ['m', 'd', 's', 'ty', 'cDip', 'cRup', 'cSig', 'cBias', 'cArc', 'cDelay', 'cGrow', 'cErr', 'cPlum', 'cWarn', 'cLpw', 'cArea', 'cDeep', 'cMis', 'cMag', 'cTsu', 'cExtra', 'cSeed', 'cfgReset'];
+  const RUN_LOCK = ['m', 'd', 's', 'ty', 'cDip', 'cRup', 'cSig', 'cBias', 'cArc', 'cDelay', 'cGrow', 'cErr', 'cPlum', 'cWarn', 'cLpw', 'cArea', 'cDeep', 'cMis', 'cMag', 'cTsu', 'cExtra', 'cSeed', 'cSeedRs', 'cPreset'];
   function lockRun() {
     const run = !!(sim && sim.running),
       tip = run ? '地震発生中は変更できません' : '';
@@ -6045,6 +6122,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     };
     RUN_LOCK.forEach(id => set($(id), run));
     document.querySelectorAll('#cNets button').forEach(b => set(b, run));
+    /* Version 243：項目ごとの「既定に戻す」も、地震発生中に変更できない項目は押せなくする */
+    document.querySelectorAll('#p-adv .rsRow .rsOne').forEach(b => set(b, run && (RUN_LOCK.includes(b.dataset.id) || b.dataset.id === 'cNets')));
+    /* Version 245：グループの設定は、地震発生中に変更できない項目だけのグループを押せなくする */
+    document.querySelectorAll('#p-adv .grpSet select').forEach(s => set(s, run && s.dataset.lock === '1'));
     /* 室内の揺れの再生中は建物・階を固定（再生中の揺れには反映されないため） */
     let rp = false;
     try {
@@ -6064,6 +6145,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       slip: null,
       obs: undefined,
       mw: null,
+      /* Version 244：追加した地震は自分で置いた地震（断層の傾斜角・破壊の進み方はランダムの既定。詳細設定で選んだ値は引き継ぐ） */
+      pre: 0,
+      dip: null,
+      rup: null,
+      len: null,
+      fwr: null,
       lon: +(P.lon + 0.6).toFixed(2),
       lat: +(P.lat - 0.3).toFixed(2),
       M: Math.max(2, +(P.M - 0.8).toFixed(1)),
@@ -6122,22 +6209,26 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     P.M = +mI.value;
     /* Version 237：規模を変えたら、実際の地震の断層の長さ・破壊の向きの指定は外す */
     P.len = P.fwr = null;
+    unPre(P);
     P.mw = null; /* Version 241：実際の地震のMwも外す */
     preview();
   };
   dI.oninput = () => {
     if (sim && sim.running) return syncUI();
     P.depth = +dI.value;
+    unPre(P);
     preview();
   };
   sI.oninput = () => {
     if (sim && sim.running) return syncUI();
     P.strike = +sI.value;
+    unPre(P);
     preview();
   };
   tyI.onchange = () => {
     if (sim && sim.running) return syncUI();
     P.type = tyI.value;
+    unPre(P);
     preview();
   };
   /* Version 241：mw＝気象庁CMT解のモーメントマグニチュード（実際の地震だけ。無い地震は eqMw の式）。熊本 Mw7.0、能登 Mw7.5、福島県沖2022 Mw7.3、小笠原 Mw7.9 */
@@ -6157,7 +6248,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     b.textContent = n;
     b.onclick = () => {
       if (sim) reset();
-      Object.assign(P, { dip: null, rup: 'bi', slip: null, obs: undefined, len: null, fwr: null, mw: null }, p);
+      Object.assign(P, { dip: null, rup: 'bi', slip: null, obs: undefined, len: null, fwr: null, mw: null, pre: 1, dipU: null, rupU: null }, p);
       syncCfgUI();
       preview();
     };
@@ -6249,7 +6340,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (sim) reset();
       EQS.length = 0;
       /* シナリオは実際の地震・想定のすべりの形に固定（slip の無い地震は一様。Version 183） */
-      list.forEach(p => EQS.push(Object.assign({ dip: null, rup: 'bi', slip: SLIP_U, mw: null }, p)));
+      list.forEach(p => EQS.push(Object.assign({ dip: null, rup: 'bi', slip: SLIP_U, mw: null, pre: 1 }, p)));
       selQ = 0;
       P = EQS[0];
       /* 過去の地震のシナリオは、室内の昼・夜を実際の発生時刻に（Version 190）。地震を変えたら今の時刻に戻る */
@@ -6262,12 +6353,61 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   });
   /* ===== Version 174・175: 直近の震度3以上の地震（新しい順に REC_N 件）。[v175] タップでその地震1つに置き換える（続けて再現は廃止）。
      出典: P2P地震情報 API（気象庁の地震情報）。アーティファクトは外部と通信できないので埋め込み、公開版（github.io）は開くたびに最新を取得 */
-  const REC_N = 3;
+  /* Version 246：3件→30件。月ごとに分けて表示（renderRec）。Version 247：50件。Version 248：公開版は押したときに各地の震度を取得 */
+  const REC_N = 50;
   /* [v186] 各地の観測震度（pts）と、USGS のモーメントテンソル解がある地震は断層の向き・傾斜（mt）も持つ */
+  /* [v246] 2026/11/19 取得（P2P地震情報 API の各地の震度に関する情報、震度3以上の新しい順30件。[v247] 50件に）。観測点ごとの震度（REC_OBS）は前の版からの3件だけ */
   let RECENT = [
+    { t: '2026/11/19 02:25', name: '熊本県天草・芦北地方', lat: 32.3, lon: 130.5, depth: 0, M: 3.5, mx: 30 },
+    { t: '2026/11/19 02:22', name: '熊本県天草・芦北地方', lat: 32.3, lon: 130.4, depth: 10, M: 5.7, mx: 45 },
+    { t: '2026/11/18 18:37', name: '日本海中部', lat: 38.8, lon: 137.9, depth: 10, M: 5.0, mx: 30 },
+    { t: '2026/11/18 02:54', name: '熊本県天草・芦北地方', lat: 32.4, lon: 130.5, depth: 0, M: 3.3, mx: 30 },
+    { t: '2026/11/15 06:17', name: '熊本県天草・芦北地方', lat: 32.4, lon: 130.5, depth: 10, M: 3.8, mx: 30 },
+    { t: '2026/11/15 00:05', name: '熊本県熊本地方', lat: 32.5, lon: 130.6, depth: 10, M: 3.9, mx: 30 },
     { t: '2026/11/13 10:52', name: '熊本県熊本地方', lat: 32.5, lon: 130.6, depth: 10, M: 4.0, mx: 30 },
     { t: '2026/11/09 13:52', name: '茨城県沖', lat: 36.2, lon: 142.2, depth: 10, M: 5.9, mx: 30, mt: { strike: 223, dip: 20, rake: 111, src: 'USGS' } },
-    { t: '2026/11/09 05:16', name: '宮城県沖', lat: 38.3, lon: 141.9, depth: 50, M: 4.5, mx: 30, mt: { strike: 157, dip: 20, rake: 50, src: 'USGS' } }
+    { t: '2026/11/09 05:16', name: '宮城県沖', lat: 38.3, lon: 141.9, depth: 50, M: 4.5, mx: 30, mt: { strike: 157, dip: 20, rake: 50, src: 'USGS' } },
+    { t: '2026/11/08 10:53', name: '熊本県天草・芦北地方', lat: 32.6, lon: 130.6, depth: 10, M: 4.3, mx: 40 },
+    { t: '2026/11/08 01:04', name: '静岡県西部', lat: 34.9, lon: 137.7, depth: 40, M: 5.7, mx: 50 },
+    { t: '2026/11/07 20:07', name: '茨城県沖', lat: 36.2, lon: 141.6, depth: 20, M: 5.6, mx: 30 },
+    { t: '2026/11/06 19:39', name: '関東東方沖', lat: 35.0, lon: 142.2, depth: 10, M: 6.1, mx: 30 },
+    { t: '2026/11/03 14:40', name: '千葉県北東部', lat: 35.7, lon: 140.6, depth: 50, M: 4.7, mx: 30 },
+    { t: '2026/11/01 07:15', name: '三重県南東沖', lat: 33.7, lon: 137.1, depth: 350, M: 6.1, mx: 30 },
+    { t: '2026/10/31 01:45', name: '熊本県熊本地方', lat: 32.7, lon: 130.7, depth: 10, M: 4.1, mx: 30 },
+    { t: '2026/10/29 00:07', name: '千葉県北東部', lat: 35.7, lon: 140.7, depth: 50, M: 5.4, mx: 45 },
+    { t: '2026/10/27 09:25', name: '福島県沖', lat: 37.4, lon: 141.5, depth: 60, M: 4.6, mx: 30 },
+    { t: '2026/10/26 23:34', name: '熊本県天草・芦北地方', lat: 32.2, lon: 130.4, depth: 0, M: 2.6, mx: 30 },
+    { t: '2026/10/25 11:10', name: '小笠原諸島西方沖', lat: 28.0, lon: 139.9, depth: 470, M: 7.0, mx: 30 },
+    { t: '2026/10/25 08:59', name: '日向灘', lat: 31.8, lon: 131.9, depth: 0, M: 5.3, mx: 30 },
+    { t: '2026/10/24 01:07', name: '岩手県沖', lat: 40.3, lon: 142.7, depth: 20, M: 5.0, mx: 30 },
+    { t: '2026/10/08 07:14', name: '茨城県北部', lat: 36.5, lon: 140.6, depth: 60, M: 4.0, mx: 30 },
+    { t: '2026/10/08 04:13', name: '千葉県北東部', lat: 35.7, lon: 140.7, depth: 50, M: 4.8, mx: 40 },
+    { t: '2026/10/02 17:39', name: '熊本県熊本地方', lat: 32.6, lon: 130.7, depth: 0, M: 3.1, mx: 30 },
+    { t: '2026/10/02 04:05', name: 'トカラ列島近海', lat: 29.9, lon: 130.0, depth: 10, M: 3.3, mx: 30 },
+    { t: '2026/10/01 21:27', name: '千葉県北東部', lat: 35.8, lon: 140.7, depth: 50, M: 5.1, mx: 30 },
+    { t: '2026/09/30 14:00', name: '与那国島近海', lat: 23.8, lon: 122.9, depth: 10, M: 6.0, mx: 30 },
+    { t: '2026/09/29 04:45', name: '茨城県南部', lat: 36.1, lon: 139.9, depth: 50, M: 4.9, mx: 40 },
+    { t: '2026/09/26 11:21', name: '熊本県熊本地方', lat: 32.8, lon: 130.8, depth: 10, M: 3.6, mx: 30 },
+    { t: '2026/09/26 10:31', name: '熊本県熊本地方', lat: 32.8, lon: 130.8, depth: 10, M: 4.5, mx: 40 },
+    { t: '2026/09/22 15:34', name: '茨城県南部', lat: 36.2, lon: 140.0, depth: 50, M: 3.9, mx: 30 },
+    { t: '2026/09/22 01:39', name: '熊本県熊本地方', lat: 32.6, lon: 130.7, depth: 0, M: 3.5, mx: 30 },
+    { t: '2026/09/21 22:38', name: '日向灘', lat: 32.6, lon: 132.1, depth: 30, M: 4.8, mx: 30 },
+    { t: '2026/09/20 16:28', name: '奄美大島近海', lat: 28.5, lon: 129.4, depth: 60, M: 5.0, mx: 30 },
+    { t: '2026/09/19 21:07', name: '天草灘', lat: 32.3, lon: 129.7, depth: 10, M: 4.4, mx: 30 },
+    { t: '2026/09/17 00:07', name: '茨城県南部', lat: 36.1, lon: 140.1, depth: 70, M: 4.8, mx: 30 },
+    { t: '2026/09/16 06:09', name: '熊本県天草・芦北地方', lat: 32.2, lon: 130.4, depth: 10, M: 4.0, mx: 40 },
+    { t: '2026/09/14 19:36', name: '熊本県熊本地方', lat: 32.4, lon: 130.6, depth: 0, M: 4.0, mx: 30 },
+    { t: '2026/09/13 17:31', name: '津軽海峡', lat: 41.5, lon: 141.3, depth: 120, M: 4.5, mx: 30 },
+    { t: '2026/09/10 18:55', name: '福島県会津', lat: 37.0, lon: 139.4, depth: 0, M: 3.2, mx: 30 },
+    { t: '2026/09/07 23:21', name: '熊本県熊本地方', lat: 32.5, lon: 130.6, depth: 10, M: 3.8, mx: 30 },
+    { t: '2026/09/02 17:23', name: '和歌山県北部', lat: 34.1, lon: 135.3, depth: 10, M: 3.3, mx: 30 },
+    { t: '2026/08/30 00:17', name: '千葉県東方沖', lat: 35.8, lon: 140.9, depth: 30, M: 4.8, mx: 40 },
+    { t: '2026/08/28 04:54', name: '青森県東方沖', lat: 40.6, lon: 142.3, depth: 50, M: 4.6, mx: 30 },
+    { t: '2026/08/27 04:26', name: '熊本県天草・芦北地方', lat: 32.5, lon: 130.5, depth: 10, M: 3.8, mx: 30 },
+    { t: '2026/08/25 18:07', name: '根室半島南東沖', lat: 43.1, lon: 145.7, depth: 80, M: 4.8, mx: 30 },
+    { t: '2026/08/24 04:05', name: '熊本県熊本地方', lat: 32.6, lon: 130.6, depth: 10, M: 3.9, mx: 30 },
+    { t: '2026/08/23 22:45', name: '浦河沖', lat: 41.8, lon: 142.9, depth: 40, M: 6.0, mx: 40 },
+    { t: '2026/08/23 02:00', name: '茨城県南部', lat: 36.0, lon: 140.1, depth: 70, M: 5.9, mx: 45 }
   ];
   /* 気象庁の観測点ごとの震度（P2P地震情報 API、2026/11/13 取得）。「都道府県 震度コード: 観測点,…」 */
   const REC_OBS = {
@@ -6276,7 +6416,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     "2026/11/09 05:16": "岩手県 30: 一関市千厩町,一関市室根町\n岩手県 20: 一関市大東町,一関市花泉町,一関市東山町,一関市藤沢町,北上市相去町,奥州市前沢,奥州市衣川,平泉町平泉,大船渡市大船渡町,大船渡市猪川町,陸前高田市高田町,釜石市只越町,釜石市中妻町,住田町世田米\n岩手県 10: 一関市竹山町,一関市川崎町,北上市柳原町,奥州市水沢大鐘町,奥州市水沢佐倉河,奥州市江刺,奥州市胆沢,花巻市大迫町,花巻市石鳥谷町,花巻市大迫総合支所,花巻市材木町,花巻市東和町,遠野市青笹町,西和賀町沢内川舟,金ケ崎町西根,大船渡市盛町,大槌町上町,宮古市鍬ヶ崎,宮古市長沢,宮古市五月町,宮古市川井,宮古市区界,宮古市田老,宮古市茂市,久慈市枝成沢,山田町八幡町,山田町大沢,盛岡市山王町,盛岡市馬場町,盛岡市薮川,盛岡市渋民,八幡平市田頭,矢巾町南矢幅\n宮城県 30: 気仙沼市笹が陣,石巻市北上町\n宮城県 20: 気仙沼市赤岩,気仙沼市本吉町西川内,気仙沼市唐桑町,登米市中田町,登米市東和町,登米市豊里町,登米市南方町,登米市迫町,登米市津山町,栗原市栗駒,栗原市金成,栗原市若柳,大崎市古川大崎,大崎市田尻,涌谷町新町裏,宮城美里町北浦,南三陸町歌津,石巻市泉町,石巻市鮎川浜,石巻市大街道南,石巻市桃生町,石巻市雄勝町,東松島市小野,東松島市矢本,女川町女川,名取市増田,柴田町船岡,宮城川崎町前川,亘理町悠里\n宮城県 10: 気仙沼市本吉町津谷,登米市登米町,登米市石越町,登米市米山町,栗原市築館,栗原市鶯沢,栗原市花山,栗原市瀬峰,栗原市志波姫,栗原市高清水,栗原市一迫,大崎市古川三日町,大崎市鳴子,大崎市古川旭,大崎市松山,大崎市鹿島台,宮城美里町木間塚,南三陸町志津川,色麻町四竈,宮城加美町中新田,石巻市大瓜,石巻市相野谷,石巻市前谷地,仙台青葉区大倉,仙台青葉区作並,仙台青葉区落合,仙台宮城野区五輪,仙台宮城野区苦竹,仙台若林区遠見塚,仙台泉区将監,塩竈市今宮町,多賀城市中央,松島町高城,七ヶ浜町東宮浜,利府町利府,大和町吉岡,大郷町粕川,大衡村大衡,仙台空港,白石市亘理町,角田市角田,岩沼市桜,蔵王町円田,大河原町新南,村田町村田,山元町浅生原\n福島県 20: 相馬市中村,飯舘村伊丹沢\n福島県 10: いわき市三和町,南相馬市原町区三島町,南相馬市鹿島区栃窪,南相馬市原町区高見町,南相馬市鹿島区西町,楢葉町北田,富岡町本岡,川内村下川内,大熊町大川原,双葉町長塚,浪江町幾世橋,葛尾村落合落合,新地町谷地小屋,福島市花園町,福島市桜木町,福島市五老内町,白河市新白河,須賀川市岩瀬支所,二本松市金色,二本松市油井,二本松市針道,田村市船引町,田村市大越町,田村市常葉町,田村市都路町,田村市滝根町,福島伊達市梁川町,福島伊達市保原町,福島伊達市月舘町,福島伊達市前川原,福島伊達市霊山町,本宮市本宮,国見町藤田,川俣町五百田,天栄村下松本,玉川村小高,小野町中通,小野町小野新町\n青森県 10: 八戸市湊町,八戸市南郷,五戸町古舘,青森南部町苫米地,階上町道仏\n秋田県 10: 大仙市高梨"
   };
   RECENT.forEach(r => (r.pts = obsParse(REC_OBS[r.t])));
-  let recAt = '2026/11/13 時点';
+  let recAt = '2026/11/19 時点';
   let recCur = -1;
   const REC_SC = { 10: '1', 20: '2', 30: '3', 40: '4', 45: '5弱', 50: '5強', 55: '6弱', 60: '6強', 70: '7' };
   const REC_DIPS = [10, 20, 30, 45, 60, 75, 90];
@@ -6295,11 +6435,43 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     obsReg(r);
     return { lon: r.lon, lat: r.lat, depth: r.depth, M: r.M, strike, type, dip, obs: r.pts && r.pts.length ? r.t : undefined };
   }
+  /* [v246] 月ごとの開閉の状態（'2026/11' → true/false）。触っていない月は、いちばん新しい月と選んだ地震の月だけ開く */
+  const recOpen = new Map();
+  let recTok = 0;
   function renderRec() {
     const L = $('recl');
     L.innerHTML = '';
-    $('recAt').textContent = recAt + '・震度は実際の観測に合わせて補正';
+    const noObs = r => !(r.pts && r.pts.length) && !(r.live && !r.tried);
+    const hasNo = RECENT.some(noObs);
+    $('recAt').textContent =
+      recAt + '・' + RECENT.length + '件・' + (RECENT.some(r => r.live) ? 'タップで各地の震度を取得して補正' : '震度は実際の観測に合わせて補正') + (hasNo ? '（「観測なし」は補正なし）' : '');
+    let grp = null,
+      gk = '';
+    const curK = recCur >= 0 && RECENT[recCur] ? RECENT[recCur].t.slice(0, 7) : '';
     RECENT.forEach((r, i) => {
+      const k = r.t.slice(0, 7);
+      if (k !== gk) {
+        gk = k;
+        const d = document.createElement('details');
+        d.className = 'recm';
+        d.open = recOpen.has(k) ? recOpen.get(k) : !grp || k === curK;
+        const sm = document.createElement('summary'),
+          bb = document.createElement('b');
+        bb.textContent = +k.slice(0, 4) + '年' + +k.slice(5, 7) + '月';
+        sm.appendChild(bb);
+        sm.appendChild(document.createTextNode(RECENT.filter(x => x.t.slice(0, 7) === k).length + '件'));
+        d.appendChild(sm);
+        grp = document.createElement('div');
+        grp.className = 'recmb';
+        d.appendChild(grp);
+        /* 作るときに開いた分の toggle（非同期に1回来る）は数えず、利用者が開閉したときだけ覚える */
+        let skip = d.open;
+        d.addEventListener('toggle', () => {
+          if (skip) skip = false;
+          else recOpen.set(k, d.open);
+        });
+        L.appendChild(d);
+      }
       const b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('aria-pressed', recCur === i);
@@ -6309,11 +6481,27 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         it.textContent = x;
         b.querySelector('span').appendChild(it);
       });
+      if (noObs(r)) {
+        const it = document.createElement('i');
+        it.className = 'noobs';
+        it.textContent = '観測なし';
+        b.querySelector('span').appendChild(it);
+      }
       b.querySelector('small').textContent = r.t.slice(5).replace('/', '月').replace(' ', '日 ');
-      b.onclick = () => {
+      b.onclick = async () => {
+        /* [v248] 公開版：各地の震度と発震機構は、その地震を押したときに取得（地図の中央に「取得中」） */
+        const tk = ++recTok,
+          need = r.live && !r.got;
+        $('recLoad').hidden = !need;
+        if (need) {
+          await recFetch(r);
+          r.tried = true;
+          if (tk !== recTok) return;
+          $('recLoad').hidden = true;
+        }
         if (sim) reset();
         EQS.length = 0;
-        EQS.push(Object.assign({ rup: 'bi' }, recQuake(r), { dt: 0 }));
+        EQS.push(Object.assign({ rup: 'bi', pre: 1 }, recQuake(r), { dt: 0 }));
         selQ = 0;
         P = EQS[0];
         recCur = i;
@@ -6321,14 +6509,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         preview();
         renderRec();
       };
-      L.appendChild(b);
+      grp.appendChild(b);
     });
   }
   /* ===== Version 213：新しい版のお知らせ =====
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 242;
+  const APP_VERSION = 248;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -6353,50 +6541,78 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       })
       .catch(() => {});
   renderRec();
-  if (/\.github\.io$/.test(location.hostname) && window.fetch)
-    fetch('https://api.p2pquake.net/v2/history?codes=551&limit=100')
-      .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(js => {
+  /* [v248] 公開版の一覧は軽いデータだけ：震源に関する情報（Destination）の震源と、震度速報（ScalePrompt）の最大震度を発生時刻で結ぶ。
+     各地の震度（DetailScale）と USGS の発震機構は、その地震を押したときに recFetch で取る */
+  const REC_LIVE = /\.github\.io$/.test(location.hostname) && !!window.fetch;
+  const P2PQ = 'https://api.p2pquake.net/v2/jma/quake?order=-1&';
+  const recJson = u => fetch(u).then(r => (r.ok ? r.json() : Promise.reject()));
+  if (REC_LIVE)
+    Promise.all([recJson(P2PQ + 'limit=70&quake_type=Destination'), recJson(P2PQ + 'limit=100&quake_type=ScalePrompt&min_scale=30')])
+      .then(([ds, sp]) => {
+        const mx = new Map();
+        for (const it of sp || []) {
+          const q = it && it.earthquake,
+            t = String((q && q.time) || '').slice(0, 16);
+          if (q && q.maxScale >= 30 && !(mx.get(t) >= q.maxScale)) mx.set(t, q.maxScale);
+        }
         const out = [],
-          seen = new Map();
-        for (const it of js || []) {
+          seen = new Set();
+        for (const it of ds || []) {
           const q = it && it.earthquake,
             h = q && q.hypocenter;
-          if (!h || !(q.maxScale >= 30) || !(h.magnitude >= 2) || !(h.depth >= 0) || !(h.latitude > 20 && h.latitude < 50) || !(h.longitude > 120 && h.longitude < 155)) continue;
+          if (!h || !(h.magnitude >= 2) || !(h.depth >= 0) || !(h.latitude > 20 && h.latitude < 50) || !(h.longitude > 120 && h.longitude < 155)) continue;
           const t = String(q.time || '').slice(0, 16);
-          if (!/^\d{4}\/\d\d\/\d\d \d\d:\d\d$/.test(t)) continue;
-          /* 観測点ごとの震度：同じ地震の報のうち観測点の最も多いもの（各地の震度に関する情報） */
-          const pts = (it.points || []).filter(p => p && !p.isArea && OBS_RNG[p.scale]).map(p => [String(p.pref || ''), String(p.addr || ''), p.scale]);
-          if (seen.has(t)) {
-            const o = seen.get(t);
-            if (pts.length > o.pts.length) o.pts = pts;
-            continue;
-          }
-          if (out.length >= REC_N) continue;
-          const r = { t, name: String(h.name || ''), lat: +h.latitude, lon: +h.longitude, depth: Math.min(700, Math.round(h.depth)), M: Math.min(10, +h.magnitude), mx: q.maxScale, pts };
-          seen.set(t, r);
-          out.push(r);
+          if (!/^\d{4}\/\d\d\/\d\d \d\d:\d\d$/.test(t) || seen.has(t) || !mx.has(t)) continue;
+          seen.add(t);
+          out.push({ t, name: String(h.name || ''), lat: +h.latitude, lon: +h.longitude, depth: Math.min(700, Math.round(h.depth)), M: Math.min(10, +h.magnitude), mx: mx.get(t), live: true });
+          if (out.length >= REC_N) break;
         }
         if (!out.length) return;
         RECENT = out;
         recCur = -1;
+        recOpen.clear();
         const d = new Date();
         recAt = '最新（' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0') + ' 取得）';
         renderRec();
-        out.forEach(recMT);
       })
       .catch(() => {});
+  /* その地震の各地の震度（その日の「各地の震度に関する情報」から同じ発生時刻で観測点の最も多いもの）と発震機構を取る。
+     最長15秒待つ。取れなかった分は補正なし（次に押したときにもう一度取る） */
+  function recFetch(r) {
+    const ymd = r.t.slice(0, 10).replace(/\//g, '');
+    const det = recJson(P2PQ + 'limit=100&quake_type=DetailScale&min_scale=10&since_date=' + ymd + '&until_date=' + ymd)
+      .then(js => {
+        let best = null;
+        for (const it of js || []) {
+          const q = it && it.earthquake;
+          if (!q || String(q.time || '').slice(0, 16) !== r.t) continue;
+          const pts = (it.points || []).filter(p => p && !p.isArea && OBS_RNG[p.scale]).map(p => [String(p.pref || ''), String(p.addr || ''), p.scale]);
+          if (!best || pts.length > best.pts.length) best = { q, pts };
+        }
+        if (!best || !best.pts.length) return;
+        const h = best.q.hypocenter;
+        /* 震源・M は各地の震度に関する情報（最終の値）に合わせる */
+        if (h && h.magnitude >= 2 && h.depth >= 0 && h.latitude > 20 && h.longitude > 120) Object.assign(r, { lat: +h.latitude, lon: +h.longitude, depth: Math.min(700, Math.round(h.depth)), M: Math.min(10, +h.magnitude) });
+        if (best.q.maxScale >= 10) r.mx = best.q.maxScale;
+        r.pts = best.pts;
+        r.got = true;
+      })
+      .catch(() => {});
+    const to = new Promise(ok => setTimeout(ok, 15000));
+    return Promise.race([Promise.all([det, r.mtTried ? null : recMT(r)]), to]);
+  }
   /* 公開版：USGS のモーメントテンソル解（あれば）を取得して断層の向き・傾斜に使う（Version 186）。
      発生時刻（日本時間）の前後3分・震央から200km以内で、Mが近い地震 */
   function recMT(r) {
     const m = r.t.match(/^(\d{4})\/(\d\d)\/(\d\d) (\d\d):(\d\d)$/);
-    if (!m || !window.fetch) return;
+    if (!m || !window.fetch) return Promise.resolve();
+    r.mtTried = true;
     const t0 = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]),
       iso = x => new Date(x).toISOString().slice(0, 19);
     const u =
       'https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&producttype=moment-tensor&starttime=' +
       iso(t0 - 180000) + '&endtime=' + iso(t0 + 240000) + '&latitude=' + r.lat + '&longitude=' + r.lon + '&maxradiuskm=200&minmagnitude=' + Math.max(2, r.M - 1.3);
-    fetch(u)
+    return fetch(u)
       .then(x => (x.ok ? x.json() : Promise.reject()))
       .then(js => {
         const f = (js.features || []).sort((a, b) => Math.abs(a.properties.time - t0 - 30000) - Math.abs(b.properties.time - t0 - 30000))[0];
@@ -6411,7 +6627,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         /* 2つの節面のうち、逆断層なら傾斜の緩い方、それ以外は1つ目 */
         const rev = pl[0].rake > 30 && pl[0].rake < 150;
         r.mt = Object.assign(rev && pl[1].dip < pl[0].dip ? pl[1] : pl[0], { src: 'USGS' });
-        renderRec();
       })
       .catch(() => {});
   }
@@ -7498,7 +7713,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function* computeTsunamiG(P, qual) {
     P = P || EQS[0];
     if (!COAST.length) return null;
-    const k = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, P.dip, P.rup, !!qual, slipKey(P)].join();
+    const k = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, dipOf(P), rupOf(P), !!qual, slipKey(P)].join();
     let r = tsuMemo.get(k);
     /* Version 238：古い結果は経路の配列（geo、約2.7MB）を手放した軽い複製で持つ。経路がまだ残っていれば付け直し、無ければ計算し直す */
     if (r && r.slim) {
@@ -7578,7 +7793,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function tsuSource(P) {
     const Lf = faultLen(P.M),
       L = Lf / 2,
-      sr = sRange({ rup: P.rup }, L),
+      sr = sRange({ rup: rupOf(P) }, L),
       Wd = Math.min(Lf / 2, WMAX[P.type]),
       dipd = dipOf(P),
       dip = dipd * D2R,
@@ -7734,7 +7949,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function* computeTsunami0G(P, qual) {
     const Lf = faultLen(P.M),
       L = Lf / 2,
-      sr = sRange({ rup: P.rup }, L),
+      sr = sRange({ rup: rupOf(P) }, L),
       Wd = Math.min(Lf / 2, WMAX[P.type]),
       Wh = (Wd * Math.cos(dipOf(P) * D2R)) / 2,
       az = P.strike * D2R,
@@ -7764,7 +7979,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     seaEnsure();
     /* 波源と海の上の最短距離は震源・規模・断層の向きだけで決まるので、同じ地震なら使い回す（Version 131。
        M8超は「巨大・高い」の第1報と数値の続報で2回計算するため、続報のときの一瞬の引っかかりがなくなる） */
-    const gk = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, P.dip, P.rup, slipKey(P)].join();
+    const gk = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, dipOf(P), rupOf(P), slipKey(P)].join();
     let GS = tsuGeo.get(gk);
     if (!GS) {
       const S0 = tsuSource(P);
@@ -8249,6 +8464,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       } else if (!sim) {
         P.lon = +(X / K).toFixed(2);
         P.lat = +(-Y).toFixed(2);
+        unPre(P);
         preview();
       }
     }
@@ -9131,7 +9347,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      一方向破壊は、短い側が端（0.15L）で止まり、長い側だけが伸びる */
   function rupLenAt(q, t) {
     const d = VR * Math.max(0, t);
-    if (q.rup !== 'fw' && q.rup !== 'bw' && q.fwr == null) return 2 * d;
+    const ru = rupOf(q);
+    if (ru !== 'fw' && ru !== 'bw' && fwrOf(q) == null) return 2 * d;
     const sr = sRange(q, fLen(q) / 2);
     return Math.min(-sr[0], sr[1], d) + d;
   }
@@ -23019,8 +23236,19 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     $('cNets').appendChild(b);
   });
   function syncCfgUI() {
-    $('cDip').value = P.dip == null ? '' : String(P.dip);
-    $('cRup').value = P.rup;
+    /* Version 244：既定の選択肢の文字は地震ごと（過去の地震・想定はその地震の値、自分で置いた地震はランダムで決まった値） */
+    {
+      const RN = { bi: '両側へ', fw: '一方向（断層の向きへ）', bw: '一方向（逆向きへ）' },
+        dB = P.pre ? (P.dip != null ? P.dip : DIP[P.type]) : null,
+        rB = P.pre ? P.rup || 'bi' : null;
+      const sv = Object.assign({}, P, { dipU: null, rupU: null });
+      $('cDip').options[0].textContent = P.pre ? '既定（この地震：' + dB + '°）' : 'ランダム（既定・今は' + dipOf(sv) + '°）';
+      $('cRup').options[0].textContent = P.pre
+        ? '既定（この地震：' + (P.fwr != null ? '実際の破壊の向き' : RN[rB]) + '）'
+        : 'ランダム（既定・今は' + RN[rupOf(sv)] + '）';
+    }
+    $('cDip').value = P.dipU == null ? '' : String(P.dipU);
+    $('cRup').value = P.rupU || '';
     $('cSig').value = String(cfg.sigma);
     $('cBias').value = cfg.bias;
     $('cBiaso').textContent = (cfg.bias > 0 ? '+' : '') + cfg.bias.toFixed(1);
@@ -23055,7 +23283,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function markCfg() {
     const d = CFG0,
       ch = {
-        cDip: P.dip != null, cRup: P.rup !== 'bi', cSig: cfg.sigma !== d.sigma, cBias: cfg.bias !== d.bias,
+        cDip: P.dipU != null, cRup: P.rupU != null, cSig: cfg.sigma !== d.sigma, cBias: cfg.bias !== d.bias,
         cArc: cfg.arc !== d.arc, cNets: cfg.net.some((v, i) => v !== d.net[i]), cDelay: cfg.delay !== d.delay,
         cGrow: cfg.grow !== d.grow, cErr: cfg.err !== d.err, cPlum: cfg.plum !== d.plum, cWarn: cfg.warnTh !== d.warnTh,
         cLpw: cfg.lpw !== d.lpw, cArea: cfg.areaTh !== d.areaTh, cDeep: cfg.deep !== d.deep, cMis: cfg.mis !== d.mis,
@@ -23066,10 +23294,27 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const o = $(id).closest('.opt');
       if (o) o.classList.toggle('chg', ch[id]);
     }
+    /* Version 243：すべて既定値なら「既定の設定」、1つでも変えていれば「カスタム（○項目変更）」。ばらつきの分布（cfg.seed）も数える（「揺れの計算」の見出しにも） */
+    const sd = cfg.seed !== d.seed;
     document.querySelectorAll('#p-adv details.grp').forEach(g => {
-      const n = g.querySelectorAll('.opt.chg').length;
+      const n = g.querySelectorAll('.opt.chg').length + (sd && g.contains($('cSeed')) ? 1 : 0);
       g.querySelector('.chgN').textContent = n ? n + '項目変更' : '';
+      /* Version 245：グループごとの「既定の設定／カスタム（○項目変更）」 */
+      const gs = g.querySelector('.grpSet select');
+      if (gs) {
+        gs.options[1].textContent = n ? 'カスタム（' + n + '項目変更）' : 'カスタム';
+        gs.options[1].disabled = !n;
+        gs.value = n ? 'cus' : 'def';
+      }
     });
+    /* Version 244：項目ごとの「既定に戻す」の既定値の表示（断層の傾斜角・破壊の進み方は地震ごとに変わる） */
+    document.querySelectorAll('#p-adv .rsRow .rsOne').forEach(b => b._txt && (b.textContent = '↺ 既定に戻す（' + b._txt() + '）'));
+    const nAll = Object.values(ch).filter(Boolean).length + (sd ? 1 : 0),
+      ps = $('cPreset');
+    $('cSeedRs').hidden = !sd;
+    ps.options[1].textContent = nAll ? 'カスタム（' + nAll + '項目変更）' : 'カスタム';
+    ps.options[1].disabled = !nAll;
+    ps.value = nAll ? 'cus' : 'def';
   }
   function onCfg(id, ev, fn, truth) {
     $(id)[ev] = () => {
@@ -23081,8 +23326,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       dirty = true;
     };
   }
-  onCfg('cDip', 'onchange', v => (P.dip = v === '' ? null : +v), true);
-  onCfg('cRup', 'onchange', v => ((P.fwr = null), (P.rup = v)), true);
+  onCfg('cDip', 'onchange', v => (P.dipU = v === '' ? null : +v), true);
+  onCfg('cRup', 'onchange', v => (P.rupU = v || null), true);
   onCfg('cSig', 'onchange', v => (cfg.sigma = +v), true);
   onCfg('cBias', 'oninput', v => (cfg.bias = +v), true);
   onCfg('cDelay', 'oninput', v => (cfg.delay = +v));
@@ -23107,18 +23352,114 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   $('cSeed').onclick = () => {
     cfg.seed = (cfg.seed % 9973) + 1;
     saveCfg();
+    markCfg() /* Version 243：「既定の設定／カスタム」の表示を更新 */;
     if (!sim) preview();
   };
-  $('cfgReset').onclick = () => {
+  /* Version 243：「既定の設定」（v242 までに実際の観測・気象庁の運用に合わせてきた既定値 CFG0）を選ぶと、すべての項目を既定値に戻す（以前の「既定に戻す」ボタンと同じ） */
+  $('cPreset').onchange = () => {
+    if ($('cPreset').value !== 'def' || (sim && sim.running)) return syncCfgUI();
     Object.assign(cfg, JSON.parse(JSON.stringify(CFG0)));
-    P.dip = null;
-    P.rup = 'bi';
-    P.fwr = null;
+    P.dipU = P.rupU = null;
     saveCfg();
     syncCfgUI();
     if (!sim) preview();
     dirty = true;
   };
+  /* Version 243：項目ごとの「既定に戻す」。[戻す処理, プレビューを描き直すか, 既定値の表示] */
+  const optTxt = (id, v) => {
+    const o = Array.from($(id).options).find(x => x.value === String(v));
+    return o ? o.textContent : String(v);
+  };
+  const b01 = v => (v ? '1' : '0');
+  /* Version 244：断層の傾斜角・破壊の進み方の既定値の表示（「既定（この地震：…）」→「この地震：…」、「ランダム（既定・今は…）」→「ランダム・今は…」） */
+  const defQTxt = id => optTxt(id, '').replace(/^既定（(.*)）$/, '$1').replace(/^ランダム（既定・(.*)）$/, 'ランダム・$1');
+  const RS_ONE = {
+    cDip: [() => (P.dipU = null), true, () => defQTxt('cDip')],
+    cRup: [() => (P.rupU = null), true, () => defQTxt('cRup')],
+    cSig: [() => (cfg.sigma = CFG0.sigma), true, () => optTxt('cSig', CFG0.sigma)],
+    cBias: [() => (cfg.bias = CFG0.bias), true, () => (CFG0.bias > 0 ? '+' : '') + CFG0.bias.toFixed(1)],
+    cArc: [() => (cfg.arc = CFG0.arc), true, () => optTxt('cArc', b01(CFG0.arc))],
+    cNets: [() => cfg.net.splice(0, cfg.net.length, ...CFG0.net), false, () => NETS.filter((n, i) => CFG0.net[i]).join('・')],
+    cDelay: [() => (cfg.delay = CFG0.delay), false, () => CFG0.delay.toFixed(1) + '秒'],
+    cGrow: [() => (cfg.grow = CFG0.grow), false, () => optTxt('cGrow', CFG0.grow)],
+    cErr: [() => (cfg.err = CFG0.err), false, () => CFG0.err + 'km'],
+    cPlum: [() => (cfg.plum = CFG0.plum), false, () => optTxt('cPlum', b01(CFG0.plum))],
+    cWarn: [() => (cfg.warnTh = CFG0.warnTh), false, () => optTxt('cWarn', CFG0.warnTh)],
+    cLpw: [() => (cfg.lpw = CFG0.lpw), true, () => optTxt('cLpw', b01(CFG0.lpw))],
+    cArea: [() => (cfg.areaTh = CFG0.areaTh), false, () => optTxt('cArea', CFG0.areaTh)],
+    cDeep: [() => (cfg.deep = CFG0.deep), false, () => optTxt('cDeep', b01(CFG0.deep))],
+    cMis: [() => (cfg.mis = CFG0.mis), false, () => optTxt('cMis', CFG0.mis)],
+    cStyle: [() => (cfg.style = CFG0.style), false, () => optTxt('cStyle', CFG0.style)],
+    cMag: [() => (cfg.mag = CFG0.mag), false, () => optTxt('cMag', CFG0.mag)],
+    cRt: [() => (cfg.rt = CFG0.rt), false, () => optTxt('cRt', CFG0.rt)],
+    cTsu: [() => (cfg.tsu = CFG0.tsu), true, () => optTxt('cTsu', b01(CFG0.tsu))],
+    cZoom: [() => (cfg.zoom = CFG0.zoom), false, () => optTxt('cZoom', b01(CFG0.zoom))],
+    cWave: [() => (cfg.waves = CFG0.waves), false, () => optTxt('cWave', b01(CFG0.waves))],
+    cWaveKeep: [() => (cfg.wavesKeep = CFG0.wavesKeep), false, () => optTxt('cWaveKeep', b01(CFG0.wavesKeep))],
+    cExtra: [() => (cfg.extra = CFG0.extra), false, () => (CFG0.extra ? '+' + CFG0.extra + '秒' : 'なし')]
+  };
+  const rsDo = (id, fn, tr) => {
+    if (sim && sim.running && (RUN_LOCK.includes(id) || id === 'cNets')) return syncCfgUI();
+    fn();
+    saveCfg();
+    syncCfgUI();
+    if (tr && !sim) preview();
+    dirty = true;
+  };
+  for (const id in RS_ONE) {
+    const [fn, tr, txt] = RS_ONE[id],
+      o = $(id).closest('.opt');
+    if (!o) continue;
+    const row = document.createElement('div'),
+      b = document.createElement('button');
+    row.className = 'rsRow';
+    b.type = 'button';
+    b.className = 'rsOne';
+    b.dataset.id = id;
+    b._txt = txt;
+    b.textContent = '↺ 既定に戻す（' + txt() + '）';
+    b.onclick = () => rsDo(id, fn, tr);
+    row.appendChild(b);
+    o.appendChild(row);
+  }
+  $('cSeedRs').onclick = () => rsDo('cSeed', () => (cfg.seed = CFG0.seed), true);
+  /* Version 245：グループ（よく使う設定・揺れの計算・緊急地震速報・表示）ごとに「既定の設定／カスタム」を選べる。
+     「既定の設定」を選ぶと、そのグループの変えた項目だけを既定値に戻す（上の「全体設定」は全部を一括で） */
+  document.querySelectorAll('#p-adv details.grp').forEach(g => {
+    const b = g.querySelector('.grpb'),
+      w = document.createElement('label'),
+      s = document.createElement('select');
+    w.className = 'grpSet';
+    w.innerHTML = '<span>この項目の設定</span>';
+    s.innerHTML = '<option value="def">既定の設定</option><option value="cus">カスタム</option>';
+    s.setAttribute('aria-label', g.querySelector('summary').firstChild.textContent + 'の設定');
+    const ids = [...g.querySelectorAll('.rsOne')].map(x => x.dataset.id);
+    /* 地震発生中は、変えられる項目（表示など）だけを既定に戻す。全部が変えられない項目のグループは押せなくする */
+    s.dataset.lock = ids.every(id => RUN_LOCK.includes(id) || id === 'cNets') ? '1' : '0';
+    s.onchange = () => {
+      if (s.value !== 'def') return syncCfgUI();
+      const run = sim && sim.running;
+      let tr = false;
+      g.querySelectorAll('.opt.chg .rsOne, #cSeedRs:not([hidden])').forEach(x => {
+        const id = x.dataset.id;
+        if (run && (RUN_LOCK.includes(id) || id === 'cNets')) return;
+        if (id === 'cSeed') {
+          cfg.seed = CFG0.seed;
+          tr = true;
+        } else if (RS_ONE[id]) {
+          RS_ONE[id][0]();
+          tr = tr || RS_ONE[id][1];
+        }
+      });
+      saveCfg();
+      syncCfgUI();
+      if (tr && !sim) preview();
+      dirty = true;
+    };
+    w.appendChild(s);
+    b.insertBefore(w, b.firstChild);
+  });
+  lockRun();
   syncCfgUI();
 
   /* ---------- 設定のシェア（URLの#に設定を埋め込む） ----------
@@ -23159,7 +23500,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   function packShare() {
     const ty = optVals('ty'),
-      rup = optVals('cRup');
+      rup = ['bi', 'fw', 'bw'];
     const c = {};
     for (const k in CFG0) if (JSON.stringify(cfg[k]) !== JSON.stringify(CFG0[k])) c[k] = cfg[k];
     return {
@@ -23174,6 +23515,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           while (a.length < 11) a.push(0);
           a.push(q.mw);
         }
+        /* Version 244：a[12]＝[過去の地震・想定か（1/0）, 選んだ傾斜角（無ければ -1）, 選んだ破壊の進み方（無ければ -1）]。
+           a[12] の無い（以前の）リンクは過去の地震・想定として読む（以前と同じ結果） */
+        while (a.length < 11) a.push(0);
+        if (a.length < 12) a.push(null);
+        a.push([q.pre ? 1 : 0, q.dipU != null ? q.dipU : -1, q.rupU ? rup.indexOf(q.rupU) : -1]);
         return a;
       }),
       c,
@@ -23214,12 +23560,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function applyShare(o) {
     if (!o || o.v !== 1 || !Array.isArray(o.q) || !o.q.length) throw new Error('形式');
     const ty = optVals('ty'),
-      rup = optVals('cRup'),
+      rup = ['bi', 'fw', 'bw'],
       dips = optVals('cDip').filter(v => v !== '').map(Number);
     const qs = o.q.slice(0, QMAX).map(a => {
       a = Array.isArray(a) ? a : [];
-      const dip = +a[6];
+      const dip = +a[6],
+        f = Array.isArray(a[12]) ? a[12] : null,
+        pre = f ? f[0] === 1 : true;
       return {
+        pre: pre ? 1 : 0,
+        dipU: f && dips.includes(+f[1]) ? +f[1] : null,
+        rupU: f ? rup[f[2]] || null : null,
         /* Version 221：遠地地震（地図をタップして置ける海外の震源）も共有できるよう、範囲を海の格子より広くとる（以前は格子の端に寄せられて別の場所になった） */
         lon: clampN(a[0], 60, 260, 139.85, 2),
         lat: clampN(a[1], -70, 85, 35.68, 2),
@@ -23227,13 +23578,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         M: clampN(a[3], 2, 10, 7.3, 1),
         strike: Math.round(clampN(a[4], 0, 359, 45)),
         type: ty[a[5]] || 'crustal',
-        dip: dips.includes(dip) ? dip : null,
-        rup: rup[a[7]] || 'bi',
+        dip: pre && dips.includes(dip) ? dip : null,
+        rup: pre ? rup[a[7]] || 'bi' : null,
         dt: Math.round(clampN(a[8], 0, DTMAX, 0)),
         slip: Array.isArray(a[9]) ? { k: clampN(a[9][0], 0, 1, 0, 3), x0: clampN(a[9][1], -0.5, 0.5, 0, 3) } : null,
         /* Version 237：断層の長さ・震源の前の割合 */
-        len: Array.isArray(a[10]) && +a[10][0] > 0 ? Math.round(clampN(a[10][0], 1, 1500, 100)) : null,
-        fwr: Array.isArray(a[10]) && +a[10][1] >= 0 ? clampN(a[10][1], 0, 1, 0.5, 2) : null,
+        len: pre && Array.isArray(a[10]) && +a[10][0] > 0 ? Math.round(clampN(a[10][0], 1, 1500, 100)) : null,
+        fwr: pre && Array.isArray(a[10]) && +a[10][1] >= 0 ? clampN(a[10][1], 0, 1, 0.5, 2) : null,
         mw: Number.isFinite(+a[11]) && a[11] !== null && Math.abs(+a[11] - clampN(a[3], 2, 10, 7.3, 1)) <= 0.5 ? clampN(a[11], 2, 10, 7.3, 1) : null
       };
     });
