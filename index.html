@@ -2081,6 +2081,12 @@ details.grp .grpb h2 { margin-top: 4px; }
 .tv.vtl .isw {
   left: calc(var(--vtw, 0px) + calc(2.8 * var(--u)));
 }
+/* 左上に震度速報・緊急地震速報・切替ボタンがないときは、津波警報類も左上に置く（Version 236） */
+.tv:not(.ivs):not(:has(> #info:not([hidden]), > #eew:not([hidden]))) .tsu {
+  top: calc(2 * var(--u));
+  bottom: auto;
+  max-height: calc(100% - 2 * var(--u) - 2cqw - max(10px, 1.15cqw) * 2.4);
+}
 /* 津波を選んでいる間の凡例は津波の4区分（showLegend('tsu')。Version 105） */
 /* ===== Version 98：速度の一覧（速度ボタンの長押し・右クリック・↓キー） ===== */
 .spdmenu {
@@ -6025,7 +6031,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 235;
+  const APP_VERSION = 236;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
