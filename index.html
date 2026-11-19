@@ -2587,7 +2587,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
         <div class="advtop"><label class="preset" for="cPreset"><span>全体設定</span><select id="cPreset"><option value="def">既定の設定（実際の運用に近い）</option><option value="cus">カスタム</option></select></label><p class="note">変更は次の「地震発生」から反映されます。揺れの計算の設定はプレビューにもすぐ反映されます。</p></div>
 
         <details class="grp" open><summary>よく使う設定<em class="chgN"></em><small>ばらつき・誤認・表示</small></summary><div class="grpb">
-          <div class="opt"><div class="ctl"><label for="cSig">揺れのばらつき</label><select id="cSig"><option value="0">なし（平均値）</option><option value="0.3">標準（震度±0.3程度）</option><option value="0.5">大きい（震度±0.5程度）</option></select></div></div>
+          <div class="opt"><div class="ctl"><label for="cSig">揺れのばらつき</label><select id="cSig"><option value="0">なし（平均値）</option><option value="0.45">標準（震度±0.45程度）</option><option value="0.7">大きい（震度±0.7程度）</option></select></div></div>
           <div class="opt"><div class="ctl"><label for="cMis">2つの地震の誤認</label><select id="cMis"><option value="off">起こさない</option><option value="rare">まれに起こす（約3%）</option><option value="some">ときどき起こす（約20%）</option><option value="always">条件が合えば必ず</option></select></div></div>
           <div class="opt"><div class="ctl"><label for="cStyle">放送スタイル</label><select id="cStyle"><option value="nhk">NHK風</option><option value="detail">詳細（予報・第○報・地域別の予測震度なども）</option></select></div></div>
           <div class="opt"><div class="ctl"><label for="cMag">マグニチュードの表記</label><select id="cMag"><option value="std">速報は気象庁M・最終値はMw</option><option value="mj">すべて気象庁マグニチュード（M）</option><option value="mw">すべてモーメントマグニチュード（Mw）</option></select></div></div>
@@ -2607,6 +2607,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
         <details class="grp"><summary>緊急地震速報<em class="chgN"></em><small>観測網・発表の基準</small></summary><div class="grpb">
           <div class="opt"><div class="ctl"><span>使う観測網</span><div class="nets" id="cNets"></div></div></div>
           <div class="opt"><div class="ctl"><label for="cDelay">第1報までの解析</label><input id="cDelay" type="range" min="1" max="8" step="0.5"><output id="cDelayo"></output></div></div>
+          <div class="opt"><div class="ctl"><label for="cDlySea">沖合の地震の第1報</label><select id="cDlySea"><option value="sea">陸より遅い（実際に近い）</option><option value="same">陸と同じ</option></select></div></div>
           <div class="opt"><div class="ctl"><label for="cGrow">推定Mの立ち上がり</label><select id="cGrow"><option value="1">遅い</option><option value="2">標準</option><option value="4">速い</option></select></div></div>
           <div class="opt"><div class="ctl"><label for="cErr">震源の初期誤差</label><input id="cErr" type="range" min="0" max="40" step="1"><output id="cErro"></output></div></div>
           <div class="opt"><div class="ctl"><label for="cPlum">PLUM法</label><select id="cPlum"><option value="1">使う</option><option value="0">使わない</option></select></div></div>
@@ -2854,7 +2855,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       stTermArr = STT(B.stations, cfg.seed);
       stTermSeed = cfg.seed;
     }
-    return (stTermArr[i] * cfg.sigma) / 0.3;
+    return (stTermArr[i] * cfg.sigma) / CFG0.sigma /* Version 254：「標準」を0.3→0.45にしたので、標準のときの大きさは以前と同じにする */;
   };
   function kmDist(lon1, lat1, lon2, lat2) {
     const x = (lon2 - lon1) * 111.32 * Math.cos(((lat1 + lat2) / 2) * D2R),
@@ -3371,22 +3372,26 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const la = Math.log10(arv);
     return la - NL.lp * (la - (sl !== undefined ? sl : siteLog(arv, lb)));
   }
-  /* 遠距離の補正（Version 240、ユーザーの依頼）：司・翠川の式は遠方（約300km以上）で強めに出る。
-     2011年東北沖（M9.0）で、近畿（断層から約490〜520km）の最大が震度4に近い値（実際は震度3）、高知・四国も強めだった。
-     そこで震度（地表の最大速度の常用対数）だけに、断層から約300kmを超えた分に比例した減衰を足す（長周期地震動の計算には入れない）。
-     ・距離は断層面までの距離Xから深さの分を除いた水平距離。深い地震（約100km超から弱め、200kmで0）は深さが距離を占めるので補正しない（異常震域は arcAdj が別に扱う）
-     ・規模：実測で確かめたのはM9級の遠方なので、M6.5から効かせ始めM7.5以上で全部（小さな地震の遠方の震度1の範囲は変えない）
-     係数 FAR_K（常用対数で距離1kmあたり）は2011年東北沖の近畿の観測点の最大（実際は震度3）が補正前の3.78から3.51（震度4の観測点は1か所）になるように決めた。
-     房総半島南方沖M8.5（深さ80km）の高知県の観測点の最大は3.69→3.35（震度4→3）。実際の高知の震度との比較はできていない（2011年の高知は補正後1.4＝震度1）。
-     5弱以上の範囲は変わらない（全15のプリセット・シナリオで確認）。 */
-  const FAR_X0 = 300,
-    FAR_K = 0.0011;
+  /* 遠距離の補正（Version 240 → Version 254 で観測に合わせて作り直し）：司・翠川の式は距離が離れるほど震度が強めに出る。
+     Version 254：気象庁の計測震度（地震・火山月報から抜き出した「計測震度データベース」、2022年3月〜）で、M6.9以上の国内の9地震
+     （福島県沖2022 M7.4・能登2024 M7.6・日向灘2024・三陸沖2025/2026・青森県東方沖2025の2つ・岩手県沖2026・熊本2026、観測点 約9000）と比べた。
+     地震ごとの近く（0〜100km）の差を除くと、観測は計算より 100〜150km で常用対数 −0.09、200〜250km で −0.24、300〜400km で −0.35〜−0.40（震度で約0.6〜0.7）弱かった。
+     そこで震度（地表の最大速度の常用対数）だけに、水平距離 FAR_X0（65km）から FAR_X1（280km）まで距離に比例して弱める補正を足し、それより遠くは同じ値（−0.355）にする（最小二乗）。
+     ・Version 240 の補正（300km超で 0.0011/km、2011年東北沖の近畿に合わせた値）は置き換えた。2011年東北沖の近畿（断層から約500km）は以前より常用対数で約0.1弱くなる
+     ・規模：M7.1でもM7.6と同じくらい弱まるので、M6.5から効かせM7.0以上で全部（ユーザー決定）。M6.5未満は変えない（確かめていない）
+     ・深い地震（約100km超から弱め、200kmで0）は従来どおり補正しない（異常震域は arcAdj が別に扱う）
+     ・長周期地震動の計算には入れない。緊急地震速報の予測震度（predictAreas、p.noFar）にも入れない（気象庁の予測式に無いため。ユーザー決定）
+     ・補正後の差（観測−計算）の地震ごとの平均：プリセットの能登・福島県沖は近くで ±0.05（常用対数）。そのほかの7地震は全体に −0.15〜−0.6 で、地震ごとの違いとして残している */
+  const FAR_X0 = 65,
+    FAR_X1 = 280,
+    FAR_K = 0.00165;
   function farAdj(p, X) {
+    if (p.noFar) return 0;
     const d = p.depth || 0,
       xh = Math.sqrt(Math.max(0, X * X - d * d));
     if (xh <= FAR_X0) return 0;
-    const w = clamp01((p.M - 6.5) / 1.0) * clamp01((200 - d) / 100);
-    return -FAR_K * (xh - FAR_X0) * w;
+    const w = clamp01((p.M - 6.5) / 0.5) * clamp01((200 - d) / 100);
+    return -FAR_K * (Math.min(xh, FAR_X1) - FAR_X0) * w;
   }
   function intensity(p, X, arv, adj) {
     if (!arv) arv = 1;
@@ -3671,6 +3676,340 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     return r;
   }
+  /* ---- Version 253：断層のすべりのムラ（アスペリティ）----
+     実際の断層は一様にすべらず、一部（アスペリティ）が大きくすべる。揺れ（短い周期）は強震動生成域（SMGA）から、津波は大すべり域から多く出る。
+     ・自分で置いた地震（と研究の位置が無い過去の地震）：断層の傾斜角と同じ扱いのランダム（震源・規模・深さ・走向・タイプ・ばらつきの分布 cfg.seed で決まる。
+       予想表示と地震発生で同じ）。数は断層の長さで1〜4個、面積の合計は断層の22%、すべりは断層の平均の2倍（強震動予測レシピ、地震調査委員会 2020）。
+       揺れと津波に同じものを使う（ユーザー決定）。
+     ・過去の地震・想定（ASP_DB）：研究で推定された位置。揺れは強震動生成域（s）、津波は大すべり域（t）を分けて使う（ユーザー決定）。
+       位置は論文・報告書の図表から読み取った近似値（中心の緯度経度・走向方向の長さ・傾斜方向の幅 km・すべりの倍率・深さ km）。
+     ・M6.0未満は使わない（断層が小さく、震度への影響がほぼ無い）。M6.0〜6.5で徐々に効かせる。
+     ・揺れ：等価震源距離（Ohno ほか 1993、断層の各部分からの距離の −2乗をエネルギーの重みで平均）を、アスペリティありと一様とで求め、
+       司・翠川の距離の項の差を工学的基盤の最大速度に足す。重みは単位面積あたり 強震動生成域 25：背景 1
+       （レシピの応力降下量の比：背景の実効応力はアスペリティの約2割 → 短周期のエネルギーは約25倍）。長周期は すべりの2乗の比（約7.7倍）。
+       全方位の平均はほぼ変わらず、アスペリティに近い所は強く、遠い所はやや弱くなる。
+     ・津波：断層を走向方向に最大16、傾斜方向に4つの小断層に分け、すべりを アスペリティ（倍率 d）と背景（残り）に分ける。地震モーメントは変えない。
+       津波予報（データベース方式）と「この震源での予想」は一様のまま（実際の予報も一様） */
+  const ASP_SP = 25,
+    ASP_LP = 7.7,
+    ASP_F = 0.22,
+    ASP_D = 2,
+    ASP_BMIN = 0.25,
+    ASP_M0 = 6.0,
+    ASP_M1 = 6.5;
+  /* 研究で推定された位置。m＝[経度, 緯度, M]（プリセット・シナリオの地震に一致するもの。0.02度以内）。
+     各アスペリティ＝[経度, 緯度, 走向方向の長さ km, 傾斜方向の幅 km, すべりの倍率, 深さ km（無ければ断層面の上に投影）] */
+  const ASP_NANKAI_S = [
+    /* 南海トラフ巨大地震の強震動生成域（中央防災会議 2012「南海トラフの巨大地震モデル検討会」強震断層モデル 基本ケース）。図から読み取った近似値 */
+    [138.45, 34.75, 35, 35, 2],
+    [137.55, 34.45, 40, 40, 2],
+    [136.55, 33.95, 40, 40, 2],
+    [135.55, 33.6, 40, 40, 2],
+    [134.45, 33.25, 40, 40, 2],
+    [133.35, 32.95, 40, 40, 2],
+    [132.15, 32.35, 40, 40, 2]
+  ];
+  const ASP_DB = [
+    {
+      /* 2011年東北地方太平洋沖地震。
+         揺れ：Asano & Iwata (2012, EPS) の強震動生成域4つ（宮城沖2・福島沖・茨城県境、いずれも断層の深い側）の破壊開始点を中心へ寄せた位置。
+         大きさは「4つともほぼ同じ」とされるので 40km 角（SMGA2 の緯度は表に無いので図から）。三陸沖中部の生成域（Kurahashi & Irikura 2011）を1つ加えた。
+         津波：海溝の近くの大すべり（宮城沖、最大約50m以上。Satake ほか 2013、Iinuma ほか 2012 など）＝ 長さ300km・幅120km（平均の2倍）と、
+         その中の超大すべり域 120km×60km（4倍）。北の三陸沖の浅い所の遅れたすべり（Satake ほか 2013）はおよそ大すべり域の北端に含まれる */
+      m: [
+        [142.86, 38.1, 9.0],
+        [142.86, 38.103, 9.0]
+      ],
+      s: [
+        [142.15, 38.1, 40, 40, 2],
+        [142.4, 38.35, 40, 40, 2],
+        [141.75, 37.1, 40, 40, 2],
+        [141.1, 37.0, 35, 35, 2],
+        [142.35, 39.1, 35, 35, 2]
+      ],
+      t: [
+        [143.35, 38.35, 300, 120, 1.6],
+        [143.6, 38.15, 120, 60, 3.2]
+      ]
+    },
+    {
+      /* 南海トラフ M9.1（想定）。津波：内閣府のケース①（駿河湾〜紀伊半島沖に大すべり域＋超大すべり域、トラフ軸の近く） */
+      m: [[135.8, 33.3, 9.1]],
+      s: ASP_NANKAI_S,
+      t: [
+        [137.45, 33.8, 260, 70, 2],
+        [137.8, 33.9, 110, 40, 4]
+      ]
+    },
+    {
+      /* 南海トラフ 半割れの東側（想定）：揺れは同じ基本ケースのうち断層にかかるもの、津波はケース① */
+      m: [[137.4, 34.0, 8.4]],
+      s: ASP_NANKAI_S,
+      t: [
+        [137.45, 33.8, 200, 60, 2],
+        [137.8, 33.9, 100, 35, 4]
+      ]
+    },
+    {
+      /* 南海トラフ 半割れの西側（想定）：津波は内閣府のケース④（四国沖に大すべり域＋超大すべり域） */
+      m: [[134.8, 33.0, 8.5]],
+      s: ASP_NANKAI_S,
+      t: [
+        [134.35, 32.8, 200, 60, 2],
+        [134.4, 32.85, 100, 35, 4]
+      ]
+    },
+    {
+      /* 2016年熊本地震 本震：京都大学防災研究所（浅野・岩田、地震調査委員会提出資料 2016）のすべり分布。
+         震源の北東側の深さ約6kmに大きくすべった所が2か所（益城町〜西原村、阿蘇の西）。強い揺れもここから出た。内陸なので揺れと津波に同じもの */
+      m: [[130.76, 32.75, 7.3]],
+      s: [
+        [130.858, 32.82, 12, 10, 2, 6],
+        [130.957, 32.89, 12, 10, 2, 6]
+      ],
+      t: null
+    },
+    {
+      /* 2024年能登半島地震：地殻変動・強震記録・津波の解析（国土地理院、気象庁、地震調査委員会の評価など）で大きくすべったのは
+         輪島市の西（門前付近。最大約4mの隆起）と珠洲市の北（約2mの隆起）。揺れと津波に同じもの */
+      m: [
+        [137.27, 37.5, 7.6],
+        [137.27, 37.495, 7.6]
+      ],
+      s: [
+        [136.85, 37.36, 22, 16, 2, 8],
+        [137.33, 37.58, 18, 14, 2, 6]
+      ],
+      t: null
+    },
+    {
+      /* 2003年十勝沖地震：Yamanaka & Kikuchi (2003, EPS) のすべり分布。大きくすべった所は震源の北西（深い側、襟裳岬の東の沖）。
+         強い揺れも同じ所から（地震調査委員会 2004 の検証のアスペリティ）。津波は同じ所の大すべり */
+      m: [[144.08, 41.78, 8.0]],
+      s: [
+        [143.85, 41.97, 40, 35, 2],
+        [143.6, 42.15, 30, 30, 2]
+      ],
+      t: [[143.78, 42.03, 60, 50, 2.3]]
+    },
+    {
+      /* 2022年福島県沖の地震：防災科研の震源過程（暫定）。すべりの大きな所は破壊開始点の北に2か所（2.5〜7.5秒後・7.5〜12.5秒後） */
+      m: [[141.622, 37.697, 7.4]],
+      s: [
+        [141.649, 37.766, 12, 10, 2],
+        [141.69, 37.87, 12, 10, 2]
+      ],
+      t: null
+    },
+    {
+      /* 首都直下 M7.3（想定）：中央防災会議（2013）の都心南部直下地震の強震断層モデルは強震動生成域を震源の近くに置く。1つ */
+      m: [[139.85, 35.68, 7.3]],
+      s: [[139.85, 35.68, 18, 14, 2]],
+      t: null
+    },
+    {
+      /* 2015年小笠原諸島西方沖の深発地震：破壊は震源の近くの狭い範囲に集中（Ye ほか 2016 など） */
+      m: [[140.68, 27.86, 8.1]],
+      s: [[140.68, 27.86, 25, 25, 2]],
+      t: null
+    }
+  ];
+  function aspDb(q) {
+    for (const e of ASP_DB)
+      for (const k of e.m) if (Math.abs(k[0] - q.lon) <= 0.02 && Math.abs(k[1] - q.lat) <= 0.02 && Math.abs(k[2] - q.M) < 0.05) return e;
+    return null;
+  }
+  /* ランダムなアスペリティ（断層の長さ・幅に対する割合。cs・cw＝中心、fs・fw＝大きさ、d＝すべりの倍率） */
+  function aspRnd(q, Lf, Wf) {
+    const r = q._ar,
+      key = [q.lon, q.lat, q.depth, q.M, q.strike, q.type, cfg.seed, Math.round(Lf), Math.round(Wf)].join('|');
+    if (r && r.key === key) return r.a;
+    let h = 2166136261;
+    const s = key + '|asp';
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    const nx = () => {
+      h ^= h << 13;
+      h ^= h >>> 17;
+      h ^= h << 5;
+      return (h >>> 0) / 4294967296;
+    };
+    nx();
+    const n = Lf < 25 ? 1 : Lf < 90 ? 2 : Lf < 300 ? 3 : 4,
+      sp = [[1], [2 / 3, 1 / 3], [0.5, 0.3, 0.2], [0.4, 0.25, 0.2, 0.15]][n - 1],
+      a = [];
+    for (let i = 0; i < n; i++) {
+      const ar = ASP_F * sp[i],
+        side = Math.sqrt(ar * Lf * Wf),
+        fw = Math.min(0.8, side / Math.max(1, Wf)),
+        fs = Math.min(0.9, ar / fw);
+      /* 前のアスペリティと重なりの少ない位置を6回まで探す */
+      let best = null,
+        bo = 1e9;
+      for (let t = 0; t < 6; t++) {
+        const o = { cs: fs / 2 + (1 - fs) * nx(), cw: fw / 2 + (1 - fw) * nx(), fs, fw, d: ASP_D };
+        let ov = 0;
+        for (const b of a)
+          ov +=
+            Math.max(0, Math.min(o.cs + fs / 2, b.cs + b.fs / 2) - Math.max(o.cs - fs / 2, b.cs - b.fs / 2)) *
+            Math.max(0, Math.min(o.cw + fw / 2, b.cw + b.fw / 2) - Math.max(o.cw - fw / 2, b.cw - b.fw / 2));
+        if (ov < bo) {
+          bo = ov;
+          best = o;
+        }
+        if (!ov) break;
+      }
+      a.push(best);
+    }
+    Object.defineProperty(q, '_ar', { value: { key, a }, writable: true, configurable: true, enumerable: false });
+    return a;
+  }
+  /* 断層面の上のアスペリティの長方形（震源からの走向方向 s0〜s1、傾斜方向 w0〜w1、km）。
+     F＝{ s0, s1, w0, w1, sd, cd, az, kx } 断層の範囲。kind＝'s'（揺れ）か 't'（津波） */
+  function aspRects(q, kind, F) {
+    const db = q.pre ? aspDb(q) : null,
+      L = F.s1 - F.s0,
+      W = F.w1 - F.w0,
+      out = [];
+    const list = db ? db[kind] || db.s : null;
+    if (list) {
+      const ux = Math.sin(F.az),
+        uy = Math.cos(F.az);
+      for (const a of list) {
+        const x = (a[0] - q.lon) * F.kx,
+          y = (a[1] - q.lat) * 110.57,
+          s = x * ux + y * uy,
+          u = x * uy - y * ux,
+          w = a[5] != null && F.sd > 0.05 ? (a[5] - q.depth) / F.sd : F.cd > 0.05 ? u / F.cd : 0;
+        const r = { s0: Math.max(F.s0, s - a[2] / 2), s1: Math.min(F.s1, s + a[2] / 2), w0: Math.max(F.w0, w - a[3] / 2), w1: Math.min(F.w1, w + a[3] / 2), d: a[4] };
+        /* 断層の外にほとんど出る（重なりが元の3割未満）ものは使わない（半割れの地震など） */
+        if (r.s1 > r.s0 && r.w1 > r.w0 && (r.s1 - r.s0) * (r.w1 - r.w0) >= 0.3 * a[2] * Math.min(a[3], W)) out.push(r);
+      }
+      if (out.length) return out;
+    }
+    for (const a of aspRnd(q, L, W))
+      out.push({
+        s0: F.s0 + L * (a.cs - a.fs / 2),
+        s1: F.s0 + L * (a.cs + a.fs / 2),
+        w0: F.w0 + W * (a.cw - a.fw / 2),
+        w1: F.w0 + W * (a.cw + a.fw / 2),
+        d: a.d
+      });
+    return out;
+  }
+  /* 小さな長方形（s0〜s1・w0〜w1）の中を3×3点で調べ、アスペリティの中の割合 f と、すべりの倍率の合計 D（アスペリティの外は0） */
+  function aspCover(R, s0, s1, w0, w1) {
+    let f = 0,
+      D = 0;
+    for (let i = 0; i < 3; i++)
+      for (let j = 0; j < 3; j++) {
+        const s = s0 + ((s1 - s0) * (i + 0.5)) / 3,
+          w = w0 + ((w1 - w0) * (j + 0.5)) / 3;
+        let d = 0;
+        for (const r of R) if (s >= r.s0 && s <= r.s1 && w >= r.w0 && w <= r.w1 && r.d > d) d = r.d;
+        if (d) {
+          f++;
+          D += d;
+        }
+      }
+    return [f / 9, D / 9];
+  }
+  /* 揺れ用：断層を小さな要素（最大約64個）に分け、要素の位置と重みを地震ごとに1回だけ求める */
+  function aspG(q) {
+    if (!(q.M >= ASP_M0)) return null;
+    const g = geo(q),
+      o = q._ag;
+    if (o && o.g === g && o.seed === cfg.seed && o.pre === q.pre) return o.v;
+    const wLo = g.sd > 1e-6 ? Math.max(-g.W2, (3 - q.depth) / g.sd) : -g.W2,
+      wHi = Math.max(wLo + 1, g.W2),
+      s0 = g.sr[0],
+      s1 = g.sr[1],
+      L = s1 - s0,
+      W = wHi - wLo,
+      es = Math.max(2, Math.sqrt((L * W) / 64)),
+      ns = Math.max(1, Math.min(24, Math.round(L / es))),
+      nw = Math.max(1, Math.min(8, Math.round(W / es))),
+      R = aspRects(q, 's', { s0, s1, w0: wLo, w1: wHi, sd: g.sd, cd: g.cd, az: q.strike * D2R, kx: g.kx }),
+      n = ns * nw,
+      eS = new Float64Array(n),
+      eU = new Float64Array(n),
+      eZ = new Float64Array(n),
+      wI = new Float64Array(n),
+      wL = new Float64Array(n);
+    const hs = L / ns / 2,
+      hw = W / nw / 2,
+      e2 = Math.min(hs, hw) ** 2;
+    let k = 0,
+      tI = 0,
+      tL = 0;
+    for (let i = 0; i < ns; i++)
+      for (let j = 0; j < nw; j++, k++) {
+        const s = s0 + (L * (i + 0.5)) / ns,
+          w = wLo + (W * (j + 0.5)) / nw,
+          z = Math.max(3, q.depth + w * g.sd),
+          [f] = aspCover(R, s - hs, s + hs, w - hw, w + hw);
+        eS[k] = s;
+        eU[k] = w * g.cd;
+        eZ[k] = z * z + e2;
+        wI[k] = 1 + (ASP_SP - 1) * f;
+        wL[k] = 1 + (ASP_LP - 1) * f;
+        tI += wI[k];
+        tL += wL[k];
+      }
+    const Mw = Math.min(q.M, 8.3) + 0.15 * Math.max(0, q.M - 8.3);
+    const v = { n, eS, eU, eZ, wI, wL, tI, tL, c: 0.0028 * Math.pow(10, 0.5 * Mw), k: clamp01((q.M - ASP_M0) / (ASP_M1 - ASP_M0)), R, cI: 0, cL: 0 };
+    /* 全体の強さは一様のとき（v252 まで、実測に合わせた値）と同じにする：断層の近くの陸の観測点（断層から max(60, 30＋0.6×長さ) km 以内）の
+       補正の中央値を引く。研究の強震動生成域は断層の深い側（陸の近く）にあることが多く、そのままでは全体が強くなるが、
+       距離の式（司・翠川）はもともと断層の最短距離で実際の地震に合わせてあり、その分を二重に数えないため。アスペリティの近くは強く、離れた所は弱くなる */
+    {
+      const lim = Math.max(60, 30 + 0.6 * L),
+        aI = [],
+        aL = [];
+      for (const st of ST) {
+        if (st.type >= 2) continue;
+        const m = metrics(q, st.lon, st.lat);
+        if (m.X > lim) continue;
+        const r = aspTerm(q, m, v);
+        aI.push(r[0]);
+        aL.push(r[1]);
+      }
+      if (aI.length >= 5) {
+        const med = a => (a.sort((x, y) => x - y), a[a.length >> 1]);
+        v.cI = med(aI);
+        v.cL = med(aL);
+      }
+    }
+    Object.defineProperty(q, '_ag', { value: { g, seed: cfg.seed, pre: q.pre, v }, writable: true, configurable: true, enumerable: false });
+    return v;
+  }
+  /* 地点の補正（工学的基盤の最大速度の常用対数）。ASP_OUT[0]＝震度用、ASP_OUT[1]＝長周期用。m＝metrics の結果 */
+  const ASP_OUT = [0, 0];
+  function aspTerm(q, m, A) {
+    A = A === undefined ? aspG(q) : A;
+    if (!A) {
+      ASP_OUT[0] = ASP_OUT[1] = 0;
+      return ASP_OUT;
+    }
+    const { n, eS, eU, eZ, wI, wL } = A;
+    let su = 0,
+      sI = 0,
+      sL = 0;
+    for (let i = 0; i < n; i++) {
+      const ds = m.s - eS[i],
+        du = m.u - eU[i],
+        iv = 1 / (ds * ds + du * du + eZ[i]);
+      su += iv;
+      sI += wI[i] * iv;
+      sL += wL[i] * iv;
+    }
+    const Xu = Math.sqrt(n / su),
+      XI = Math.sqrt(A.tI / sI),
+      XL = Math.sqrt(A.tL / sL),
+      dl = X => -Math.log10(X + A.c) - 0.002 * X,
+      b = dl(Xu);
+    ASP_OUT[0] = A.k * (dl(XI) - b) - A.cI;
+    ASP_OUT[1] = A.k * (dl(XL) - b) - A.cL;
+    return ASP_OUT;
+  }
   /* 揺れのばらつき：空間的に滑らかなノイズ（約15km規模＋約4km規模） */
   function hash2(i, j, k) {
     let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(k, 982451653)) | 0;
@@ -3706,7 +4045,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       dt = dirTerm(q, m),
       aa = arcAdj(q, lon, lat, ci),
       oa = obsAdj(q, lon, lat),
-      I0 = intensity(q, m.X, arv, aa) + dt + nz + cfg.bias + oa + topoAt(lon, lat);
+      aT = aspTerm(q, m) /* Version 253：アスペリティ */,
+      aI = aT[0],
+      aL = aT[1],
+      I0 = intensity(q, m.X, arv, aa + aI) + dt + nz + cfg.bias + oa + topoAt(lon, lat);
     let I = I0,
       dur = durOf(q.M, m.X, geo(q).fc),
       mm = m;
@@ -3723,7 +4065,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       m: mm,
       I,
       I0,
-      lp: lpSva(q, m.X, lon, lat, arv, aa) * Math.pow(10, (nz + dt + cfg.bias + oa) * 0.38),
+      lp: lpSva(q, m.X, lon, lat, arv, aa + aL) * Math.pow(10, (nz + dt + cfg.bias + oa) * 0.38),
       dur
     };
   }
@@ -3745,12 +4087,15 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
        K-NET は使わない（気象庁 2023年8月29日の報道発表）。このシミュレーターには気象庁の陸の観測点が無いので、既定は K-NET を外して KiK-net（696点）を陸の観測点とする（ユーザー決定）。
      ・2つの地震の誤認：2023年9月26日に震源推定を改良した IPF 法に一本化し、離れた2つの地震を1つとする誤りは減った（気象庁）。既定は「まれに起こす」（約3%）
      ・警報の基準（最大予測震度5弱以上・長周期地震動階級3以上、対象は予測震度4以上・階級3以上の地域、2点以上の観測点）、深さ150km超（震源とMの予測は使わない）、PLUM法は従来の既定のまま（気象庁と同じ） */
-  const CFG_VER = 242;
+  /* 以前の「揺れのばらつき」の値（0.3・0.5）を Version 254 の値（0.45・0.7）へ */
+  const sigmaV254 = v => (v === 0.3 ? 0.45 : v === 0.5 ? 0.7 : v);
+  const CFG_VER = 254;
   const CFG0 = {
     cfgV: CFG_VER,
     nl: true,
     net: [false, true, true, true, true, true],
     delay: 3,
+    dlySea: 'sea' /* Version 252：沖合の地震（海底地震計で最初に検知）の第1報は「第1報までの解析」＋1.0〜4.0秒 */,
     grow: 2,
     err: 15,
     plum: true,
@@ -3763,7 +4108,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     zoom: true,
     waves: true,
     wavesKeep: false,
-    sigma: 0.3,
+    sigma: 0.45 /* Version 254：観測点ごとのばらつき（観測−計算の標準偏差、9地震で0.41〜0.52）に合わせて0.3→0.45 */,
     bias: 0,
     seed: 1,
     arc: true,
@@ -3784,6 +4129,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       cfg.net[0] = false;
       if (cfg.mis === 'some') cfg.mis = 'rare';
     }
+    /* Version 254：揺れのばらつきの選択肢を 0.3・0.5 → 0.45・0.7 にした */
+    if (sv && (+sv.cfgV || 0) < 254) cfg.sigma = sigmaV254(cfg.sigma);
     cfg.cfgV = CFG_VER;
   } catch (e) {}
   function saveCfg() {
@@ -5509,7 +5856,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         bw = basinW(q.M),
         dur0 = g.fc,
         bias = cfg.bias,
-        sw = swCheck(q);
+        sw = swCheck(q),
+        AG = aspG(q);
       for (let i = 0; i < NC; i++) {
         const lon = cellLon[i],
           lat = cellLat[i],
@@ -5518,9 +5866,17 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           nz = nzA[i],
           dt = dirTerm(q, m, g),
           aa = arcAdj(q, lon, lat, i);
-        const lb = pgvBase(q, m.X) + aa,
+        /* Version 253：アスペリティの補正（震度用 aI・長周期用 aL） */
+        let aI = 0,
+          aL = 0;
+        if (AG) {
+          const aT = aspTerm(q, m, AG);
+          aI = aT[0];
+          aL = aT[1];
+        }
+        const lb = pgvBase(q, m.X) + aa + aL,
           sl = siteLog(arv, lb),
-          lbI = lb + farAdj(q, m.X) /* 震度だけ遠距離の補正（Version 240）。長周期は lb・sl のまま */,
+          lbI = lb - aL + aI + farAdj(q, m.X) /* 震度だけ遠距離の補正（Version 240）。長周期は lb・sl のまま */,
           lv = lbI + 0.117 + (lbI === lb ? sl : siteLog(arv, lbI)),
           e = nz + dt + bias,
           lp = Math.pow(10, lb + 0.117 + siteLogLP(arv, lb, sl) + mk + lpFar(m.X, q.depth) + lpNear(m.X, q.M) + bsA[i] * bw + e * 0.38);
@@ -6134,7 +6490,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     lockRun();
   }
   /* 地震発生中は、実行中のシミュレーションに反映されない設定（震源・計算・速報の設定）を動かせないようにする。表示の設定は変更可 */
-  const RUN_LOCK = ['m', 'd', 's', 'ty', 'cDip', 'cRup', 'cSig', 'cBias', 'cArc', 'cDelay', 'cGrow', 'cErr', 'cPlum', 'cWarn', 'cLpw', 'cArea', 'cDeep', 'cMis', 'cMag', 'cTsu', 'cExtra', 'cSeed', 'cSeedRs', 'cPreset'];
+  const RUN_LOCK = ['m', 'd', 's', 'ty', 'cDip', 'cRup', 'cSig', 'cBias', 'cArc', 'cDelay', 'cDlySea', 'cGrow', 'cErr', 'cPlum', 'cWarn', 'cLpw', 'cArea', 'cDeep', 'cMis', 'cMag', 'cTsu', 'cExtra', 'cSeed', 'cSeedRs', 'cPreset'];
   function lockRun() {
     const run = !!(sim && sim.running),
       tip = run ? '地震発生中は変更できません' : '';
@@ -6166,7 +6522,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     if (sim) reset();
     const last = EQS[EQS.length - 1];
     const q = Object.assign({}, P, {
-      slip: null,
       obs: undefined,
       mw: null,
       /* Version 244：追加した地震は自分で置いた地震（断層の傾斜角・破壊の進み方はランダムの既定。詳細設定で選んだ値は引き継ぐ） */
@@ -6272,14 +6627,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     b.textContent = n;
     b.onclick = () => {
       if (sim) reset();
-      Object.assign(P, { dip: null, rup: 'bi', slip: null, obs: undefined, len: null, fwr: null, mw: null, pre: 1, dipU: null, rupU: null }, p);
+      Object.assign(P, { dip: null, rup: 'bi', obs: undefined, len: null, fwr: null, mw: null, pre: 1, dipU: null, rupU: null }, p);
       syncCfgUI();
       preview();
     };
     $('presets').appendChild(b);
   });
   /* 複数地震のシナリオ（dt＝最初の地震からの秒数） */
-  const SLIP_U = { k: 0, x0: 0 };
   let scenAt = 0,
     scenSig = '';
   /* 今の地震の組がシナリオのままなら、その最初の地震の発生時刻（ミリ秒）。違えば0 */
@@ -6313,7 +6667,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       [
         /* 2011/3/11 14:46:18.1 の本震からの秒数。震源要素は気象庁（災害時地震・津波速報、CMT解のページ）による。
            14:54 の福島県沖 M5.8 は地震の数の上限（8つ）のため省いた */
-        { lon: 142.86, lat: 38.103, depth: 24, M: 9.0, strike: 200, type: 'inter', dt: 0, slip: { k: 1, x0: 0 } } /* 宮城沖に集中 */,
+        { lon: 142.86, lat: 38.103, depth: 24, M: 9.0, strike: 200, type: 'inter', dt: 0 },
         { lon: 142.028, lat: 36.733, depth: 11, M: 6.8, strike: 200, type: 'inter', dt: 309 },
         { lon: 141.91, lat: 37.675, depth: 23, M: 6.4, strike: 200, type: 'inter', dt: 707 },
         { lon: 142.397, lat: 39.042, depth: 27, M: 6.4, strike: 200, type: 'inter', dt: 1192 },
@@ -6363,8 +6717,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     b.onclick = () => {
       if (sim) reset();
       EQS.length = 0;
-      /* シナリオは実際の地震・想定のすべりの形に固定（slip の無い地震は一様。Version 183） */
-      list.forEach(p => EQS.push(Object.assign({ dip: null, rup: 'bi', slip: SLIP_U, mw: null, pre: 1 }, p)));
+      /* すべりのムラ（アスペリティ）は研究で推定された位置（ASP_DB）、無い地震はランダム（Version 253） */
+      list.forEach(p => EQS.push(Object.assign({ dip: null, rup: 'bi', mw: null, pre: 1 }, p)));
       selQ = 0;
       P = EQS[0];
       /* 過去の地震のシナリオは、室内の昼・夜を実際の発生時刻に（Version 190）。地震を変えたら今の時刻に戻る */
@@ -6598,7 +6952,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 251;
+  const APP_VERSION = 254;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -7832,11 +8186,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const tsuMemo = new Map(),
     tsuGeo = new Map(),
     TSU_GEO_MAX = 8;
-  /* 実際の津波のすべりの分布：シナリオで決めてあればそれ、無ければ「地震発生」のたびの乱数（同じ種なら同じ。Version 183） */
-  function slipOf(q, e) {
-    if (q.slip) return q;
-    const g = rng(runSeed + e.k * 7919 + 8642);
-    return Object.assign({}, q, { slip: { k: g(), x0: (g() - 0.5) * 0.7 } });
+  /* 実際の津波のすべりの分布：Version 253 からアスペリティ（aspRects の 't'）。aspT の無い地震（予報のデータベース・予想表示）は一様 */
+  function slipOf(q) {
+    return Object.assign({}, q, { aspT: 1 });
   }
   function computeTsunami(P, qual) {
     return jobDrain(computeTsunamiG(P, qual));
@@ -7908,20 +8260,21 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return (-1 / (2 * Math.PI)) * (f(x, p) - f(x, p - W) - f(x - L, p) + f(x - L, p - W));
   }
   /* 波源：海の格子のうち、海底が大きく上下する所（最大の2割以上）。A0＝主な隆起・沈降の大きさ(m)、a＝その幅の半分(km) */
-  /* 走向方向のすべりの分布（Version 183）。P.slip＝{ k: 集中の度合い 0（一様）〜1, x0: 大きくすべる所の中心（断層の中央0、端±1） }。
-     無い（予報のデータベース・予想表示）は一様。実際の津波は「地震発生」のたびに乱数で決め（slipOf）、シナリオは実際の地震・想定の形に固定 */
-  const TAP_IN = 0.3,
-    TAP_END = 0.25,
-    ALONG_KM = 80;
+  /* すべりが一様でない津波（アスペリティ、Version 253。以前は Version 183 の走向方向の先細り）で、海岸の高さをその海岸の正面の変位で決める割合
+     （computeTsunami0G。長い断層ほど効く：長さ200km以下は0、400km以上で1）。一様（予報・予想表示）は0 */
+  const ALONG_KM = 80;
   function slipW(P, Lf) {
-    const k = P.slip ? P.slip.k : 0;
-    return Math.max(0, Math.min(1, k)) * Math.max(0, Math.min(1, (Lf - 200) / 200));
+    return P.aspT ? Math.max(0, Math.min(1, (Lf - 200) / 200)) : 0;
   }
   function slipKey(P) {
-    return P.slip ? P.slip.k.toFixed(3) + '/' + P.slip.x0.toFixed(3) : '';
+    return P.aspT ? 'a' + (P.pre && aspDb(P) ? 'db' : cfg.seed) : '';
   }
   const TSU_NEG_R = 60;
   function tsuSource(P) {
+    return jobDrain(tsuSourceG(P));
+  }
+  /* Version 253：小断層に分けると M9 で約40ms かかるので、行ごとに空き時間を見て止められるジェネレーターにした */
+  function* tsuSourceG(P) {
     const Lf = faultLen(P.M),
       L = Lf / 2,
       sr = sRange({ rup: rupOf(P) }, L),
@@ -7950,18 +8303,32 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const wl = wLo + Ws * (j + 1);
       return { d: P.depth + wl * sd, u: wl * cd, U1: slip * w * Math.cos(rake), U2: slip * w * Math.sin(rake) };
     });
-    /* すべりの先細り（Version 183）：長い断層（約M8.3以上）は、大きくすべる所から両端へ向かってすべりが小さくなる（2011年は宮城沖に集中し、茨城沖・岩手北部沖は小さかった）。
-       大きくすべる所の前後 TAP_IN（割合）は一定、その外側は端で TAP_END まで滑らかに下げ、断層全体のすべりの合計（地震モーメント）はほぼ変えない。
-       長方形の断層の変位に掛けるだけなので、計算の重さは変わらない */
-    const wTap = slipW(P, Lf),
-      tMean = TAP_IN + (1 - TAP_IN) * (TAP_END + (1 - TAP_END) / 2),
-      sPk = (sr[0] + sr[1]) / 2 + (P.slip ? Math.max(-0.5, Math.min(0.5, P.slip.x0)) : 0) * (Ltot / 2),
-      tapAt = s => {
-        if (!wTap) return 1;
-        const x = Math.min(1, s >= sPk ? (s - sPk) / Math.max(1, sr[1] - sPk) : (sPk - s) / Math.max(1, sPk - sr[0])),
-          w = x <= TAP_IN ? 1 : TAP_END + (1 - TAP_END) * 0.5 * (1 + Math.cos((Math.PI * (x - TAP_IN)) / (1 - TAP_IN)));
-        return 1 - wTap + (wTap * w) / tMean;
-      };
+    /* Version 253：アスペリティ。断層を走向方向に ns 個（最大16）に分け、小断層ごとのすべりの倍率 mul[i][j]（背景 b、アスペリティ d）。
+       地震モーメント（すべり×面積の合計）は一様のときと同じ。背景が ASP_BMIN 未満になるときは ASP_BMIN にして全体を縮める */
+    const R = P.aspT ? aspRects(P, 't', { s0: sr[0], s1: sr[1], w0: wLo, w1: W2, sd, cd, az, kx }) : null,
+      ns = R && R.length ? Math.min(16, Math.ceil(Ltot / Math.max(6, Ltot / 16))) : 1,
+      Lseg = Ltot / ns,
+      mul = [];
+    if (ns > 1) {
+      let tW = 0,
+        tD = 0,
+        tB = 0;
+      for (let i = 0; i < ns; i++) {
+        const row = [];
+        for (let j = 0; j < NST; j++) {
+          const c = aspCover(R, sr[0] + Lseg * i, sr[0] + Lseg * (i + 1), wLo + Ws * j, wLo + Ws * (j + 1));
+          row.push(c);
+          tW += wt[j];
+          tD += wt[j] * c[1];
+          tB += wt[j] * (1 - c[0]);
+        }
+        mul.push(row);
+      }
+      let b = tB > 1e-9 ? (tW - tD) / tB : ASP_BMIN;
+      if (!(b >= ASP_BMIN)) b = ASP_BMIN;
+      const sc = tW / (b * tB + tD);
+      for (const row of mul) for (let j = 0; j < NST; j++) row[j] = (b * (1 - row[j][0]) + row[j][1]) * sc;
+    }
     /* 調べる範囲：断層の長方形（走向×水平幅）の外側30kmまで */
     const mg = 30,
       s0 = sr[0] - mg,
@@ -7987,8 +8354,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       r0 = Math.floor((la0 - SG.lat0) / SG.d),
       r1 = Math.floor((la1 - SG.lat0) / SG.d);
     const pts = [];
-    let mx = 0;
-    for (let r = r0; r <= r1; r++)
+    let mx = 0,
+      mxN = 0;
+    for (let r = r0; r <= r1; r++) {
+      if (ns > 1 && jobLate()) yield;
       for (let c = c0; c <= c1; c++) {
         if (r >= 0 && c >= 0 && r < SG.h && c < SG.w && !seaG[r * SG.w + c]) continue;
         const lo = SG.lon0 + (c + 0.5) * SG.d,
@@ -8000,29 +8369,61 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         if (s < s0 || s > s1 || u < u0 || u > u1) continue;
         if (inId && innerSeaId(lo, la) !== inId) continue;
         let uz = 0;
-        for (const t of strips) uz += okadaUz(s - sr[0], t.u - u, Ltot, Ws, sd, cd, t.d, t.U1, t.U2);
-        uz *= tapAt(s);
-        pts.push([lo, la, uz, s]);
+        if (ns === 1) for (const t of strips) uz += okadaUz(s - sr[0], t.u - u, Ltot, Ws, sd, cd, t.d, t.U1, t.U2);
+        else
+          for (let i = 0; i < ns; i++) {
+            const row = mul[i],
+              xs = s - sr[0] - Lseg * i;
+            for (let j = 0; j < NST; j++) {
+              const t = strips[j],
+                f = row[j];
+              uz += okadaUz(xs, t.u - u, Lseg, Ws, sd, cd, t.d, t.U1 * f, t.U2 * f);
+            }
+          }
+        /* Version 253：その点の真下（に近い所）の小断層のすべりの倍率。波源・到達時間の点を選ぶときは変位をこれで割った値（一様のときの変位に近い）で選ぶ。
+           変位そのもので選ぶと、大すべり域の点だけで埋まり、すべりの小さい所（海岸の近くの深い側など）からの最初の波・正面の波源が抜ける
+           （2011年で第1波の到達が約15分遅れた） */
+        let mq = 1;
+        if (ns > 1) {
+          const i = Math.max(0, Math.min(ns - 1, Math.floor((s - sr[0]) / Lseg))),
+            j = Math.max(0, Math.min(NST - 1, Math.floor(((cd > 1e-6 ? u / cd : 0) - wLo) / Ws)));
+          mq = Math.max(0.05, mul[i][j]);
+        }
+        pts.push([lo, la, uz, s, Math.abs(uz) / mq]);
         if (Math.abs(uz) > mx) mx = Math.abs(uz);
+        if (Math.abs(uz) / mq > mxN) mxN = Math.abs(uz) / mq;
       }
+    }
     if (mx < 0.03) return null;
-    /* 波源＝最大の1割以上（0.05m以上）の所を、大きい順に最大250点。到達時間・高さ・海の経路の波源としてすべてに使う */
+    /* 波源＝最大の1割以上（0.05m以上）の所を、大きい順に最大250点。到達時間・高さ・海の経路の波源としてすべてに使う。
+       Version 253：選ぶのは倍率で割った変位（q[4]）で。並びは変位そのものの大きい順（高さの計算の打ち切りに使う） */
     const src = pts
-      .filter(q => Math.abs(q[2]) >= Math.max(0.05, 0.1 * mx))
-      .sort((p, q) => Math.abs(q[2]) - Math.abs(p[2]))
-      .slice(0, 250);
+      .filter(q => q[4] >= Math.max(0.05, 0.1 * mxN))
+      .sort((p, q) => q[4] - p[4])
+      .slice(0, 250)
+      .sort((p, q) => Math.abs(q[2]) - Math.abs(p[2]));
     if (!src.length) return null;
     /* 到達時間だけは、もっと小さな変位（最大の3%以上、0.15m以上）の所からの最初の波も数える */
-    const arrs = pts
-      .filter(q => Math.abs(q[2]) >= Math.max(0.15, 0.03 * mx))
-      .sort((p, q) => Math.abs(q[2]) - Math.abs(p[2]))
+    /* Version 253：すべりにムラがあるときは、到達時間の点を場所が偏らないよう 0.2度四方ごとに最大の1点に間引いてから選ぶ
+       （大すべり域のまわりの点で埋まり、海岸の近くの点が抜けないように。一様のときは従来どおり） */
+    const thin = a => {
+      if (ns === 1) return a;
+      const m = new Map();
+      for (const q of a) {
+        const k = Math.floor(q[0] / 0.2) * 1000 + Math.floor(q[1] / 0.2),
+          o = m.get(k);
+        if (!o || q[4] > o[4]) m.set(k, q);
+      }
+      return [...m.values()];
+    };
+    const arrs = thin(pts.filter(q => q[4] >= Math.max(0.15, 0.03 * mxN)))
+      .sort((p, q) => q[4] - p[4])
       .slice(0, 300);
     /* Version 237：沈降した海底（逆断層の陸側。海岸の近く）からの引き波も、最初の波の候補に入れる。
        以前は大きい順の300点が隆起の所だけで埋まり、どの観測点も第1波が「押し」になっていた。
        沈降の所は大きい順に最大120点（高さ・波源の範囲 src は変えない。到達時刻と第1波の押し引きだけに使う） */
-    for (const q of pts
-      .filter(q => q[2] <= -Math.max(0.15, 0.03 * mx))
-      .sort((p, q) => p[2] - q[2])
+    for (const q of thin(pts.filter(q => q[2] < 0 && q[4] >= Math.max(0.15, 0.03 * mxN)))
+      .sort((p, q) => q[4] - p[4])
       .slice(0, 120))
       if (!arrs.includes(q)) arrs.push(q);
     return { src, top: src, arrs, a: Math.max(10, Math.min(120, 0.6 * Weff * cd)), mx, slip };
@@ -8113,7 +8514,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const gk = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, dipOf(P), rupOf(P), slipKey(P)].join();
     let GS = tsuGeo.get(gk);
     if (!GS) {
-      const S0 = tsuSource(P);
+      const S0 = yield* tsuSourceG(P);
       if (jobLate()) yield;
       GS = { S: S0, SP: S0 ? yield* seaPathG(S0.src) : null };
       /* Version 238：全部消す（24件で一斉に）のをやめ、古い順に8件へ保つ。1件約2.7MB。経路の計算は1件約30msなので、
@@ -8249,10 +8650,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const gmax = Math.sqrt(Math.sqrt(hm / 50));
       /* すべりが一様でないとき（Version 183）：海岸の高さはその海岸の正面（走向に沿って近い所）の変位でほぼ決まり、
          走向に沿って離れた所の大きな変位は斜めに広がって弱まる。いちばん正面に近い波源からのずれ e に応じて 1/(1+(e/ALONG_KM)²) を掛ける。
-         波源どうしの比べ直しなので、断層の端より先の弱まり（dirAt）とは重ならない。一様なすべり（予報）は従来どおり */
-      const cs = wTapC ? (c.lon - P.lon) * kf * Math.sin(az) + (c.lat - P.lat) * 110.57 * Math.cos(az) : 0;
-      let eMin = 1e9;
-      if (wTapC) for (const q of S.top) eMin = Math.min(eMin, Math.abs(q[3] - cs));
+         波源どうしの比べ直しなので、断層の端より先の弱まり（dirAt）とは重ならない。一様なすべり（予報）は従来どおり。
+         Version 253：ずれは「海岸の正面の断層の位置（断層の範囲に収めた cs）」から測る。以前は最も近い波源から測っていたため、
+         正面のすべりが小さく波源（最大の1割以上）に入らない海岸（2011年の茨城など）では、遠くの大すべりが弱まらずに届いていた */
+      const cs = wTapC ? Math.max(sr[0], Math.min(sr[1], (c.lon - P.lon) * kf * Math.sin(az) + (c.lat - P.lat) * 110.57 * Math.cos(az))) : 0;
+      const eMin = 0;
       for (const q of S.top) {
         const aq = Math.abs(q[2]);
         if (aq * gmax <= HF) break;
@@ -8993,6 +9395,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       tPmin: 1e9,
       detSt: null,
       detT0: 0,
+      dly: cfg.delay,
       farQ: false,
       farIdx: 0
     });
@@ -9089,6 +9492,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     for (const e of evs) {
       const q = e.q;
       if (!fake) farSetup(e);
+      /* Version 252：第1報までの時間。気象庁の発表履歴では、陸・沿岸の地震は検知から2.6〜3.9秒、沖合（海底地震計で最初に検知）は4.7〜7.7秒。
+         詳細設定「沖合の地震の第1報」が既定（'sea'）のとき、最初に検知した観測点が海底地震計なら「第1報までの解析」＋1.0〜4.0秒（乱数は別の系列） */
+      if (!fake && cfg.dlySea === 'sea' && e.detSt != null && ST[e.detSt].type >= 2) {
+        const ry = rng(runSeed + e.k * 7919 + 9311);
+        ry();
+        e.dly = cfg.delay + DLY_SEA0 + DLY_SEA_J * ry();
+      }
       /* 震度速報は震度3以上の地域にS波が届いてから。終了は日本の各地・揺れを見る地点に揺れが届き、収まるまで（遠い地震でも途中で終わらない）＋設定の延長 */
       /* 気象庁の震度速報は地震発生から約1分半後 */
       /* 遠い地震でも、揺れ（S波）が実際に届いて観測されるまでは発表しない。震度3以上が無ければ最初に揺れが届いた地点の観測後 */
@@ -9132,11 +9542,22 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       rj();
       /* 巨大地震（M7.5超）は、緊急地震速報の間は規模を小さめに推定する（破壊が長く続き、P波の初めの数秒ではMが決まりきらないため）。
          上限は設けない。M9.0で約0.3〜0.6小さい（最終報はM8.4〜8.7程度）。実際のMには、後の情報の速報値の更新で近づける（e.mwSteps） */
-      e.mBias = q.M > 7.5 ? (0.2 + 0.2 * rj()) * (q.M - 7.5) : 0;
+      /* Version 252：2011年東北沖（最終報M8.1）と、その後の精度の向上を両方見込んで幅を広げる（ユーザー決定）。M9.0で0.3〜0.9小さい（最終報は約M8.1〜8.7） */
+      e.mBias = q.M > 7.5 ? (0.2 + 0.4 * rj()) * (q.M - 7.5) : 0;
       const Mt = q.M - e.mBias;
       /* 初期段階の誤差（±0.5、観測点が増え時間がたつと小さくなる）と、最後まで残る誤差（±0.35、巨大地震は±0.17） */
       e.mJit = (rj() - 0.5) * 1.0;
-      e.mErr = (Math.round((rj() + rj() - 1) * 3.5) / 10) * (q.M >= 8 ? 0.5 : 1);
+      /* Version 252：最後まで残る誤差を ±0.35→±0.47（標準偏差 約0.14→0.19。気象庁の発表履歴20件の最終報と気象庁Mの差の標準偏差0.19に合わせる） */
+      e.mErr = (Math.round((rj() + rj() - 1) * 4.7) / 10) * (q.M >= 8 ? 0.5 : 1);
+      /* Version 252：第1報のMの小ささ（e.mDef）と、それが消えるまでの時定数（e.mTau）。気象庁の発表履歴20件では、第1報のMは必ず最終報より小さい
+         （M4〜6で0.3〜1.6、平均0.8）。M4.5〜6のMが最終報の0.2以内に入るのは検知から5〜30秒（中央値 約14秒）。乱数は別の系列 */
+      {
+        const rf = rng(runSeed + e.k * 7919 + 7121);
+        rf();
+        rf();
+        e.mDef = Math.min(1.6, Math.max(0.2, 0.8 + (rf() + rf() + rf() - 1.5) * 0.7));
+        e.mTau = 4 + 6 * rf();
+      }
       e.errF = errFactor(q);
       /* 津波：約3分後に第1報。M8を超える巨大地震は定性表現で出し、約15分後に数値へ更新 */
       if (!fake && cfg.tsu) {
@@ -9149,7 +9570,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         e.tsunami = e.tsLazy ? null : computeTsunami(slipOf(q, e), qual);
         if (e.tsunami) e.tsunami.regs.forEach(r => (r.arr += e.t0));
         /* 「認知」＝緊急地震速報の第1報の発表時。第1報が出た時点で上書きする（eewTick）。出ない地震は検知＋遅延から数える */
-        const tRec = e.det.length ? e.det[0] + cfg.delay : e.t0;
+        const tRec = e.det.length ? e.det[0] + e.dly : e.t0;
         /* 発表までの時間にばらつき（Version 140）：第1報は認知から2〜4分（気象庁の目標は約3分）、M8超の数値への更新は13〜18分 */
         const rt = rng(runSeed + e.k * 7919 + 2718);
         rt();
@@ -9236,7 +9657,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.mwIdx = 0;
       e.mwShown = null;
       if (!fake && e.mBias >= 0.15 && !e.farQ) {
-        const t0 = e.det.length ? e.det[0] + cfg.delay : e.t0;
+        const t0 = e.det.length ? e.det[0] + e.dly : e.t0;
         /* 時刻と詰める割合にばらつき（Version 140）：各段階の時刻は ±2〜5分（MW_JIT）、割合は ±0.06。前の段階から3分以上あける */
         const rm = rng(runSeed + e.k * 7919 + 777);
         rm();
@@ -9261,12 +9682,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       else if (!fake && !e.farQ && cfg.mag === 'std' && e.feltQ) {
         const rw = rng(runSeed + e.k * 7919 + 8443);
         rw();
-        const t0 = e.det.length ? e.det[0] + cfg.delay : e.t0;
+        const t0 = e.det.length ? e.det[0] + e.dly : e.t0;
         e.mwFinT = t0 + MW_FIN_T + (rw() * 2 - 1) * MW_FIN_J;
         e.endT = Math.min(SIM_MAX, Math.max(e.endT, e.mwFinT + 20));
       }
       /* Version 206：推定Mが Mt に届く時刻（破壊の進み方・M8.5超の緩やかな増え方を含む）から求める */
-      e.tauConv = Math.max(10, mReachT(q, Mt) + 3, fLen(q) / (1.5 * VR));
+      e.tauConv = Math.max(10, mReachT(q, Mt) + 3, fLen(q) / (1.5 * VR), e.dly + ((e.mTau * 2) / cfg.grow) * Math.log(Math.max(1, e.mDef / 0.05)));
       if (e.farEew) e.tauConv = 12;
       e.ang = (q.lon * 97 + q.lat * 31 + e.k * 1.7) % 6.283;
       /* 予報（データベース）でも津波が予想されるか（Version 160）。Mは発表時点の見込み（M8超は最大級を見込む）。
@@ -9284,7 +9705,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         }
       }
       e.firstDet = e.det.length ? e.det[0] : null;
-      e.nextTick = e.det.length ? e.det[0] + cfg.delay : 0;
+      e.nextTick = e.det.length ? e.det[0] + e.dly : 0;
       e.eewDone = !e.det.length;
       /* Version 230：津波情報が出る地震は、観測の収まり方に関わらず一律で SIM_MAX（300分）まで続ける */
       e.endT = tsuWill(e) ? SIM_MAX : Math.min(e.endT, SIM_MAX);
@@ -9474,6 +9895,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      ②M8.5を超える分は増え方を2/3に緩める（M_SOFT・M_SOFT_K。上限は作らない。M9.5級は破壊の終わり近くでしか出ない） */
   const M_SOFT = 8.5,
     M_SOFT_K = 2 / 3;
+  /* Version 252：沖合の地震の第1報の遅れ（秒）＝DLY_SEA0＋DLY_SEA_J×乱数 */
+  const DLY_SEA0 = 1,
+    DLY_SEA_J = 3;
   /* 破壊の長さ（推定M用）：両側破壊は 2×VR×t（従来どおり断層の端で打ち切らない。小さな地震の立ち上がりを変えないため）。
      一方向破壊は、短い側が端（0.15L）で止まり、長い側だけが伸びる */
   function rupLenAt(q, t) {
@@ -9550,7 +9974,16 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      南海トラフ地震臨時情報・北海道・三陸沖後発地震注意情報の結果は発表基準がMwなので、どの表記でもMw */
   const MW_FIN_T = 1800,
     MW_FIN_J = 300;
-  /* その地震のMw：実際の地震は気象庁CMT解の値（q.mw）。それ以外は臨時情報の判定（ntqSetup）と同じ乱数・同じ式（M8未満は M−0〜0.3、M8以上は同じ） */
+  /* その地震のMw：実際の地震は気象庁CMT解の値（q.mw）。M8以上は同じ。臨時情報の判定（ntqSetup）もこれを使う。
+     Version 252：地震の種類と規模で分ける（文献）。プレート境界・プレート内は M＝Mw。内陸はM5.5以上で Mw＝M−0.36（M3.5で0から直線で増やす）。
+     M3.5未満は Mw のほうが大きい（傾き0.5。Uchide & Imanishi 2018）。ばらつき 標準偏差 約0.15（±0.3まで） */
+  const MW_CR = 0.36,
+    MW_K = 3.5;
+  function mwOf(M, type, u) {
+    let w = M < MW_K ? MW_K + 0.5 * (M - MW_K) : M;
+    if (type === 'crustal') w -= MW_CR * Math.min(1, Math.max(0, (M - MW_K) / 2));
+    return Math.round((w + u) * 10) / 10;
+  }
   function eqMw(e) {
     const q = e.q;
     if (q.mw != null) return q.mw;
@@ -9558,7 +9991,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const rn = rng(runSeed + e.k * 7919 + 6161);
     rn();
     rn();
-    return Math.round((q.M - 0.3 * rn()) * 10) / 10;
+    return mwOf(q.M, q.type, Math.max(-0.3, Math.min(0.3, (rn() + rn() + rn() - 1.5) * 0.3)));
   }
   /* 速報などの値 v（このシミュレーターのMの尺度）の表記 */
   function mTxE(e, v) {
@@ -9620,7 +10053,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         A.misWith = B;
         A.misM = Mm;
         A.misW = 0.5 + 0.5 * rj(); /* 推定Mのうち、後の地震の観測点が占める重み（50〜100%） */
-        A.misFrom = Math.max(B.det[0] + 1, A.det[0] + cfg.delay);
+        A.misFrom = Math.max(B.det[0] + 1, A.det[0] + A.dly);
         A.misTo = A.misFrom + 6 + rj() * 8;
         B.misInto = A.k;
         break;
@@ -9650,9 +10083,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const Mt = q.M - (e.mBias || 0),
       qq = Math.min(1.4, 1.6 / Math.sqrt(Math.max(1, nDet)));
     /* 推定Mには、最後まで残る誤差（e.mErr、±0.35程度）がある。巨大地震は実際より小さめ（e.mBias）。上限はない */
+    /* Version 252：第1報（検知から e.dly 秒）では e.mDef だけ小さく、時定数 e.mTau で消える（P波の初めの部分の振幅でMを出すため小さめに出る）。
+       破壊が続く大きな地震は、破壊の長さに相当するM（mRup）のほうで抑えられる。上下のぶれ（mJit）は0.3倍に */
+    const def = (e.mDef || 0) * Math.exp(-Math.max(0, tau - (e.dly || cfg.delay)) / (((e.mTau || 8) * 2) / cfg.grow));
     let M =
-      Math.min(Mt, Math.max(mRup(q, tau), mFloor(q, tau))) +
-      e.mJit * Math.exp(-tau / 6) * Math.min(1, 1.5 / Math.sqrt(Math.max(1, nDet))) +
+      Math.min(Mt - def, Math.max(mRup(q, tau), mFloor(q, tau))) +
+      0.3 * e.mJit * Math.exp(-tau / 6) * Math.min(1, 1.5 / Math.sqrt(Math.max(1, nDet))) +
       (e.mErr || 0);
     if (misOn(e, t)) {
       M += e.misW * (e.misM - M);
@@ -9690,7 +10126,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   function predictAreas(e, t, ev) {
     const ipf = !(cfg.deep && e.depth > 150),
       Lh = faultLen(e.M) / 2,
-      ep = { M: e.M, depth: e.depth, type: 'crustal' },
+      ep = { M: e.M, depth: e.depth, type: 'crustal', noFar: 1 } /* Version 254：気象庁の予測式に合わせ、遠距離の補正（farAdj）は入れない（実際の揺れより遠くを強めに予測する）。ユーザー決定 */,
       kx = 111.32 * Math.cos(e.lat * D2R);
     return AREAS.map(a => {
       let v = -9,
@@ -9780,11 +10216,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
 
   function eewTick(e, t) {
     const s = sim;
-    if (s.fake && e.reports.length && !s.canceled && t >= e.firstDet + cfg.delay + 7) {
+    if (s.fake && e.reports.length && !s.canceled && t >= e.firstDet + e.dly + 7) {
       cancelEEW(t);
       return;
     }
-    if (e.eewDone || e.firstDet == null || t < e.firstDet + cfg.delay - 1e-6) return;
+    if (e.eewDone || e.firstDet == null || t < e.firstDet + e.dly - 1e-6) return;
     /* 誤認された後の地震は、別の地震と判別されるまで単独の速報を出さない */
     if (e.misInto != null) {
       const A = s.evs[e.misInto];
@@ -23402,6 +23838,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     $('cArea').value = String(cfg.areaTh);
     $('cDeep').value = cfg.deep ? '1' : '0';
     $('cMis').value = cfg.mis;
+    $('cDlySea').value = cfg.dlySea;
     $('cStyle').value = cfg.style;
     $('cMag').value = cfg.mag;
     $('cZoom').value = cfg.zoom ? '1' : '0';
@@ -23417,7 +23854,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         cDip: P.dipU != null, cRup: P.rupU != null, cSig: cfg.sigma !== d.sigma, cBias: cfg.bias !== d.bias,
         cArc: cfg.arc !== d.arc, cNets: cfg.net.some((v, i) => v !== d.net[i]), cDelay: cfg.delay !== d.delay,
         cGrow: cfg.grow !== d.grow, cErr: cfg.err !== d.err, cPlum: cfg.plum !== d.plum, cWarn: cfg.warnTh !== d.warnTh,
-        cLpw: cfg.lpw !== d.lpw, cArea: cfg.areaTh !== d.areaTh, cDeep: cfg.deep !== d.deep, cMis: cfg.mis !== d.mis,
+        cLpw: cfg.lpw !== d.lpw, cArea: cfg.areaTh !== d.areaTh, cDeep: cfg.deep !== d.deep, cMis: cfg.mis !== d.mis, cDlySea: cfg.dlySea !== d.dlySea,
         cStyle: cfg.style !== d.style, cMag: cfg.mag !== d.mag, cRt: cfg.rt !== d.rt, cZoom: cfg.zoom !== d.zoom, cWave: cfg.waves !== d.waves,
         cWaveKeep: cfg.wavesKeep !== d.wavesKeep, cExtra: (cfg.extra || 0) !== (d.extra || 0), cTsu: cfg.tsu !== d.tsu
       };
@@ -23469,6 +23906,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   onCfg('cArea', 'onchange', v => (cfg.areaTh = +v));
   onCfg('cDeep', 'onchange', v => (cfg.deep = v === '1'));
   onCfg('cMis', 'onchange', v => (cfg.mis = v));
+  onCfg('cDlySea', 'onchange', v => (cfg.dlySea = v));
   onCfg('cArc', 'onchange', v => (cfg.arc = v === '1'), true);
   onCfg('cLpw', 'onchange', v => (cfg.lpw = v === '1'), true);
   onCfg('cRt', 'onchange', v => (cfg.rt = v));
@@ -23520,6 +23958,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     cArea: [() => (cfg.areaTh = CFG0.areaTh), false, () => optTxt('cArea', CFG0.areaTh)],
     cDeep: [() => (cfg.deep = CFG0.deep), false, () => optTxt('cDeep', b01(CFG0.deep))],
     cMis: [() => (cfg.mis = CFG0.mis), false, () => optTxt('cMis', CFG0.mis)],
+    cDlySea: [() => (cfg.dlySea = CFG0.dlySea), false, () => optTxt('cDlySea', CFG0.dlySea)],
     cStyle: [() => (cfg.style = CFG0.style), false, () => optTxt('cStyle', CFG0.style)],
     cMag: [() => (cfg.mag = CFG0.mag), false, () => optTxt('cMag', CFG0.mag)],
     cRt: [() => (cfg.rt = CFG0.rt), false, () => optTxt('cRt', CFG0.rt)],
@@ -23639,7 +24078,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       q: EQS.map(q => {
         const a = [q.lon, q.lat, q.depth, q.M, q.strike, ty.indexOf(q.type), q.dip == null ? -1 : q.dip, rup.indexOf(q.rup), q.dt || 0];
         const lf = q.len > 0 || q.fwr != null;
-        if (q.slip || lf) a.push(q.slip ? [q.slip.k, q.slip.x0] : 0);
+        /* a[9] は以前のすべりの分布（Version 253 で廃止。位置を保つため 0） */
+        if (lf) a.push(0);
         if (lf) a.push([q.len > 0 ? q.len : 0, q.fwr != null ? q.fwr : -1]);
         /* Version 241：実際の地震のMw（a[11]。a[9]・a[10] が無ければ 0 で埋める） */
         if (q.mw != null) {
@@ -23712,7 +24152,6 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         dip: pre && dips.includes(dip) ? dip : null,
         rup: pre ? rup[a[7]] || 'bi' : null,
         dt: Math.round(clampN(a[8], 0, DTMAX, 0)),
-        slip: Array.isArray(a[9]) ? { k: clampN(a[9][0], 0, 1, 0, 3), x0: clampN(a[9][1], -0.5, 0.5, 0, 3) } : null,
         /* Version 237：断層の長さ・震源の前の割合 */
         len: pre && Array.isArray(a[10]) && +a[10][0] > 0 ? Math.round(clampN(a[10][0], 1, 1500, 100)) : null,
         fwr: pre && Array.isArray(a[10]) && +a[10][1] >= 0 ? clampN(a[10][1], 0, 1, 0.5, 2) : null,
@@ -23723,7 +24162,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     /* 詳細設定：既定値から始め、共有された差分を型と範囲を確かめて重ねる */
     const nc = JSON.parse(JSON.stringify(CFG0)),
       c = o.c && typeof o.c === 'object' ? o.c : {};
-    const SEL = { sigma: 'cSig', grow: 'cGrow', warnTh: 'cWarn', areaTh: 'cArea', rt: 'cRt', style: 'cStyle', mag: 'cMag', mis: 'cMis' },
+    const SEL = { sigma: 'cSig', grow: 'cGrow', warnTh: 'cWarn', areaTh: 'cArea', rt: 'cRt', style: 'cStyle', mag: 'cMag', mis: 'cMis', dlySea: 'cDlySea' },
       RNG = { bias: 'cBias', delay: 'cDelay', err: 'cErr', extra: 'cExtra' };
     for (const k in CFG0) {
       if (!(k in c)) continue;
@@ -23733,6 +24172,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         continue;
       }
       if (typeof v !== typeof CFG0[k]) continue;
+      if (k === 'sigma') {
+        const sg = sigmaV254(v) /* Version 254：以前のリンクの 0.3・0.5 を新しい選択肢へ */;
+        if (optVals(SEL[k]).includes(String(sg))) nc[k] = sg;
+        continue;
+      }
       if (SEL[k]) {
         if (optVals(SEL[k]).includes(String(v))) nc[k] = v;
       } else if (RNG[k]) {
