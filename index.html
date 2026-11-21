@@ -6972,7 +6972,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 257;
+  const APP_VERSION = 260;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -8500,6 +8500,12 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return 3500;
   }
   const JSEA_REGS = new Set(['北海道日本海沿岸南部','北海道日本海沿岸北部','青森県日本海沿岸','秋田県','山形県','新潟県上中下越','佐渡','富山県','石川県能登','石川県加賀','福井県','京都府','兵庫県北部','鳥取県','島根県出雲・石見','隠岐','山口県日本海沿岸','福岡県日本海沿岸','佐賀県北部','壱岐・対馬']);
+  /* Version 258：浅い海で波が砕ける効果（頭打ち）。実際の津波（aspT）だけで、6m（TSU_BRK_H）を超える分は (H/6)^0.65 で伸びを鈍らせる（上限は設けない）。
+     グリーンの法則（線形）のままでは巨大な津波ほど高すぎた（2011年東北沖で岩手県53.9m・宮城県37.4m）。
+     合わせた先：2011年の気象庁の現地調査（大船渡16.7m・相馬8.9m・北茨城6.9mなど）と女川15m前後、南海トラフは内閣府2012（豊橋20.5m・下田25.3m）。
+     予報（データベース方式）・予想表示は一様すべりで aspT が無いので変わらない */
+  const TSU_BRK_H = 6,
+    TSU_BRK_P = 0.65;
   function computeTsunami0(P, qual) {
     return jobDrain(computeTsunami0G(P, qual));
   }
@@ -8698,6 +8704,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       /* 太平洋側の波源から来る津波は、津軽・宗谷海峡や半島の細い部分を回り込んで弱まるため、日本海側の予報区では津波注意報までにとどめる。日本海側にも断層がある場合はそのまま */
       /* 湾の形による増幅（V字湾・湾の奥。Version 179） */
       H *= c.bg || 1;
+      if (P.aspT && H > TSU_BRK_H) H = TSU_BRK_H * Math.pow(H / TSU_BRK_H, TSU_BRK_P);
       if (JSEA_REGS.has(c.reg) && !srcJS.get(fsrc)) {
         H = Math.min(H, 0.95);
         jsCap[ci] = 1;
@@ -8729,7 +8736,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       /* シミュレーションは最大300分（Version 230）。それより後に届く海岸は扱わない（Version 144） */
       if (arr > SIM_MAX) return;
       /* 津波観測点用：この海岸の点の高さ・到達時間・押し引き（最初に届く波の波源が隆起なら押し） */
-      ptH[ci] = Math.min(H, 30);
+      ptH[ci] = H; /* Version 258：30mの上限をなくした */
       ptA[ci] = arr;
       ptS[ci] = bestQ && bestQ[2] < 0 ? -1 : 1;
     };
@@ -8814,7 +8821,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     });
     const regs = [...by.values()]
       .map(r => {
-        r.H = Math.min(r.H, 30);
+        /* Version 258：予報区ごとの高さの30mの上限をなくした */
         r.cat = tsuCatJ(r.H);
         r.lab = tsuLabelJ(r.cat, r.H, qual);
         r.path = COAST.regPath.get(r.name);
@@ -13225,6 +13232,30 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     wvFillI = null,
     wvFill = null,
     wvClipP = null;
+  /* Version 259：海岸の陸の格子が値を借りる範囲を、海から1格子だけでなく k 格子先まで広げる（隣の借りている格子と同じ海の格子から借りる）。
+     格子の粗さで陸になった所（地図では海。カムチャツカ・朝鮮半島・千島列島など周りの陸の海岸）に、縞の途切れた段々の隙間が出ていた。陸の上は地図の陸で隠れる */
+  function wvFillGrow(F, sea, w, h, k) {
+    const D8 = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    for (let it = 1; it < k; it++) {
+      const add = [];
+      for (let r = 0; r < h; r++)
+        for (let c = 0; c < w; c++) {
+          const n = r * w + c;
+          if (sea[n] || F[n] >= 0) continue;
+          for (const [i, j] of D8) {
+            const R = r + i,
+              C = c + j;
+            if (R < 0 || C < 0 || R >= h || C >= w) continue;
+            const m = R * w + C;
+            if (!sea[m] && F[m] >= 0) {
+              add.push(n, F[m]);
+              break;
+            }
+          }
+        }
+      for (let q = 0; q < add.length; q += 2) F[add[q]] = add[q + 1];
+    }
+  }
   function wvPrep() {
     if (wvDc) return;
     const w = SG.w,
@@ -13289,6 +13320,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     /* 陸の格子 → 値を借りる海の格子（なければ -1） */
     wvFillI = new Int32Array(N).fill(-1);
     for (let k = 0; k < f.length; k += 2) wvFillI[f[k]] = f[k + 1];
+    wvFillGrow(wvFillI, seaG, w, h, 2);
   }
   /* 波の広がりの表示に使う外洋の水深（m。Version 185）。予報・観測の計算（tsuHmax の3500m）は変えず、表示だけ実際の深さに近づける：
      日本海溝・千島海溝・伊豆小笠原海溝より東の太平洋は約6000m、南海トラフ・南西諸島海溝より外のフィリピン海は約4500m */
@@ -13377,10 +13409,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* 陸をまたがない隣どうし（seaMv の縦・横）だけで値をならす（F：値、ok：使う格子、it：回数）。内側は型付き配列だけで回す（Version 199） */
   function* wvDiffuseG(F, ok, w, h, it) {
     const N = w * h,
-      idx = [];
-    for (let n = 0; n < N; n++) if (ok(n)) idx.push(n);
-    const L = Int32Array.from(idx),
-      nL = L.length,
+      /* Version 260：使う格子の番号は型付き配列に直接（以前は配列に push してから変換） */
+      okM = new Uint8Array(N);
+    let nOk = 0;
+    for (let n = 0; n < N; n++) if (ok(n)) (okM[n] = 1), nOk++;
+    const L = new Int32Array(nOk);
+    for (let n = 0, i = 0; n < N; n++) if (okM[n]) L[i++] = n;
+    const nL = nOk,
       /* 各格子の縦・横の隣（使えなければ -1） */
       NB = new Int32Array(nL * 4).fill(-1),
       B2 = new Float32Array(nL),
@@ -13394,30 +13429,51 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       for (let k = 0; k < 4; k++) {
         if ((k === 0 && c === w - 1) || (k === 1 && c === 0) || (k === 2 && r === h - 1) || (k === 3 && r === 0)) continue;
         const m = n + offs[k];
-        if (ok(m) && (seaMv[n] & bits[k] || seaLk[n])) NB[i * 4 + k] = m;
+        if (okM[m] && (seaMv[n] & bits[k] || seaLk[n])) NB[i * 4 + k] = m;
       }
+    }
+    /* Version 260：使う格子だけを詰めた配列（V・B2）の上で、隣も詰めた番号（NL）で回す（以前は毎回 F を番号で引き直し、割り算も毎回）。結果は同じ */
+    const pos = new Int32Array(N).fill(-1);
+    for (let i = 0; i < nL; i++) pos[L[i]] = i;
+    const NL = new Int32Array(nL * 4),
+      IK = new Float32Array(nL);
+    let V = new Float32Array(nL),
+      U = B2;
+    for (let i = 0; i < nL; i++) {
+      let k = 2;
+      for (let q = 0; q < 4; q++) {
+        const m = NB[i * 4 + q];
+        /* 隣が無ければ自分（重み0の代わりに、後で引く） */
+        NL[i * 4 + q] = m >= 0 ? pos[m] : -1;
+        if (m >= 0) k++;
+      }
+      IK[i] = 1 / k;
+      V[i] = F[L[i]];
     }
     for (let t = 0; t < it; t++) {
       if (jobLate()) yield;
-      if (jobLate()) yield;
-      for (let i = 0; i < nL; i++) {
-        let s2 = 2 * F[L[i]],
-          k = 2;
-        for (let q = 0; q < 4; q++) {
-          const m = NB[i * 4 + q];
-          if (m >= 0) {
-            s2 += F[m];
-            k++;
-          }
-        }
-        B2[i] = s2 / k;
+      for (let i = 0, o = 0; i < nL; i++, o += 4) {
+        let s2 = 2 * V[i];
+        const a = NL[o],
+          b = NL[o + 1],
+          c = NL[o + 2],
+          d = NL[o + 3];
+        if (a >= 0) s2 += V[a];
+        if (b >= 0) s2 += V[b];
+        if (c >= 0) s2 += V[c];
+        if (d >= 0) s2 += V[d];
+        U[i] = s2 * IK[i];
       }
-      for (let i = 0; i < nL; i++) F[L[i]] = B2[i];
+      const x = V;
+      V = U;
+      U = x;
     }
+    for (let i = 0; i < nL; i++) F[L[i]] = V[i];
   }
   /* いちばん早く届く時刻を広げる（二分ヒープ）。T・Dk・L は種（波源）を入れて渡す。ok：通れる格子（配列）、dMax：この道のり（km）より先へ広げない（0＝制限なし）、sp：速さ（m/s）、
      rowDx(r)：その行の東西1格子の km、dy：南北1格子の km、los：間の格子も通れるか確かめる */
-  function* wvSpreadG(w, h, T, Dk, L, sp, ok, rowDx, dy, los, dMax, LP, mv) {
+  /* lo：16方向で広げる（Version 260：反射波。強くならしてから使うので向きの数を減らしても見た目は変わらない） */
+  function* wvSpreadG(w, h, T, Dk, L, sp, ok, rowDx, dy, los, dMax, LP, mv, lo) {
     const N = w * h,
       isp = new Float32Array(N);
     for (let n = 0; n < N; n++) isp[n] = 1 / sp[n];
@@ -13469,7 +13525,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       return m;
     };
     for (let m = 0; m < N; m++) if (T[m] < 1e9) push(m, T[m]);
-    const WV_ST = MAP_LOWP ? WV_ST16 : WV_ST32,
+    const WV_ST = MAP_LOWP || lo ? WV_ST16 : WV_ST32,
       NS = WV_ST.length,
       SR = Int32Array.from(WV_ST.map(v => v[0])),
       SC = Int32Array.from(WV_ST.map(v => v[1])),
@@ -13501,6 +13557,19 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       SF.push(f);
       SB.push(b);
     });
+    const SFo = new Int32Array(NS + 1);
+    for (let k = 0; k < NS; k++) SFo[k + 1] = SFo[k] + SF[k].length;
+    const SFf = Int32Array.from(SF.flat()),
+      SFb = Int32Array.from(SB.flat());
+    /* Version 260：行ごと・向きごとの1歩の km を先に表にする（以前は1歩ごとに平方根） */
+    const KMT = new Float32Array(h * NS),
+      ICNT = Float64Array.of(0, 1, 1 / 2, 1 / 3, 1 / 4);
+    for (let r = 0; r < h; r++)
+      for (let s = 0; s < NS; s++) {
+        const ex = SC[s] * rdx[2 * r + SR[s] + 4],
+          ey = SR[s] * dy;
+        KMT[r * NS + s] = Math.sqrt(ex * ex + ey * ey);
+      }
     let yc = 0;
     while (hn > 0) {
       if ((++yc & 1023) === 0 && jobLate()) yield;
@@ -13508,16 +13577,20 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         m = pop();
       if (done[m] || k > T[m]) continue;
       done[m] = 1;
-      if (T[m] > SIM_MAX || (dMax && Dk[m] > dMax)) continue;
+      const tm = T[m];
+      if (tm > SIM_MAX || (dMax && Dk[m] > dMax)) continue;
       const r = (m / w) | 0,
         c = m - r * w,
-        im = isp[m];
+        im = isp[m],
+        /* 縁から3格子より内側なら、行き先が格子の外かを確かめなくてよい */
+        inner = r >= 3 && c >= 3 && r < h - 3 && c < w - 3,
+        ko = r * NS;
       for (let s = 0; s < NS; s++) {
-        const dr = SR[s],
-          dc = SC[s],
-          R2 = r + dr,
-          C2 = c + dc;
-        if (R2 < 0 || C2 < 0 || R2 >= h || C2 >= w) continue;
+        if (!inner) {
+          const R2 = r + SR[s],
+            C2 = c + SC[s];
+          if (R2 < 0 || C2 < 0 || R2 >= h || C2 >= w) continue;
+        }
         const m2 = m + DM[s];
         if (done[m2] || !ok[m2]) continue;
         /* 間の格子（2〜3格子先へ進むとき）：海でなければ通れない。遅さ（1/速さ）は通る格子の平均 */
@@ -13539,22 +13612,19 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         /* 陸をまたがない（Version 199）：各歩が、格子の中心どうしを結ぶ線で地図の陸を横切らないこと（seaMv。予報の seaPath と同じ判定。
            つなぐ水道 seaLk は通れる）。斜めの歩で、角だけ接する陸の格子のすき間を抜けることもなくなる */
         if (mv) {
-          const f = SF[s],
-            b = SB[s];
+          /* Version 260：歩の表は詰めた型付き配列（SFo〜SFo+1 の範囲） */
           let okMv = true;
-          for (let q = 0; q < f.length; q++) {
-            const a = m + f[q];
-            if (!(mv[a] & b[q]) && !seaLk[a]) {
+          for (let q = SFo[s], qe = SFo[s + 1]; q < qe; q++) {
+            const a = m + SFf[q];
+            if (!(mv[a] & SFb[q]) && !seaLk[a]) {
               okMv = false;
               break;
             }
           }
           if (!okMv) continue;
         }
-        const ex = dc * rdx[2 * r + dr + 4],
-          ey = dr * dy,
-          km = Math.sqrt(ex * ex + ey * ey),
-          t2 = T[m] + (km * 1000 * isum) / cnt;
+        const km = KMT[ko + s],
+          t2 = tm + km * 1000 * isum * ICNT[cnt];
         if (t2 < T[m2]) {
           T[m2] = t2;
           Dk[m2] = Dk[m] + km;
@@ -13864,7 +13934,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     while (dMax < 30000 && 3 * qMax * wvRg(dMax) >= 0.015) dMax += 50;
     const LP = o.lp ? { ls: new Float32Array(N), lx: new Float32Array(N) } : null;
     if (jobLate()) yield;
-    yield* wvSpreadG(w, h, T2, D2, L2, o.sp, ok, o.rowDx, o.dy, true, dMax, LP, o.mv);
+    yield* wvSpreadG(w, h, T2, D2, L2, o.sp, ok, o.rowDx, o.dy, true, dMax, LP, o.mv, true);
     if (o.lp) yield* wvDiffuseG(T2, n => T2[n] < 1e8, w, h, 6);
     const ta2 = new Float32Array(N).fill(-1),
       A2 = new Float32Array(N),
@@ -13894,8 +13964,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       has[n] = 1;
     }
     if (jobLate()) yield;
-    if (o.mv) yield* wvDiffuseG(A2, n => has[n] === 1, w, h, 16);
-    else wvBlur(A2, w, h, 1, has, 2);
+    /* Version 259：反射波は格子ごとに「跳ね返った海岸の格子」が1つなので、元の海岸が切り替わる所で振幅が急に変わり、海の上に細い線・段が出ていた
+       （オホーツク海・日本海など）。ならす回数を増やす（16→48回。外側の格子は 1格子×2回→2格子×3回） */
+    if (o.mv) yield* wvDiffuseG(A2, n => has[n] === 1, w, h, 48);
+    else wvBlur(A2, w, h, 2, has, 3);
     const { bs, order, nOk } = wvOrder(ta2);
     return nOk ? { ta: ta2, A: A2, D: D2, order, bs } : null;
   }
@@ -14057,7 +14129,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
             n = fr * sw + fc;
           if (!seaG[n] || !(tA[n] >= 0)) continue;
           if (k > 5) continue;
-          const wb = ((6 - k) / 6) ** 1.5,
+          /* Version 259：縁のすぐ外（k＝1）は内側の値そのものに（以前は ((6−k)/6)^1.5 で k＝1 でも0.76。縁で明るさ・縞の位置に段が残っていた） */
+          const wb = ((6 - k) / 5) ** 1.5,
             kx = 111.32 * Math.cos(latOf(m) * D2R),
             ex = (lonOf(m) - SG.lon0 - (fc + 0.5) * SG.d) * kx,
             ey = (latOf(m) - SG.lat0 - (fr + 0.5) * SG.d) * 110.57;
@@ -14084,8 +14157,18 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (b) return (tA[n] - tA[n - dr * sw - dc]) / (dk * 1000);
       return null;
     };
+    const wvBlurOut = (F, m) => {
+      const keep = [];
+      for (let r = Math.max(0, WVO_R0 - 6); r < Math.min(h, WVO_R1 + 6); r++)
+        for (let c = Math.max(0, WVO_C0 - 6); c < Math.min(w, WVO_C1 + 6); c++) keep.push(r * w + c, F[r * w + c]);
+      wvBlur(F, w, h, 1, m, 3);
+      for (let k = 0; k < keep.length; k += 2) F[keep[k]] = keep[k + 1];
+    };
     ringMix(A, has, taIn, AIn, ta2);
     wvBlur(A, w, h, 1, has, 2);
+    /* Version 259：外側の格子の到達時刻もならす（以前はならしておらず、0.25度の最短経路の段で縞がぎざぎざだった。SG の中は wvDiffuseG で6回）。
+       SG の縁から6格子以内は ringMix で SG の値に合わせてあるので、ならさない（縁で縞がずれないように） */
+    wvBlurOut(ta2, has);
     /* 反射波（Version 235）：外側の海岸（カムチャツカ・フィリピンなど）で跳ね返る波と、SG の中の反射波の続き */
     const Rf = yield* wvReflG({
       w,
@@ -14113,6 +14196,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const h2 = new Uint8Array(N);
       for (let m = 0; m < N; m++) h2[m] = Rf.ta[m] >= 0 ? 1 : 0;
       ringMix(Rf.A, h2, RfIn.ta, RfIn.A, Rf.ta);
+      wvBlurOut(Rf.ta, h2); /* Version 259 */
       const o2 = wvOrder(Rf.ta);
       Rf.order = o2.order;
       Rf.bs = o2.bs;
@@ -14198,6 +14282,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           break;
         }
       }
+    wvFillGrow(fill, sea, w, h, 2);
     if (jobLate()) yield;
     /* 海岸からの距離（km）：2回のなめの近似（wvPrep と同じ） */
     const dc = new Float32Array(N),
@@ -14284,6 +14369,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       wvGen++;
       wvT = wvTO = NaN;
       dirty = true;
+      /* Version 260：SG の外（外側の格子）も、ほかのジョブより後で先に作っておく（以前は SG の外が初めて画面に見えたときに作り始め、地図を動かすと約0.3〜0.7秒待った） */
+      if (v && v.O === undefined) wvBuildOReq(v, 1e6);
     });
     e.tsWvJob.owner = S;
   }
@@ -14501,7 +14588,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
   }
   /* 海面の上下 eta（w×h の格子、南から北の順）を、格子を U×U の画素に分けて補間しながら色の画像（北が上）に書く。SG の中と外で同じ色 */
-  let wvRowBuf = null;
+  let wvRowBuf = null,
+    wvEnvBuf = null;
   /* rg：書く格子の範囲（[列の最小, 最大, 行の最小, 最大]、行は南が0）。戻り値は書いた画素の範囲 [x, y, 幅, 高さ]。
      mk：海の格子（補間は海の格子だけで）、fill：海岸の陸の格子が値を借りる海の格子、KD：減り方の倍率 */
   function* wvColorG(img, w, h, U, rg, mk, F, fill, KD) {
@@ -14526,8 +14614,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       c1[X] = Math.min(w - 1, xi + 1);
       fx[X] = x - xi;
     }
-    if (!wvRowBuf || wvRowBuf.length < W2) wvRowBuf = new Float32Array(W2);
-    const row = wvRowBuf;
+    if (!wvRowBuf || wvRowBuf.length < W2) (wvRowBuf = new Float32Array(W2)), (wvEnvBuf = new Float32Array(W2));
+    const row = wvRowBuf,
+      envR = wvEnvBuf;
+    /* その画素の波の振幅（来た波＋反射波。mix が書く） */
+    let env = 0;
     /* 4つの格子 q0〜q3 を重み v0〜v3（合計 vs）で補間した海面の高さ */
     const mix = (q0, q1, q2, q3, v0, v1, v2, v3, vs) => {
       const iv = 1 / vs,
@@ -14536,11 +14627,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       let z = (v0 * R[q0] + v1 * R[q1] + v2 * R[q2] + v3 * R[q3]) * iv;
       /* 振幅が4mm未満の波は色に出ないので計算しない（Version 235） */
       const a = (v0 * DA[q0] + v1 * DA[q1] + v2 * DA[q2] + v3 * DA[q3]) * iv;
+      env = a < 0 ? -a : a;
       if (a > 0.004 || a < -0.004) {
         const T = DT[v0 ? q0 : v1 ? q1 : v2 ? q2 : q3] || DT[q0] || DT[q1] || DT[q2] || DT[q3];
         if (T) z += wvWave(a, (v0 * DEL[q0] + v1 * DEL[q1] + v2 * DEL[q2] + v3 * DEL[q3]) * iv, T, kd);
       }
       const a2 = (v0 * DA2[q0] + v1 * DA2[q1] + v2 * DA2[q2] + v3 * DA2[q3]) * iv;
+      env += a2 < 0 ? -a2 : a2;
       if (a2 > 0.004 || a2 < -0.004) {
         const T2 = DT2[v0 ? q0 : v1 ? q1 : v2 ? q2 : q3] || DT2[q0] || DT2[q1] || DT2[q2] || DT2[q3];
         if (T2) z += wvWave(a2, (v0 * DEL2[q0] + v1 * DEL2[q1] + v2 * DEL2[q2] + v3 * DEL2[q3]) * iv, T2, kd);
@@ -14570,6 +14663,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           ws = w0 + w1 + w2 + w3;
         if (ws > 0) {
           row[X] = mix(i0, i1, j0, j1, w0, w1, w2, w3, ws);
+          envR[X] = env;
           continue;
         }
         /* 4つとも陸の格子（地図では海の、格子の粗さで陸になった所。北方領土の周りなど）：
@@ -14583,7 +14677,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           v2 = k2 >= 0 ? (1 - f) * fy : 0,
           v3 = k3 >= 0 ? f * fy : 0,
           vs = v0 + v1 + v2 + v3;
+        env = 0;
         row[X] = vs > 0 ? mix(k0 >= 0 ? k0 : 0, k1 >= 0 ? k1 : 0, k2 >= 0 ? k2 : 0, k3 >= 0 ? k3 : 0, v0, v1, v2, v3, vs) : 0;
+        envR[X] = env;
       }
       let o = (Y * W2 + X0) * 4;
       for (let X = X0; X < X1; X++, o += 4) {
@@ -14598,8 +14694,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
           continue;
         }
         const s = Math.min(1, (Math.log10(av) - L0) * LS),
-          /* 0の近く（上昇と下降の境）は薄く消えていく（境の縁を段にしない） */
-          al = (0.3 + 0.6 * s) * Math.min(1, (av - 0.02) / 0.03),
+          /* 0の近く（上昇と下降の境）は薄く消えていく（境の縁を段にしない）。
+             Version 259：消えていく幅を、その場所の振幅の0.25倍まで広げる（以前は0.03m固定。大きな津波では暗い境が画像の1画素より細くなり、拡大すると点線に見えていた） */
+          al = (0.3 + 0.6 * s) * Math.min(1, (av - 0.02) / Math.max(0.03, 0.25 * envR[X])),
           bl = 1 - al;
         if (v > 0) {
           d[o] = 12 * bl + 255 * al;
@@ -14720,8 +14817,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
        気象庁の調査では最大の高さは第1波の数倍、大きい場合は数十倍になる。乱数は最後に1つ足した（それまでの並びは変えない） */
     let f0 = 0.4;
     w.amp = j => (j <= kMax ? H * (kMax ? f0 + ((1 - f0) * j) / kMax : 1) : H * Math.pow(dec, j - kMax));
-    /* 測定範囲を超える（「以上」）：沿岸で3mを超える津波のとき。高いほど起こりやすい（3mで35%、10m以上で70〜80%） */
-    w.sat = coast && H > 3 && r3 < Math.min(0.8, 0.2 + 0.05 * H) ? 2.5 + r4 * Math.max(0.5, H * 0.8 - 2.5) : 0;
+    /* 測定範囲を超える・施設が壊れる（「以上」）：沿岸で3mを超える津波のとき。高いほど起こりやすい。
+       Version 258：4mで約40%、6mで約60%、8mで約77%、10m以上で95%（以前は3mで35%、10m以上で70〜80%）。
+       2011年は4m以上を観測した施設のほとんど（八戸・宮古・釜石・大船渡・鮎川・相馬）が「以上」だった */
+    w.sat = coast && H > 3 && r3 < Math.min(0.95, 0.05 + 0.09 * H) ? H * (0.45 + 0.5 * r4) : 0;
+    /* 「以上」の値は施設が止まった時点の高さ。Version 258：最大の0.45〜0.95倍（2011年：釜石4.2m以上〔付近の痕跡9.3m〕〜相馬9.3m以上〔8.9m〕）。以前は2.5m＋α */
     w.miss = g() < 0.02;
     f0 = (0.2 + 0.4 * g()) * (1 - 0.35 * en);
     const A0 = w.amp(0);
@@ -14796,6 +14896,14 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       a = (r[2] - 1) * Math.exp(-x * x);
     return 1 + a / (1 + Math.max(0, H - 0.5) / 1.5);
   }
+  /* 港の中の観測施設の高さ（海岸の高さ H0 から）：6m（TOBS_K）までは従来どおり H0÷1.4。
+     Version 258：それより高い津波は港の周りにあふれるので伸びが鈍る（(H0/6)^0.7）。
+     2011年東北沖の気象庁の現地調査（観測施設付近：鮎川7.7m・釜石9.3m・大船渡11.8m・宮古7.3m・久慈8.6m・相馬8.9m・八戸6.2m）に合わせた */
+  const TOBS_K = 6,
+    TOBS_Q = 0.7;
+  function tobsG(H0) {
+    return H0 <= TOBS_K ? H0 / 1.4 : (TOBS_K / 1.4) * Math.pow(H0 / TOBS_K, TOBS_Q);
+  }
   function tobsBuild(e) {
     const R = e.tsunami && e.tsunami.raw;
     if (!R || !R.ptH) return null;
@@ -14808,9 +14916,9 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       const e1 = gauss(g);
       if (st.far || st.ci < 0) return null;
       const H0 = R.ptH[st.ci],
-        H1 = (H0 / 1.4) * Math.exp(0.3 * e1),
+        H1 = tobsG(H0) * Math.exp(0.3 * e1),
         ra = resoAmp(st.name, perR, H1),
-        H = Math.min(30, H1 * ra);
+        H = H1 * ra; /* Version 258：観測の高さの30mの上限をなくした */
       const w = tWave(e.t0 + R.ptA[st.ci], H, R.ptS[st.ci], per * (0.85 + 0.3 * g()), g, true, ra > 1.15 ? Math.max(COAST[st.ci].enc || 0, 0.8) : COAST[st.ci].enc);
       if (!(H0 > 0.02) || H < 0.03) return null;
       end = Math.max(end, w.end);
