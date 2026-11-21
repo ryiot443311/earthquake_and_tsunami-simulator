@@ -12,6 +12,12 @@ details.grp.past summary small { font-weight: 400; }
 .log .r.old .h::after { content: ' ▸'; color: var(--muted); font-weight: 400; }
 .log .r.old.open .h::after { content: ' ▾'; }
 .log .r.old:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+/* Version 255：発表履歴の長い記録は本文を2行に畳み、タップで全文を開く */
+.log .r.lg { cursor: pointer; }
+.log .r.lg:not(.open):not(.old) .bd { max-height: 3.2em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 45%, transparent); mask-image: linear-gradient(#000 45%, transparent); }
+.log .r.lg:not(.old) > .h::after { content: ' ▸ 詳細'; color: var(--muted); font-weight: 400; font-size: 0.8rem; white-space: nowrap; }
+.log .r.lg.open:not(.old) > .h::after { content: ' ▾ 閉じる'; }
+.log .r.lg:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
 .log .r .admore { display: none; }
 .log .r .add.open .admore { display: inline; }
 .log .r .add.open .adbtn { display: none; }
@@ -2322,6 +2328,19 @@ details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
 #pendSec { display: none; }
 #p-log:has(.empty.wait) #pendSec { display: block; }
 #p-log .sec:has(> .res > .empty.wait) { display: none; }
+/* Version 255：スマホ（幅999px以下）は「発表履歴｜津波｜震度｜長周期」を切り替えて1つずつ表示する。PCは従来どおり縦に並べる */
+.logTabs { display: none !important; }
+@media (max-width: 999px) {
+  #p-log .logTabs { display: flex !important; }
+  #p-log .logTabs button { position: relative; white-space: nowrap; }
+  #p-log .logTabs button.nw::after { content: ''; position: absolute; top: 5px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--alert); }
+  #p-log #pendSec { display: none !important; }
+  #p-log .sec[data-ls] { display: none !important; }
+  #p-log[data-ls="log"] .sec[data-ls="log"],
+  #p-log[data-ls="tsu"] .sec[data-ls="tsu"],
+  #p-log[data-ls="res"] .sec[data-ls="res"],
+  #p-log[data-ls="lp"] .sec[data-ls="lp"] { display: grid !important; border-top: 0; padding-top: 0; }
+}
 @media (max-width: 999px) {
   /* 表示切替は折り返して、6つを1行に等分（横スクロールをやめる） */
   .stage > .tv + .bar + .bar { flex-wrap: wrap; overflow-x: visible; }
@@ -2524,22 +2543,23 @@ html, body { overflow-x: hidden; overflow-x: clip; }
         </div>
       </div>
 
-      <div class="pane" role="tabpanel" id="p-log" aria-labelledby="tab-log" hidden>
-        <div class="sec">
+      <div class="pane" role="tabpanel" id="p-log" aria-labelledby="tab-log" data-ls="log" hidden>
+        <div class="seg pastTabs logTabs" id="logTabs" role="tablist" aria-label="速報・震度の項目"><button type="button" role="tab" data-ls="log" aria-selected="true">発表履歴</button><button type="button" role="tab" data-ls="tsu" aria-selected="false">津波</button><button type="button" role="tab" data-ls="res" aria-selected="false">震度</button><button type="button" role="tab" data-ls="lp" aria-selected="false">長周期</button></div>
+        <div class="sec" data-ls="log">
           <h2>緊急地震速報の発表履歴</h2>
           <div class="log" id="log"><div class="empty">まだ発表はありません。「地震発生」で開始します。</div></div>
         </div>
         <div class="sec" id="pendSec"><div class="empty">津波情報・各地域の震度・長周期地震動階級は、発表されしだいここに表示します。</div></div>
-        <div class="sec">
+        <div class="sec" data-ls="tsu">
           <h2>津波情報</h2>
           <div class="res" id="tsuRes"><div class="empty">地震発生から約3分後に発表します。</div></div>
           <div class="res tobsres" id="tsuObsRes" hidden></div>
         </div>
-        <div class="sec">
+        <div class="sec" data-ls="res">
           <h2>各地域の震度（推計）</h2>
           <div class="res" id="res"><div class="empty">シミュレーション後に表示します。</div></div>
         </div>
-        <div class="sec">
+        <div class="sec" data-ls="lp">
           <h2>長周期地震動階級（推計）</h2>
           <div class="res" id="lpRes"><div class="empty">シミュレーション後に表示します。</div></div>
         </div>
@@ -6952,7 +6972,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 254;
+  const APP_VERSION = 256;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -8286,7 +8306,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       W2 = Wd / 2,
       az = P.strike * D2R,
       kx = 111.32 * Math.cos(P.lat * D2R),
-      inId = innerSeaId(P.lon, P.lat);
+      inId = innerSeaEpi(P.lon, P.lat);
     /* 断層の上端は深さ1km以上（海底まで届く場合は1kmで頭打ち） */
     const wLo = sd > 1e-6 ? Math.max(-W2, (1 - P.depth) / sd) : -W2,
       Weff = W2 - wLo;
@@ -8443,6 +8463,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      震央が内海にある地震は、規模から決まる断層（M8.2で約180km）が内海より長くても、内海の外（陸の向こうの別の海）にはみ出した部分では津波を起こさない
      （断層の長さを内海の範囲に収める。すべりの量は変えない）。以前は有明海のM8.2で断層の南端が八代海の外・鹿児島県の西の海まで伸び、九州の西岸に大きな津波が出ていた。
      境界は tsuHmax の浅い海の範囲と同じ */
+  /* Version 256：「震央が内海にある」は震央が海のときだけ。内海の範囲（緯度・経度の枠）には周りの陸も入るので、
+     陸の震央（例：東京23区）まで内海の地震とみなし、断層が湾の外の海（相模湾・太平洋）に伸びても津波を起こさなかった */
+  function innerSeaEpi(lon, lat) {
+    return isSeaCell(lon, lat) ? innerSeaId(lon, lat) : 0;
+  }
   function innerSeaId(lon, lat) {
     if (lon > 130.15 && lon < 130.75 && lat > 32.0 && lat < 33.3 && !(lon < 130.3 && lat > 32.58 && lat < 32.8)) return 1;
     if (lon > 131.2 && lon < 135.2 && lat > 33.9 && lat < 34.75 && !(lon > 134.45 && lat < 34.3)) return 2;
@@ -8494,7 +8519,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       P.lat + (s * Math.cos(az) - u * Math.sin(az)) / 110.57
     ];
     /* 断層のうち海の下にある割合（陸の下の部分は津波を起こさない）。震央が内海にある地震は、その内海の外にはみ出した部分を数えない（Version 217） */
-    const inId = innerSeaId(P.lon, P.lat);
+    const inId = innerSeaEpi(P.lon, P.lat);
     let nSea = 0;
     const NS = 16,
       NU = 4;
@@ -8759,7 +8784,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         per = Math.max(8, Math.min(50, 6 + 0.3 * S.a)) * (1 + Math.min(dM, 1500) / 1000),
         A = B.A0 + (B.A1 - B.A0) * Math.max(0, Math.min(1, (per - B.p0) / (B.p1 - B.p0))),
         v = A * Href;
-      /* 湾の中で起きた地震は従来どおり（経路の計算のまま） */
+      /* 湾の中で起きた地震は従来どおり（経路の計算のまま）。湾の近くの陸の震央（東京23区など）もこちら */
       if (innerSeaId(P.lon, P.lat) === B.id) continue;
       COAST.forEach((c, i) => {
         if (c.reg !== B.reg) return;
@@ -9766,6 +9791,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
         e.tsJob.owner = sim;
       }
     $('log').innerHTML = '<div class="empty">地震波を監視中…</div>';
+    if (!seeking) logSub('log');
     $('res').innerHTML = '<div class="empty wait">シミュレーション中…</div>';
     $('lpRes').innerHTML = '<div class="empty">長周期地震動階級1以上を観測した場合、地震発生から約10分後に発表します。</div>';
     tobsClear();
@@ -9880,6 +9906,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     setGoBtn();
     lockRun();
     $('log').innerHTML = '<div class="empty">まだ発表はありません。「地震発生」で開始します。</div>';
+    if (!seeking) logSub('log');
     $('res').innerHTML = '<div class="empty">シミュレーション後に表示します。</div>';
     $('lpRes').innerHTML = '<div class="empty">シミュレーション後に表示します。</div>';
     $('tsuRes').innerHTML = '<div class="empty">地震発生から約3分後に発表します。</div>';
@@ -10467,13 +10494,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const s = sim;
     const name = epiName(rep.lon, rep.lat);
     const kind = rep.warn ? '警報' : '予報';
-    /* 同じ地震の前の報は、見出しと要点だけにして畳む（タップで開く） */
-    $('log')
-      .querySelectorAll('.r.eewr[data-q="' + e.k + '"]:not(.old)')
-      .forEach(r => {
-        r.classList.add('old');
-        r.tabIndex = 0;
-      });
+    /* Version 255：同じ地震の前の報も畳まず全文を出す（以前は見出しと要点だけにして畳んでいた） */
     const ADD_SHOW = 3;
     addLog(
       '<div class="r eewr ' +
@@ -11089,27 +11110,108 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   new ResizeObserver(fitTelop).observe($('tv'));
   fitTelop();
 
+  /* Version 255：スマホの「速報・震度」タブの中の項目切替（発表履歴・津波・震度・長周期）。
+     見ていない項目に新しい発表（発表履歴・津波）が入ったら、ボタンに赤い点を付ける */
+  function logSub(k) {
+    $('p-log').dataset.ls = k;
+    $('logTabs')
+      .querySelectorAll('button')
+      .forEach(b => {
+        const on = b.dataset.ls === k;
+        b.setAttribute('aria-selected', on);
+        b.tabIndex = on ? 0 : -1;
+        if (on) b.classList.remove('nw');
+      });
+  }
+  $('logTabs').addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-ls]');
+    if (b) logSub(b.dataset.ls);
+  });
+  $('logTabs').addEventListener('keydown', ev => {
+    if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+    const bs = [...$('logTabs').querySelectorAll('button')],
+      i = bs.findIndex(b => b.dataset.ls === $('p-log').dataset.ls),
+      n = bs[(i + (ev.key === 'ArrowRight' ? 1 : bs.length - 1)) % bs.length];
+    ev.preventDefault();
+    logSub(n.dataset.ls);
+    n.focus();
+  });
+  if (typeof MutationObserver === 'function')
+    [
+      ['log', ['log']],
+      ['tsu', ['tsuRes', 'tsuObsRes']]
+    ].forEach(([k, ids]) => {
+      const mo = new MutationObserver(() => {
+        if ($('p-log').dataset.ls === k) return;
+        if (ids.every(id => !$(id).firstElementChild || $(id).firstElementChild.classList.contains('empty'))) return;
+        const b = $('logTabs').querySelector('button[data-ls="' + k + '"]');
+        if (b) b.classList.add('nw');
+      });
+      ids.forEach(id => mo.observe($(id), { childList: true }));
+    });
+
   /* 発表履歴：「ほか○地域」で残りの地域名を開く／畳んだ前の報をタップで開閉 */
   $('log').addEventListener('click', ev => {
+    if (String(getSelection && getSelection())) return;
+    /* Version 255：畳んだ長い記録は、中のどこをタップしても先に全文を開く */
+    const g = ev.target.closest('.r.lg:not(.old)');
+    if (g && !g.classList.contains('open')) {
+      g.classList.add('open');
+      return;
+    }
     const b = ev.target.closest('.adbtn');
     if (b) {
       b.parentNode.classList.add('open');
       return;
     }
-    const r = ev.target.closest('.r.old');
-    if (r && !String(getSelection && getSelection())) r.classList.toggle('open');
+    const r = ev.target.closest('.r.old, .r.lg');
+    if (r) r.classList.toggle('open');
   });
   $('log').addEventListener('keydown', ev => {
-    const r = ev.target.closest && ev.target.closest('.r.old');
+    const r = ev.target.closest && ev.target.closest('.r.old, .r.lg');
     if (r && ev.target === r && (ev.key === 'Enter' || ev.key === ' ')) {
       ev.preventDefault();
       r.classList.toggle('open');
     }
   });
+  /* Version 255：地域の一覧が長くなる記録（震度・長周期・津波）と推計震度分布図の本文（見出し .h の後ろ）を .bd に包み、3行を超えるものは .lg にして畳む。
+     タブが隠れている間は高さが0なので、見えたとき・幅が変わったとき・画像が読み込まれたときに ResizeObserver で判定する */
+  const LOG_RO =
+    typeof ResizeObserver === 'function'
+      ? new ResizeObserver(es => {
+          for (const en of es) logFoldChk(en.target);
+        })
+      : null;
+  const LOG_FOLD_RE = /推計震度分布図|震度速報|震度に関する情報|長周期地震動に関する観測情報|大津波警報|津波警報|津波注意報|津波予報|津波情報|津波観測に関する情報/;
+  function logFoldChk(bd) {
+    const r = bd.parentNode;
+    if (!r || !bd.isConnected || !bd.offsetParent) return;
+    const lh = parseFloat(getComputedStyle(bd).lineHeight) || 22;
+    const long = bd.scrollHeight > lh * 3.3;
+    if (long === r.classList.contains('lg')) return;
+    r.classList.toggle('lg', long);
+    if (long) r.tabIndex = 0;
+    else if (!r.classList.contains('old')) r.removeAttribute('tabindex');
+  }
   function addLog(html) {
     const L = $('log');
-    if (L.querySelector('.empty')) L.innerHTML = '';
+    if (L.querySelector('.empty')) {
+      L.innerHTML = '';
+      if (LOG_RO) LOG_RO.disconnect();
+    }
     L.insertAdjacentHTML('afterbegin', html.replace('<div class="x"><br>', '<div class="x">'));
+    const r = L.firstElementChild,
+      h = r && r.firstElementChild;
+    if (!h || !h.classList.contains('h') || !h.nextSibling) return;
+    /* 畳むのは地域・地点の一覧が長くなる情報（震度・長周期・津波）と推計震度分布図だけ。緊急地震速報などは全文を出す */
+    const ht = h.textContent;
+    if (/緊急地震速報/.test(ht) || !LOG_FOLD_RE.test(ht)) return;
+    const bd = document.createElement('div');
+    bd.className = 'bd';
+    while (h.nextSibling) bd.appendChild(h.nextSibling);
+    r.appendChild(bd);
+    if (LOG_RO) LOG_RO.observe(bd);
+    else logFoldChk(bd);
   }
 
   let infoFoldT = 0;
@@ -12742,7 +12844,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
   function tsuQualM(e, M) {
     const E = tsuDbSrc(e);
-    if (tsuHmax(E.lon, E.lat) < 3000 || innerSeaId(E.lon, E.lat)) return M;
+    if (tsuHmax(E.lon, E.lat) < 3000 || innerSeaEpi(E.lon, E.lat)) return M;
     if (e.q.type === 'inter' && isSeaCell(E.lon, E.lat) && trenchKm(E.lon, E.lat) <= TRENCH_KM) return Math.max(M, 9.0);
     return Math.max(M, Math.min(8.5, M + 0.5));
   }
