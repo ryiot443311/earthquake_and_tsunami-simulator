@@ -6972,7 +6972,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 256;
+  const APP_VERSION = 257;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -7529,7 +7529,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return { gen: regs.length > 0, regs };
   }
   /* 遠地地震（Version 144）：推定震源から日本の陸地（最も近い市区町村）まで800km以上の地震は、震度速報ではなく「遠地地震に関する情報」を出す。
-     シミュレーション全体の長さは最大300分（Version 230。以前は240分）。津波情報が出る地震は一律で300分まで続ける（tsuWill。津波の到達もこれより後の海岸は扱わない） */
+     シミュレーション全体の長さは最大300分（Version 230。以前は240分）。Version 257 からはすべての地震で一律300分まで続ける（以前は津波情報が出る地震だけ tsuWill で。津波の到達もこれより後の海岸は扱わない） */
   const FAR_KM = 800,
     SIM_MAX = 18000;
   function nearCity(lon, lat) {
@@ -9732,8 +9732,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       e.firstDet = e.det.length ? e.det[0] : null;
       e.nextTick = e.det.length ? e.det[0] + e.dly : 0;
       e.eewDone = !e.det.length;
-      /* Version 230：津波情報が出る地震は、観測の収まり方に関わらず一律で SIM_MAX（300分）まで続ける */
-      e.endT = tsuWill(e) ? SIM_MAX : Math.min(e.endT, SIM_MAX);
+      /* Version 257：津波の有無に関わらず、すべての地震で一律 SIM_MAX（300分）まで続ける（Version 230 は津波情報が出る地震だけ） */
+      e.endT = SIM_MAX;
     }
     if (!fake) setMis(evs);
     const sarv = siteArv(SITE.lon, SITE.lat) || 1;
@@ -9875,7 +9875,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       x = Math.max(x, a);
       x0 = Math.max(x0, a);
     }
-    e.endT = tsuWill(e) ? SIM_MAX : Math.min(x, SIM_MAX); /* Version 230：津波情報が出る地震は一律300分 */
+    e.endT = SIM_MAX; /* Version 257：すべての地震で一律300分（x は使わない） */
     e.endT0 = x0;
     /* 計算中に緊急地震速報の第1報が出ていたら、そこで延ばすはずだった分（eewTick）をここで */
     if (e.tsRepPend && tsuWill(e)) e.endT = Math.max(e.endT, e.tsT + 25, e.tsT2 ? e.tsT2 + 20 : 0);
