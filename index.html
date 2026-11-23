@@ -2526,6 +2526,9 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
 .rep { position: fixed; inset: 0; z-index: 1000; overflow: auto; background: rgba(0, 0, 0, 0.6); -webkit-overflow-scrolling: touch; }
 .rep .repbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .rep .repbar span { flex: 1; min-width: 160px; font-size: 0.78rem; color: var(--muted); }
+/* Version 267：「閉じる」を右端に、案内の文は下の行に */
+.rep .repbar #repClose { order: 2; margin-left: auto; }
+.rep .repbar span { order: 3; flex-basis: 100%; }
 .rep .paper { --fg: #111; --muted: #444; --dim: #666; --panel: #f1f3f6; --panel2: #f7f8fa; --line: #c9ced6; --line2: #b4bac4; --warn: #9a5b00; --ok: #1d7a57; color-scheme: light; width: min(190mm, calc(100% - 16px)); margin: 12px auto 24px; padding: 10mm 9mm; box-sizing: border-box; background: #fff; color: #111; font-family: var(--ui); font-size: 11px; line-height: 1.5; }
 .rep .paper h1 { margin: 0 0 2px; font-size: 17px; }
 .rep .paper h2 { margin: 10px 0 4px; padding-bottom: 2px; font-size: 13px; border-bottom: 1.5px solid #333; }
@@ -7176,7 +7179,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 266;
+  const APP_VERSION = 267;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
