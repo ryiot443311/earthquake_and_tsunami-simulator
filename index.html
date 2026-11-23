@@ -35,7 +35,7 @@ details.grp.past summary small { font-weight: 400; }
   .layers.pop button { width: 100%; text-align: center; }
 }
 </style></head><body>
-<title>地震シミュレーター</title>
+<title>地震・津波シミュレーター</title>
 <meta name="description" content="地盤を加味した震度推定と、緊急地震速報・震度速報・津波情報をテレビ放送風に再現するブラウザ用シミュレーター（実際の地震情報ではありません）">
 <meta property="og:type" content="website">
 <meta property="og:title" content="地震・津波シミュレーター">
@@ -1839,11 +1839,16 @@ footer.method {
   #p-room > .sec {
     order: 3;
   }
-  #p-room > .wave {
+  #p-room > .wave,
+  #p-room > .reso {
     order: 4;
   }
   #p-room > .note {
     order: 5;
+  }
+  /* Version 266：被害のまとめは室内の3Dと操作の下に（揺れの最中に3Dが下へ押し出されないように） */
+  #p-room > .dmg {
+    order: 2;
   }
   #p-room .room3d {
     max-height: none;
@@ -2404,6 +2409,156 @@ html, body { overflow-x: hidden; overflow-x: clip; }
   .seekrow .stime { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 }
 .tv :focus:not(:focus-visible), .tv:focus:not(:focus-visible) { outline: none; }
+/* ===== Version 261：放送画面の透かし（切り抜き画像で本物と誤解されないように。時刻の下に常に出す）・シークバーの目印と出来事の一覧 ===== */
+.wmark { top: calc(2 * var(--u) + max(12px, calc(2 * var(--u))) * 1.75); right: calc(2.2 * var(--u)); z-index: 8; font-family: var(--ui); font-size: max(9px, calc(1.05 * var(--u))); font-weight: 700; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.5); text-shadow: 0 0 3px rgba(0, 0, 0, 0.8); white-space: nowrap; user-select: none; }
+.yohou { top: calc(7.6 * var(--u)); } /* 「詳細」の予報の枠は透かしの下へ */
+.seekrow .skw { flex: 1 1 120px; min-width: 70px; position: relative; display: flex; align-items: center; }
+.seekrow .skw input[type="range"] { flex: 1 1 auto; min-width: 0; width: 100%; margin: 0; }
+.skmk { position: absolute; left: 8px; right: 8px; top: 0; bottom: 0; pointer-events: none; }
+.skmk i { position: absolute; top: 1px; width: 2px; height: 6px; margin-left: -1px; border-radius: 1px; background: var(--c); }
+.skmk b { position: absolute; bottom: 1px; height: 3px; background: rgba(255, 138, 61, 0.45); border-radius: 2px; }
+.tlrow { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 4px; scrollbar-width: thin; }
+.tlrow[hidden] { display: none; }
+.tlrow button { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: 0.78rem; line-height: 1.3; white-space: nowrap; border-radius: 999px; }
+.tlrow button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+.tlrow button.fut { opacity: 0.5; }
+.tlrow button .tt { font-variant-numeric: tabular-nums; font-weight: 700; }
+.tlrow button .lt { color: var(--muted, #9aa3b2); }
+@media (max-width: 620px) {
+  .seekrow .skw { min-width: 36px; flex: 1 1 40px; }
+  .tlrow button { padding: 4px 8px; font-size: 0.74rem; }
+}
+@media print { .tlrow { display: none !important; } }
+/* ===== Version 262：おすすめの体験（2b）・室内の被害のまとめ（3a）・レポート（5b） ===== */
+.qk { position: absolute; left: 50%; bottom: calc(2.4 * var(--u) + 30px); transform: translateX(-50%); z-index: 9; width: min(560px, 94%); padding: 8px 10px 10px; border: 1px solid var(--line2); border-radius: 10px; background: rgba(11, 20, 36, 0.92); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45); font-family: var(--ui); }
+.qk .qh { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 0.85rem; font-weight: 700; color: var(--fg); }
+.qk .qh span { flex: 1; }
+.qk .qx { min-width: 30px; min-height: 30px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 15px; cursor: pointer; }
+.qk .qg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.qk .qg button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; padding: 6px 8px; text-align: left; border-radius: 8px; }
+.qk .qg b { font-size: 0.86rem; color: var(--fg); }
+.qk .qg small { font-size: 0.72rem; line-height: 1.35; color: var(--muted); }
+@media (max-width: 620px) {
+  .qk { bottom: 6px; padding: 6px 8px 8px; }
+  .qk .qg { grid-template-columns: 1fr; gap: 4px; }
+  .qk .qg button { min-height: 0; flex-direction: row; align-items: baseline; gap: 8px; padding: 5px 8px; }
+  .qk .qg b { flex: none; font-size: 0.8rem; }
+  .qk .qg small { font-size: 0.7rem; }
+}
+.stage .bar button.mxo { display: none; }
+@media (max-width: 999px) { #repBtn { display: none; } .stage > .tv + .bar.more button.mxo { display: inline-flex; } }
+/* Version 264：出典・クレジット（5d）、詳細設定の「?」の解説（2a）、スマホの室内タブの表示の切替（3c） */
+footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; min-height: 0; }
+.cred { position: fixed; inset: 0; z-index: 1001; display: flex; align-items: center; justify-content: center; padding: 12px; background: rgba(0, 0, 0, 0.6); }
+.cred[hidden] { display: none; }
+.cred .credbox { width: min(640px, 100%); max-height: calc(100% - 8px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; overflow: hidden; }
+.cred .credhd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.cred .credhd b { flex: 1; font-size: 1rem; }
+.cred .credbd { overflow: auto; -webkit-overflow-scrolling: touch; padding: 4px 16px 14px; font-size: 0.82rem; line-height: 1.6; }
+.cred .credbd h3 { margin: 12px 0 4px; font-size: 0.88rem; }
+.cred .credbd ul { margin: 0; padding-left: 1.2em; }
+.cred .credbd li + li { margin-top: 3px; }
+.cred .credbd p { margin: 10px 0 0; color: var(--muted); }
+.cred .credbd a { color: inherit; }
+#p-adv .ctl > .lb { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.qb { flex: none; width: 20px; height: 20px; min-height: 0; padding: 0; border-radius: 50%; font-size: 0.72rem; font-weight: 700; line-height: 1; }
+.qb[aria-expanded="true"] { background: var(--fg, #eee); color: var(--bg, #111); }
+.btns .qb { align-self: center; }
+#p-adv p.qtip { margin: 0; font-size: 0.8rem; color: var(--muted); line-height: 1.6; padding: 6px 9px; border-left: 3px solid var(--line2); background: var(--panel2); border-radius: 4px; }
+#p-adv p.qtip[hidden] { display: none; }
+.advtop .preset .qb { margin-left: -2px; }
+.rvsw { display: none; }
+@media (max-width: 999px) {
+  .qb { width: 26px; height: 26px; font-size: 0.8rem; }
+  .rvsw { display: flex; order: 0; gap: 0; }
+  .rvsw button { flex: 1; min-width: 0; padding: 7px 4px; font-size: 0.82rem; border-radius: 0; }
+  .rvsw button:first-child { border-radius: 8px 0 0 8px; }
+  .rvsw button:last-child { border-radius: 0 8px 8px 0; }
+  .rvsw button + button { margin-left: -1px; }
+  .rvsw button[aria-pressed="true"] { background: var(--fg, #eee); color: var(--bg, #111); font-weight: 700; }
+  /* 地図のみ：室内タブの中身は切替だけにして、地図を画面の残りいっぱいに */
+  body[data-tab="room"].rvMap #p-room > :not(.rvsw) { display: none !important; }
+  body[data-tab="room"].rvMap .main.pinned .tv {
+    max-height: none;
+    /* 下のタブ（76px）・操作バー（--hdh − --tvh）・表示の切替の行（約84px）を除いた残り */
+    height: calc(100vh - 76px - (var(--hdh, 120px) - var(--tvh, 64px)) - 84px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    height: calc(100svh - 76px - (var(--hdh, 120px) - var(--tvh, 64px)) - 84px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+  /* 室内のみ：地図を隠し、室内の3Dを画面の残りいっぱいに（速報は室内の上の帯で出る） */
+  body[data-tab="room"].rvRoom .stage > .tv,
+  body[data-tab="room"].rvRoom .stage > .bar.lyrow,
+  body[data-tab="room"].rvRoom .stage > .tlrow { display: none !important; }
+  body[data-tab="room"].rvRoom #p-room > .dmg { order: 2; }
+  body[data-tab="room"].rvRoom #p-room .room3d {
+    aspect-ratio: auto;
+    min-height: 200px;
+    height: calc(100vh - var(--hdh, 64px) - 76px - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    height: calc(100svh - var(--hdh, 64px) - 76px - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+  body.rvRoom #roomFill, body.rvMap #roomFill { display: none; }
+  body.rvRoom #pip { display: none; }
+}
+
+/* 建物の共振（Version 265） */
+.reso { margin: 6px 0 2px; padding: 6px 8px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); }
+.reso .rsh { display: flex; align-items: center; gap: 8px; font-size: 0.84rem; margin-bottom: 4px; }
+.reso .rtag { padding: 1px 7px; border-radius: 4px; font-size: 0.76rem; font-weight: 700; }
+.reso .rtag.r3 { background: #d4001a; color: #fff; }
+.reso .rtag.r2 { background: #f2a900; color: #111; }
+.reso .rtag.r1 { background: #3fb68b; color: #08140f; }
+.reso .rtag.r0 { background: var(--line); color: var(--muted); }
+.reso .resocv { width: 100%; height: 76px; display: block; }
+.reso .rtx { margin: 4px 0 0; font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+.dmg { margin: 10px 0 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
+.dmg h3 { margin: 0 0 6px; font-size: 0.9rem; }
+.dmg .dst { font-size: 0.82rem; color: var(--muted); }
+.dmgT { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.dmgT th, .dmgT td { padding: 4px 6px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+.dmgT thead th { border-top: 0; color: var(--muted); font-weight: 700; }
+.dmgT td.cur { background: rgba(255, 216, 0, 0.06); }
+.dmgT .lv { display: inline-block; padding: 1px 7px; border-radius: 4px; font-weight: 700; }
+.dmgT .lv3 { background: #d4001a; color: #fff; }
+.dmgT .lv2 { background: #f2a900; color: #111; }
+.dmgT .lv1 { background: #3fb68b; color: #08140f; }
+.dmgT .mut { color: var(--dim); }
+.dmg .dbtn { margin-top: 8px; }
+.dmg .dnote { margin: 6px 0 0; font-size: 0.74rem; color: var(--dim); }
+.rep { position: fixed; inset: 0; z-index: 1000; overflow: auto; background: rgba(0, 0, 0, 0.6); -webkit-overflow-scrolling: touch; }
+.rep .repbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.rep .repbar span { flex: 1; min-width: 160px; font-size: 0.78rem; color: var(--muted); }
+.rep .paper { --fg: #111; --muted: #444; --dim: #666; --panel: #f1f3f6; --panel2: #f7f8fa; --line: #c9ced6; --line2: #b4bac4; --warn: #9a5b00; --ok: #1d7a57; color-scheme: light; width: min(190mm, calc(100% - 16px)); margin: 12px auto 24px; padding: 10mm 9mm; box-sizing: border-box; background: #fff; color: #111; font-family: var(--ui); font-size: 11px; line-height: 1.5; }
+.rep .paper h1 { margin: 0 0 2px; font-size: 17px; }
+.rep .paper h2 { margin: 10px 0 4px; padding-bottom: 2px; font-size: 13px; border-bottom: 1.5px solid #333; }
+.rep .paper .rsub { margin: 0 0 6px; color: #444; }
+.rep .paper .rwarn { display: inline-block; margin: 2px 0 4px; padding: 2px 8px; border: 1.5px solid #d4001a; color: #d4001a; font-weight: 700; }
+.rep .paper table.rt { width: 100%; border-collapse: collapse; }
+.rep .paper table.rt th, .rep .paper table.rt td { padding: 2px 5px; border: 1px solid #c9ced6; text-align: left; vertical-align: top; }
+.rep .paper table.rt th { background: #f1f3f6; white-space: nowrap; }
+.rep .paper img.rmap { display: block; width: 100%; max-height: 120mm; object-fit: contain; border: 1px solid #999; background: #0c2344; }
+.rep .paper .rcap { margin: 2px 0 0; color: #555; font-size: 10px; }
+.rep .paper .rcl, .rep .paper .rcl * { max-height: none !important; overflow: visible !important; }
+.rep .paper .rcl * { color: inherit; }
+.rep .paper .rcl button, .rep .paper .rcl input, .rep .paper .rcl select { display: none !important; }
+.rep .paper .rcl .empty { color: #666; }
+.rep .paper .rurl { overflow-wrap: anywhere; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; }
+.rep .paper .dmgT .mut { color: #777; }
+.rep .paper .dmgT td.cur { background: none; }
+/* Version 266：狭い画面では紙面の余白を小さくし、表の見出しも折り返す（表が紙面からはみ出さないように） */
+@media screen and (max-width: 620px) {
+  .rep .paper { padding: 14px 10px; }
+  .rep .paper table.rt th { white-space: normal; }
+}
+@media print {
+  @page { size: A4; margin: 10mm; }
+  html.repOn, body.repOn { height: auto !important; overflow: visible !important; background: #fff !important; }
+  body.repOn > *:not(#rep) { display: none !important; }
+  body.repOn #rep { position: static; overflow: visible; background: none; }
+  body.repOn #rep .repbar { display: none; }
+  body.repOn #rep .paper { width: auto; margin: 0; padding: 0; }
+  .rep .paper h2 { break-after: avoid; }
+  .rep .paper img.rmap, .rep .paper table.rt tr { break-inside: avoid; }
+}
+
 /* ===== Version 213：新しい版のお知らせ（clone して使っている人向け） ===== */
 .updbar { position: fixed; z-index: 9000; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 8px); width: max-content; max-width: min(92vw, 560px); box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; background: var(--panel); color: var(--fg); border: 1px solid var(--warn); border-radius: 10px; font: 12.5px/1.5 var(--ui); box-shadow: 0 4px 16px rgba(0,0,0,.45); }
 .updbar[hidden] { display: none !important; }
@@ -2414,11 +2569,43 @@ html, body { overflow-x: hidden; overflow-x: clip; }
 
 <div class="updbar" id="updBar" role="status" hidden><span id="updTxt"></span><button type="button" id="updClose" aria-label="お知らせを閉じる">✕</button></div>
 
+<div class="cred" id="cred" role="dialog" aria-modal="true" aria-labelledby="credTtl" hidden><div class="credbox"><div class="credhd"><b id="credTtl">出典・クレジット</b><button type="button" id="credX">閉じる</button></div><div class="credbd">
+<h3>同梱しているデータ</h3><ul>
+<li>表層地盤の増幅率：防災科学技術研究所 J-SHIS 地震ハザードステーションのデータを加工して作成（元データそのものではありません）</li>
+<li>震央地名の境界：0Quake/JMA_Region（CC0、出典：気象庁）を加工</li>
+<li>津波観測点：気象庁防災情報XMLのコード表、ingen084/jma-code-dictionary（MIT License）、0Quake/Zero-Quake</li>
+<li>日本の周りの陸（地図と津波の計算）：Natural Earth（パブリックドメイン）を加工</li>
+<li>緊急警報放送の信号：昭和60年郵政省告示第405号（緊急警報信号の構成）に基づいてその場で合成</li>
+<li>都道府県境界・市町村の位置・地震観測点の位置・海岸線・警報音：出典を確認中</li>
+</ul>
+<h3>過去の地震・想定と、計算の調整に使った情報</h3><ul>
+<li>震源・規模・発震機構・震度・緊急地震速報の発表状況：気象庁</li>
+<li>観測点ごとの計測震度：気象庁「地震・火山月報（防災編）」（iku55/shindodb 経由）、気象庁 震度データベース</li>
+<li>断層のすべりのムラ（強震動生成域・大すべり域）：各地震の研究、内閣府（中央防災会議）の想定などの図から読み取った近似値</li>
+</ul>
+<h3>計算に使っている主な式・方法</h3><ul>
+<li>揺れの強さ：司・翠川（1999）、等価震源距離 Ohno ほか（1993）</li>
+<li>震度への換算：藤本・翠川（2005）、翠川ほか（1999）</li>
+<li>津波：Okada（1985）、グリーンの法則、気象庁の津波予報データベース方式（簡略化）</li>
+<li>室内の揺れ：気象庁 震度階級関連解説表に合わせて調整</li>
+</ul>
+<h3>開くときに取得する情報（公開版だけ）</h3><ul>
+<li>直近の地震：P2P地震情報 API（気象庁の地震情報）</li>
+<li>発震機構：米国地質調査所（USGS）</li>
+<li>文字：Google Fonts（BIZ UDPGothic、Zen Kaku Gothic New、Noto Sans JP。SIL Open Font License）</li>
+</ul>
+<h3>ライブラリ</h3><ul>
+<li>three.js r128（MIT License, Copyright © 2010-2021 three.js authors）</li>
+</ul>
+<p>このシミュレーターのコードは MIT License です。詳しくは <a href="https://github.com/ryiot443311/earthquake_and_tsunami-simulator/blob/main/CREDITS.md" target="_blank" rel="noopener">GitHub の CREDITS.md</a> を見てください。シミュレーション（模擬情報）です。実際の地震・津波情報ではありません。</p>
+</div></div></div>
+<div class="rep" id="rep" role="dialog" aria-label="レポート" hidden><div class="repbar"><button type="button" class="go" id="repPrint">印刷・PDF保存</button><button type="button" id="repClose">閉じる</button><span id="repNote"></span></div><div class="paper" id="repPaper"></div></div>
 <div class="app">
   <header class="top">
-    <h1>地震シミュレーター</h1>
+    <h1>地震・津波シミュレーター</h1>
     <span class="status" id="status" data-s="idle" role="status"><i></i><span id="statusTxt">待機中・想定震度を表示</span></span>
     <button class="sharebtn splitbtn" id="splitBtn" type="button" aria-pressed="false" title="右のパネルを上下2段に分けて2つのタブを同時に表示">2段表示：オフ</button>
+    <button class="sharebtn" id="repBtn" type="button" title="条件と結果を1枚にまとめて印刷・PDF保存">レポート</button>
     <button class="sharebtn" id="shareBtn" type="button"><span class="sl">設定を</span>シェア</button>
   </header>
   <div class="sharebox" id="shareBox" hidden>
@@ -2460,7 +2647,9 @@ html, body { overflow-x: hidden; overflow-x: clip; }
         <div class="ov isw" id="ivSw" role="group" aria-label="表示する情報" hidden><button type="button" data-v="int" aria-pressed="false">震度</button><button type="button" data-v="tsu" aria-pressed="true">津波</button></div>
         <div class="ov tsu" id="tsu" role="button" tabindex="0" aria-expanded="false" hidden><div class="th" id="tsuHead"></div><div class="ts" id="tsuSum"></div><div class="to" id="tsuObsSum" hidden></div><div class="tseg" id="tsuSeg" role="group" aria-label="津波の表示" hidden><button type="button" data-v="warn" aria-pressed="true">警報・注意報</button><button type="button" data-v="co" aria-pressed="false">沿岸の観測</button><button type="button" data-v="off" id="tsuSegOff" aria-pressed="false">沖合の観測</button></div><div class="tl" id="tsuList"></div><div class="tob" id="tsuObs"></div></div>
         <div class="ov legend" id="legend"></div>
+        <div class="ov wmark" id="wmark" aria-hidden="true">SIMULATION｜模擬情報</div>
         <div class="pipslot" id="pipslot"></div>
+        <div class="qk" id="qk" role="region" aria-label="おすすめの体験" hidden><div class="qh"><span>おすすめの体験（押すとすぐ始まります）</span><button type="button" class="qx" id="qkX" aria-label="おすすめの体験を閉じる">✕</button></div><div class="qg" id="qkG"></div></div>
       </div>
 
       <div class="bar">
@@ -2470,6 +2659,8 @@ html, body { overflow-x: hidden; overflow-x: clip; }
         <button id="moreBtn" class="morebtn" aria-expanded="false" aria-label="その他の操作">その他</button>
         <button id="mute" class="mx" aria-pressed="false">音：オフ</button>
         <button id="sndTest" class="mx" hidden>音を試す</button>
+        <button id="repBtn2" class="mx mxo" type="button">レポート</button>
+        <button id="credBtn2" class="mx mxo" type="button">出典</button>
         <span class="grow"></span>
         <div class="seg mx" role="group" aria-label="ズーム"><button id="zOut" aria-label="縮小">－</button><button id="zFit">全国</button><button id="zIn" aria-label="拡大">＋</button></div>
         <button id="layBtn" class="laybtn" type="button" aria-expanded="false" aria-controls="layers" title="地図に表示するもの">表示 ▴</button>
@@ -2489,11 +2680,12 @@ html, body { overflow-x: hidden; overflow-x: clip; }
       </div>
       <div class="bar seekrow" id="seekrow">
         <button id="skBack" aria-label="30秒戻る" disabled>◀ 30秒</button>
-        <input id="seek" type="range" min="0" max="100" step="1" value="0" aria-label="シミュレーションの時刻（戻す・先へ進める）" disabled>
+        <span class="skw" id="skw"><input id="seek" type="range" min="0" max="100" step="1" value="0" aria-label="シミュレーションの時刻（戻す・先へ進める）" disabled><span class="skmk" id="skMk" aria-hidden="true"></span></span>
         <button id="skFwd" aria-label="30秒進む" disabled>30秒 ▶</button>
         <button id="skNext" aria-label="次の地震の直前まで進む" title="次の地震の直前まで進む" disabled><span class="skl">次の地震 </span><span class="sks">次へ</span><span class="skg"> ⏭</span></button>
         <span class="stime" id="stime">0:00 / 0:00</span>
       </div>
+      <div class="tlrow" id="tlRow" role="group" aria-label="主な出来事の時刻へ移動" hidden></div>
       <div class="hintline" id="hint">地図をタップして震源を置きます。ドラッグで移動、ピンチ・ホイールで拡大。</div>
     </section>
 
@@ -2566,6 +2758,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
       </div>
 
       <div class="pane" role="tabpanel" id="p-room" aria-labelledby="tab-room" hidden>
+        <div class="rvsw" id="rvSw" role="group" aria-label="室内の揺れタブの表示"><button type="button" data-rv="" aria-pressed="true">地図と室内</button><button type="button" data-rv="map" aria-pressed="false">地図のみ</button><button type="button" data-rv="room" aria-pressed="false">室内のみ</button></div>
         <div class="sec">
           <div class="sitebar">
             <div class="wide"><span class="k">地点（地図で「揺れを見る地点」を選んでタップ）</span><span><b id="siteName"></b> <span class="ll" id="siteLL"></span></span></div>
@@ -2589,7 +2782,8 @@ html, body { overflow-x: hidden; overflow-x: clip; }
           <div class="rfbar" id="roomFillBar" hidden><button type="button" id="roomFillOff">✕ 元の表示に戻す</button></div>
           <div class="pipnote" id="pipNote" hidden>室内の様子は放送画面の右上に小窓で表示中です。（PC：小窓の上部を長押ししてドラッグで移動できます）</div>
         </div>
-        <canvas id="wave" class="wave" aria-label="床の加速度の波形"></canvas>
+        <canvas id="wave" class="wave" aria-label="地表と床の加速度の波形"></canvas>
+        <div class="reso" id="resoBox" hidden><div class="rsh"><b>建物の共振</b><span class="rtag" id="resoTag"></span></div><canvas id="resoCv" class="resocv" aria-label="地面の揺れの周期ごとの強さと建物の固有周期"></canvas><p class="rtx" id="resoTxt"></p></div>
         <div class="roomctl">
           <label class="fld"><span>建物</span><select id="bld"><option value="wood">木造2階建て</option><option value="rc">中層マンション（10階建て）</option><option value="mid">高層マンション（20階建て）</option><option value="tall">超高層マンション（40階建て）</option></select></label>
           <div class="fld"><span>階</span><div class="rg"><input id="fl" type="range" min="1" max="2" step="1" value="1" aria-label="階"><output id="flo">1階</output></div></div>
@@ -2600,7 +2794,8 @@ html, body { overflow-x: hidden; overflow-x: clip; }
           </div>
           <label class="fld fxfld"><span>転倒防止対策</span><select id="fix"><option value="0">なし（家具を固定しない）</option><option value="1">あり（突っ張り棒・ベルト・耐震ジェル・滑り止めシート・扉のラッチ）</option></select></label>
         </div>
-        <p class="note">「地震発生」を押すと、地図と同じ時刻で室内も揺れます。「転倒防止対策」がなしのときは家具を固定していない状態、ありのときは本棚・食器棚に突っ張り棒、冷蔵庫に転倒防止ベルト、テレビに耐震ジェル、棚板に滑り止めシート、食器棚のガラス扉に耐震ラッチを付けた状態で計算します（強い揺れでは突っ張り棒が外れる・ベルトが切れる・ジェルがはがれることがあります）。家具も落ちた物も同じ剛体として、角や縁が床・壁・ほかの物に当たる点ごとに衝突と摩擦を解いています。家具は前後左右どちらにも傾き、滑りながら傾いたり向きを変えたりし、脚のある椅子やテーブルはガタつきます。上下動で滑りやすさや倒れやすさが変わり、上向きに1Gを超えると物が浮き上がります。棚の中身は少しずつずれて縁から落ち、食器棚の扉は留め具が外れると開きます。落ちた物は重なり合い、皿・カップ・花瓶は強く当たると割れます。止まったものから計算を止めて軽くしています。建物は1次固有周期（木造0.35秒、中層0.6秒、高層2秒、超高層4秒）で揺れを増幅し、超高層では長周期地震動の影響が大きく出ます。</p>
+        <div class="dmg" id="dmgBox" hidden><h3>室内の被害のまとめ</h3><div id="dmgBody"></div><button type="button" class="dbtn" id="dmgRe" hidden></button><p class="dnote">同じ揺れでも、物の動きは毎回少しずつ変わります。比べるのは傾向です。</p></div>
+        <p class="note">「地震発生」を押すと、地図と同じ時刻で室内も揺れます。家具の動き・転倒防止対策・建物の揺れの計算のしかたは<a href="https://github.com/ryiot443311/earthquake_and_tsunami-simulator/blob/main/docs/simulation.md" target="_blank" rel="noopener">GitHub の説明（6. 室内の揺れ）</a>にあります。</p>
       </div>
 
       <div class="pane" role="tabpanel" id="p-adv" aria-labelledby="tab-adv" hidden>
@@ -2654,7 +2849,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
     </aside>
   </div>
 </div>
-<footer class="method"><p class="note">実際の地震・津波情報ではありません。</p></footer>
+<footer class="method"><p class="note">実際の地震・津波情報ではありません。<button type="button" class="credlnk" id="credBtn">出典・クレジット</button></p></footer>
 
 <script>
 /* =====================================================================
@@ -4208,9 +4403,16 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   let W = 0,
     H = 0,
     DPR = 1;
+  /* Version 264：スマホの室内タブ「室内のみ」で地図を隠している間（大きさ0）は、W・H・拡大率をそのままにして描画だけ止める */
+  let tvHidden = false;
   function resize() {
     DPR = Math.min(2, window.devicePixelRatio || 1);
     const r = tv.getBoundingClientRect();
+    tvHidden = !(r.width >= 1 && r.height >= 1);
+    if (tvHidden) {
+      syncHdr();
+      return;
+    }
     W = r.width;
     H = r.height;
     syncHdr();
@@ -4462,6 +4664,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   }
 
   function draw() {
+    /* Version 262：レポートの表示中（印刷時は地図の大きさが0になる）は地図を描かない。閉じると次のコマから描く */
+    if (tvHidden || !cv.width || !cv.height || document.body.classList.contains('repOn')) return;
     const t = sim ? sim.t : 0;
     const gx = G.lon0 * K,
       gy = -G.lat1,
@@ -6972,7 +7176,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
      リポジトリの version.json（{"version": 数値}）を起動時に1回だけ取得し、この版（APP_VERSION）より新しければ
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
-  const APP_VERSION = 260;
+  const APP_VERSION = 266;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -8945,7 +9149,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   const ptr = new Map();
   let gesture = null;
   /* 地図の上のボタン類は地図の操作（ドラッグ・タップ）に取り込まない。「震度｜津波」の切替（.isw）と縦テロップの閉じるボタン（.vx）が抜けていて押せなかった（Version 124） */
-  const onOv = e => e.target.closest && e.target.closest('#room3d,#info,#tsu,.esw,.isw,.vx');
+  const onOv = e => e.target.closest && e.target.closest('#room3d,#info,#tsu,.esw,.isw,.vx,#qk');
   /* スマホ：地図の下の説明文は、一度操作したら消す（「揺れを見る地点」を選んだときは次の操作まで出す） */
   let hintSeen = false;
   try {
@@ -9363,6 +9567,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     setGoBtn();
   }
   $('go').onclick = () => {
+    qkHide();
     if (!sim || !sim.running) start(false);
     else setPause(!sim.paused);
   };
@@ -9376,6 +9581,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* シミュレートする時間（終了時刻）の倍率。以前の2倍 */
   const SIM_LEN_MUL = 2;
   /* 実行ごとの乱数の種（誤認・検知の遅れ）。「地震発生」のたびに変わり、時刻を戻したときは同じ結果を再現する */
+  /* Version 261：シークバーの目印・出来事の一覧。時刻を戻すと最初からやり直すが、同じ乱数の種なら同じ結果になるので、一度通った出来事は残す */
+  let TLM = { seed: -1, m: new Map(), rev: 0 };
+  function tlAdd(key, t, kind, k, lab) {
+    if (!sim || sim.fake || TLM.m.has(key) || !(t >= 0)) return;
+    TLM.m.set(key, { t, kind, k, lab });
+    TLM.rev++;
+  }
   let runSeed = 1,
     runClock = 0; /* 開始時の時計。時刻を戻したときも同じ値を使う（以前は戻すたびに発表時刻の表示がずれていた。Version 130） */
   const INFO_MAX = 118;
@@ -9398,6 +9610,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (!seeking) runSeed = 1 + Math.floor(Math.random() * 2147483000);
       runClock = Date.now();
     }
+    if (!seeking || TLM.seed !== runSeed || fake) TLM = { seed: fake ? -1 : runSeed, m: new Map(), rev: TLM.rev + 1 };
     ensureAudio();
     if (sim) reset();
     clearTimeout(previewTimer);
@@ -9905,6 +10118,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     autoView.t = null;
     roomStop();
     resetRoom();
+    dmgClear();
     ['eew', 'band', 'info', 'yohou', 'telop', 'tsu', 'eewMini', 'ivSw'].forEach(i => ($(i).hidden = true));
     $('tv').classList.remove('ivs', 'tsuv');
     tsuOpen(false);
@@ -10200,6 +10414,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const s = sim;
     s.canceled = true;
     s.evs[0].eewDone = true;
+    tlAdd('c0', t, 'c', 0);
     s.warn = false;
     clearWarnFill();
     stopSound('eew');
@@ -10352,6 +10567,8 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       dD: s.fake || !e.q ? null : est.depth - (e.q.depth || 0)
     };
     e.reports.push(rep);
+    if (rep.no === 1) tlAdd('r' + e.k, t, 'r', e.k);
+    if (rep.warn) tlAdd('w' + e.k, t, 'w', e.k);
     /* 津波予報は、地震を認知（第1報の発表）してから約3分後（2〜4分）。M8超の数値更新は約15分後（13〜18分） */
     if (e.reports.length === 1 && e.tsT != null && !e.tsuDone && !s.fake && !e.farQ) {
       e.tsT = t + (e.tsOff || 180);
@@ -12203,6 +12420,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       mTx = mwF ? 'Mw' + eqMw(e).toFixed(1) : mTxE(e, r.M);
     if (mwF) e.mwFinT = t;
     if (s.lateT0 != null) lateFlush(t, true); /* Version 221：前の震度速報の「震度の追加」を先に出す */
+    if (!e.infoDone) tlAdd('i' + e.k, t, 'i', e.k, '遠地地震の情報');
     e.infoDone = true;
     e.eewDone = true;
     s.infoShown = true;
@@ -12606,6 +12824,10 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       if (e.tsunami && e.tsunami.gen && seaG) wvBuildReq(e, t + 30);
       /* 第1報は、その時点で分かっているMで予想する（実際のMとずれていれば、後の情報や観測で見直す） */
       e.tsFc = tsuFc(e, infoM(e, t));
+      if (e.tsFc && e.tsFc.gen && e.tsFc.regs.length) {
+        const c = Math.max(...e.tsFc.regs.map(r => r.cat));
+        tlAdd('t' + e.k, t, 't', e.k, c >= 4 ? '大津波警報' : c === 3 ? '津波警報' : c === 2 ? '津波注意報' : '津波予報');
+      }
     }
     const prev = s.tsunami,
       ts = tsuAdjApply(mergeTsu(s.evs.filter(v => v.tsuDone).map(v => v.tsFc || v.tsunami)));
@@ -15293,6 +15515,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
                震度速報以降の情報のM（infoM・Mの更新・津波）は、震度速報を出した時点の緊急地震速報のM（e.infoBaseM）から進める */
             e.infoBaseM = eewLastM(e);
             if (!e.reports.length) e.eewDone = true;
+            tlAdd('i' + e.k, t, 'i', e.k);
             e.infoDone = true;
           });
           /* 横テロップと縦テロップは一続きの表示：縦テロップに切り替わっても、同じ時刻（eewEndT）で消える */
@@ -15450,6 +15673,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   }
   function syncSeek() {
+    tlRender();
     const el = $('seek'),
       ok = !!(sim && !sim.fake);
     if (el.disabled === ok) {
@@ -15477,6 +15701,87 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     $('stime').textContent = txt;
   }
+  /* Version 261：シークバーの目印と、その下の出来事の一覧（押すとその1秒前へ移動）。
+     揺れを見る地点のP波・S波の到達は最初から分かるので先に出し（薄い表示）、ほかは起きたときに足す */
+  const TL_C = { q: '#d7dbe2', r: '#f2c200', w: '#e0102e', c: '#c58be8', p: '#5aa0ff', s: '#ff8a3d', i: '#3ccf6e', t: '#2fd0e0' };
+  const TL_N = { q: '地震発生', r: '緊急地震速報（第1報）', w: '緊急地震速報（警報）', c: '取消報', p: 'P波到達（揺れを見る地点）', s: 'S波到達（揺れを見る地点）', i: '震度速報' };
+  const TL_S = { q: '発生', r: '第1報', w: '警報', c: '取消', p: 'P波到達', s: 'S波到達', i: '震度速報' };
+  let tlSig = '',
+    tlArea = null;
+  function tlList() {
+    const L = [...TLM.m.values()],
+      many = sim.evs.length > 1;
+    sim.evs.forEach((e, k) => {
+      L.push({ t: e.t0, kind: 'q', k });
+      const st = sim.sites && sim.sites[k];
+      /* 揺れを感じない所（計測震度0.5未満）は出さない */
+      if (st && st.I >= 0.5 && !e.farQ) {
+        L.push({ t: st.tP, kind: 'p', k });
+        L.push({ t: st.tS, kind: 's', k });
+      }
+    });
+    L.sort((a, b) => a.t - b.t || 'qrwcpsit'.indexOf(a.kind) - 'qrwcpsit'.indexOf(b.kind));
+    return L.map(o => Object.assign({}, o, { pre: many ? QNUM[o.k] || '' : '' }));
+  }
+  /* S波到達の猶予：その地点の地域に警報が出てから何秒後に主要動が来たか */
+  function tlLead(o) {
+    const e = sim.evs[o.k];
+    if (!e) return '';
+    if (!tlArea || tlArea.lon !== SITE.lon || tlArea.lat !== SITE.lat) tlArea = { lon: SITE.lon, lat: SITE.lat, i: AREAS.indexOf(nearestArea(SITE.lon, SITE.lat).area) };
+    const tw = e.warnAt && e.warnAt.get(tlArea.i);
+    if (tw == null) return o.t <= sim.t ? '警報なし' : '';
+    const d = Math.round(o.t - tw);
+    return d >= 0 ? '警報から' + d + '秒' : '警報が' + -d + '秒遅れ';
+  }
+  function tlRender() {
+    const row = $('tlRow'),
+      mk = $('skMk');
+    if (!sim || sim.fake) {
+      if (tlSig !== '-') {
+        tlSig = '-';
+        row.hidden = true;
+        row.innerHTML = mk.innerHTML = '';
+      }
+      return;
+    }
+    const L = tlList(),
+      mx = Math.max(1, Math.ceil(sim.endT)),
+      tn = seekPend != null ? seekPend : sim.t,
+      nFut = L.filter(o => o.t > tn + 1e-6).length,
+      lead = L.filter(o => o.kind === 's').map(tlLead).join(','),
+      sig = TLM.rev + '|' + L.length + '|' + mx + '|' + nFut + '|' + lead;
+    if (sig === tlSig) return;
+    tlSig = sig;
+    let h = '',
+      m = '';
+    for (const o of L) {
+      const nm = (o.kind === 't' || (o.kind === 'i' && o.lab) ? o.lab : TL_N[o.kind]) || '',
+        sh = (o.kind === 't' || (o.kind === 'i' && o.lab) ? o.lab : TL_S[o.kind]) || '',
+        ld = o.kind === 's' ? tlLead(o) : '',
+        c = TL_C[o.kind];
+      m += '<i style="left:' + ((Math.min(o.t, mx) / mx) * 100).toFixed(3) + '%;--c:' + c + '"></i>';
+      h +=
+        '<button type="button" data-t="' + o.t.toFixed(2) + '" style="--c:' + c + '"' + (o.t > tn + 1e-6 ? ' class="fut"' : '') +
+        ' title="' + o.pre + nm + '　' + fmtT(o.t) + (ld ? '（' + ld + '）' : '') + '">' + o.pre + sh + ' <span class="tt">' + fmtT(o.t) + '</span>' +
+        (ld ? '<span class="lt">' + ld + '</span>' : '') + '</button>';
+    }
+    /* 第1報からS波到達までの帯（揺れを見る地点の猶予の目安） */
+    for (let k = 0; k < sim.evs.length; k++) {
+      const r = TLM.m.get('r' + k),
+        st = sim.sites && sim.sites[k];
+      if (r && st && st.I >= 0.5 && st.tS > r.t) m += '<b style="left:' + ((r.t / mx) * 100).toFixed(3) + '%;width:' + (((Math.min(st.tS, mx) - r.t) / mx) * 100).toFixed(3) + '%"></b>';
+    }
+    mk.innerHTML = m;
+    const sl = row.scrollLeft;
+    row.innerHTML = h;
+    row.scrollLeft = sl;
+    row.hidden = !L.length;
+  }
+  $('tlRow').addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-t]');
+    if (!b || !sim || sim.fake) return;
+    seekSoon(Math.max(0, +b.dataset.t - 1));
+  });
   /* 先へ：その場から早送り。戻る：最初からやり直して目的の時刻まで早送り（音は鳴らさない） */
   function seekTo(T) {
     if (!sim || sim.fake || seeking) return;
@@ -21732,6 +22037,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     fixReset();
     R.room.position.set(0, 0, 0);
     RM.maxA = 0;
+    dmgHome();
     renderRoom();
   }
   /* ===== 室内の物理演算（Version 107：家具も落ちた物も同じ剛体として計算） =====
@@ -23466,6 +23772,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     lockRun();
     RM.t = 0;
     RM.lastT = RM.t;
+    dmgBegin();
   }
   function roomStop() {
     RM.playing = false;
@@ -23512,7 +23819,11 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     }
     if (RM.playing && RM.motion) {
       if (RM.mode === 'sync' && sim && sim.running) RM.t = sim.t;
-      else RM.t += dtReal;
+      else if (RM.mode === 'replay') {
+        /* Version 263：「同じ揺れでもう一度」は速度ボタンの倍率で進める。剛体の計算を飛ばさないよう、計算済みの時刻より0.5秒より先へは進めない
+           （重い端末・高倍率では自動で遅くなる。室内が見えない間は進まない） */
+        RM.t = Math.min(RM.t + dtReal * speed, RM.lastT + 0.5);
+      } else RM.t += dtReal;
       const mo = RM.motion;
       let t = RM.lastT;
       const T = Math.min(RM.t, mo.tEnd);
@@ -23565,6 +23876,7 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       RM.active = act;
       RM.need = RM.shDirty = true;
     }
+    dmgTick();
     prAdapt(dtReal);
     dnApply(false);
     tvFx();
@@ -23759,12 +24071,13 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     const c = cvw.getContext('2d');
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, r.width, r.height);
-    if (!mo) return;
+    if (!mo) return drawReso();
     const W2 = r.width,
       H2 = r.height,
       t0 = Math.max(0, mo.tP - 3),
       t1 = mo.tEnd,
-      sc = (H2 / 2 - 4) / Math.max(1, mo.fpk);
+      /* 地表と床を同じ縮尺で重ねる（Version 265） */
+      sc = (H2 / 2 - 4) / Math.max(1, mo.fpk, mo.gpx || (mo.gpx = absMax(mo.ax)));
     c.strokeStyle = 'rgba(138,153,177,.35)';
     c.beginPath();
     c.moveTo(0, H2 / 2);
@@ -23779,33 +24092,53 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       c.fillStyle = 'rgba(255,80,80,.8)';
       c.fillRect(xOf(q.tS), 0, 1, H2);
     });
-    c.strokeStyle = '#ffd800';
     c.lineWidth = 1;
-    c.beginPath();
-    for (let px = 0; px < W2; px++) {
-      const ta = t0 + (px / W2) * (t1 - t0),
-        tb = t0 + ((px + 1) / W2) * (t1 - t0);
-      let mx = -1e9,
-        mn = 1e9;
-      for (let k = Math.floor(ta / mo.DT); k <= Math.ceil(tb / mo.DT) && k < mo.n; k++) {
-        const v = mo.fx[k];
-        if (v > mx) mx = v;
-        if (v < mn) mn = v;
+    const env = (arr, col) => {
+      c.strokeStyle = col;
+      c.beginPath();
+      for (let px = 0; px < W2; px++) {
+        const ta = t0 + (px / W2) * (t1 - t0),
+          tb = t0 + ((px + 1) / W2) * (t1 - t0);
+        let mx = -1e9,
+          mn = 1e9;
+        for (let k = Math.floor(ta / mo.DT); k <= Math.ceil(tb / mo.DT) && k < mo.n; k++) {
+          const v = arr[k];
+          if (v > mx) mx = v;
+          if (v < mn) mn = v;
+        }
+        if (mx < mn) continue;
+        c.moveTo(px + 0.5, H2 / 2 - mx * sc);
+        c.lineTo(px + 0.5, H2 / 2 - mn * sc);
       }
-      if (mx < mn) continue;
-      c.moveTo(px + 0.5, H2 / 2 - mx * sc);
-      c.lineTo(px + 0.5, H2 / 2 - mn * sc);
-    }
-    c.stroke();
+      c.stroke();
+    };
+    const fl1 = Math.min(floorNo, BLD[bldKey].N) <= 1;
+    /* 床（黄）を上に重ねる。1階は地表と同じなので床だけ */
+    if (!fl1) env(mo.ax, 'rgba(110,200,255,.75)');
+    env(mo.fx, fl1 ? '#ffd800' : 'rgba(255,216,0,.85)');
     if (t != null) {
       c.fillStyle = 'rgba(255,255,255,.12)';
       c.fillRect(0, 0, xOf(t), H2);
       c.fillStyle = '#fff';
       c.fillRect(xOf(t), 0, 2, H2);
     }
-    c.fillStyle = '#8a99b1';
     c.font = '11px "BIZ UDPGothic",sans-serif';
-    c.fillText('床の加速度（東西）', 6, 13);
+    /* Version 266：見出しの下に暗い帯（P波・S波の線や波形と文字が重ならないように） */
+    {
+      const lw = fl1 ? c.measureText('床の加速度（東西）　1階は地表とほぼ同じ').width : ['地表', 'と', '床', 'の加速度（東西）'].reduce((a, s) => a + c.measureText(s).width + 1, 0);
+      c.fillStyle = 'rgba(13,20,34,.78)';
+      c.fillRect(3, 1, lw + 6, 16);
+    }
+    c.fillStyle = '#8a99b1';
+    if (fl1) c.fillText('床の加速度（東西）　1階は地表とほぼ同じ', 6, 13);
+    else {
+      let lx = 6;
+      [['地表', 'rgba(110,200,255,.95)'], ['と', '#8a99b1'], ['床', '#ffd800'], ['の加速度（東西）', '#8a99b1']].forEach(([s, col]) => {
+        c.fillStyle = col;
+        c.fillText(s, lx, 13);
+        lx += c.measureText(s).width + 1;
+      });
+    }
     const tag = q => (marks.length > 1 ? QNUM[q.k] : '');
     marks.forEach(q => {
       c.fillStyle = 'rgba(90,170,255,.95)';
@@ -23813,7 +24146,219 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
       c.fillStyle = 'rgba(255,90,90,.95)';
       c.fillText('S' + tag(q), xOf(q.tS) + 3, marks.length > 1 ? H2 - 18 : H2 - 5);
     });
+    drawReso();
   }
+  function absMax(a) {
+    let m = 0;
+    for (let i = 0; i < a.length; i++) {
+      const v = Math.abs(a[i]);
+      if (v > m) m = v;
+    }
+    return m;
+  }
+
+  /* ---------- 建物の共振（Version 265。室内タブの長文の説明は GitHub の docs/simulation.md へ移した） ----------
+     地表の揺れ（水平2成分）の速度応答スペクトル（減衰5%、周期0.1〜10秒）を求め、建物の1次固有周期と比べる。
+     Sv(建物の周期) が一番強い周期の値に近いほど共振しやすい。波形ごとに1回だけ計算して mo.sp に置く */
+  const RESO_T = Array.from({ length: 41 }, (_, i) => 0.1 * Math.pow(100, i / 40));
+  const RESO_Z = 0.05,
+    RESO_HI = 0.7 /* これ以上で「共振しやすい」 */,
+    RESO_MID = 0.4, /* これ以上で「やや共振」 */
+    RESO_DIV = 20; /* 時間刻みは周期の1/RESO_DIV まで */
+  /* 長い周期は時間刻みを粗くして軽く（刻みは周期の1/20まで。粗くした区間は平均を取る）。毎コマの空き時間に少しずつ（ジョブ） */
+  function* resoSpecG(mo) {
+    const DT0 = mo.DT,
+      sv = new Float32Array(RESO_T.length),
+      dsm = {};
+    const down = (ag, s) => {
+      const m = Math.floor(ag.length / s),
+        o = new Float32Array(m);
+      for (let i = 0; i < m; i++) {
+        let t = 0;
+        for (let k = 0; k < s; k++) t += ag[i * s + k];
+        o[i] = t / s;
+      }
+      return o;
+    };
+    for (let j = 0; j < RESO_T.length; j++) {
+      const T = RESO_T[j];
+      let s = 1;
+      while (s < 16 && 2 * s * DT0 <= T / RESO_DIV) s *= 2;
+      const src2 = s === 1 ? [mo.ax, mo.ay] : dsm[s] || (dsm[s] = [down(mo.ax, s), down(mo.ay, s)]);
+      const DT = DT0 * s,
+        w = (2 * Math.PI) / T,
+        kk = w * w,
+        cc = 2 * RESO_Z * w,
+        den = 1 + (cc * DT) / 2 + (kk * DT * DT) / 4;
+      let mx = 0;
+      for (const ag of src2) {
+        let u = 0,
+          v = 0,
+          a = -ag[0];
+        for (let i = 1; i < ag.length; i++) {
+          const a1 = (-ag[i] - cc * (v + (DT / 2) * a) - kk * (u + DT * v + ((DT * DT) / 4) * a)) / den;
+          u += DT * v + ((DT * DT) / 4) * (a + a1);
+          v += (DT / 2) * (a + a1);
+          a = a1;
+          const q = u < 0 ? -u : u;
+          if (q > mx) mx = q;
+        }
+      }
+      sv[j] = mx * w; /* 擬似速度応答（cm/s） */
+      if (jobLate()) yield;
+    }
+    let jp = 0;
+    for (let j = 1; j < sv.length; j++) if (sv[j] > sv[jp]) jp = j;
+    return { sv, jp };
+  }
+  /* now：すぐ要る（レポート）なら最後まで計算する。そうでなければジョブに出して、まだなら null */
+  function resoSpec(mo, now) {
+    if (mo.sp) return mo.sp;
+    if (now) {
+      if (mo.spJob) jobFinish(mo.spJob);
+      return mo.sp || (mo.sp = jobDrain(resoSpecG(mo)));
+    }
+    if (!mo.spJob)
+      mo.spJob = jobAdd(null, sim && sim.running ? sim.t : -1 /* 今すぐ要る扱い（全体で約30〜100ms、1回5ms以下に分けて進む） */, () => resoSpecG(mo), v => {
+        mo.sp = v;
+        if (RM.motion === mo) drawReso(true);
+      });
+    return null;
+  }
+  /* 周期 T の Sv（周期の対数で直線補間） */
+  function resoSvAt(sp, T) {
+    const x = (Math.log10(T / 0.1) / 2) * (RESO_T.length - 1),
+      i = Math.max(0, Math.min(RESO_T.length - 2, Math.floor(x))),
+      f = Math.max(0, Math.min(1, x - i));
+    return sp.sv[i] * (1 - f) + sp.sv[i + 1] * f;
+  }
+  const resoFmt = T => (T < 1 ? T.toFixed(2) : T.toFixed(1)).replace(/0$/, '').replace(/\.$/, '');
+  /* 共振の判定と説明文（レポートでも使う） */
+  function resoInfo(now) {
+    const mo = RM.motion;
+    if (!mo || !mo.fx) return null;
+    const sp = resoSpec(mo, now);
+    if (!sp) return { wait: true };
+    const b = BLD[bldKey],
+      fl = Math.min(floorNo, b.N),
+      pk = sp.sv[sp.jp],
+      Tg = RESO_T[sp.jp],
+      svB = resoSvAt(sp, b.T),
+      q = pk > 0 ? svB / pk : 0,
+      lv = pk < 0.5 ? 0 : q >= RESO_HI ? 3 : q >= RESO_MID ? 2 : 1,
+      tag = ['揺れが小さい', '共振しにくい', 'やや共振', '共振しやすい'][lv],
+      amp = mo.pga > 0 ? mo.fpk / mo.pga : 1;
+    let txt =
+      '建物の固有周期 ' + resoFmt(b.T) + '秒、地面の揺れが最も強い周期 ' + resoFmt(Tg) + '秒。' +
+      (lv ? '建物の周期の揺れは、最も強い周期の' + Math.round(q * 100) + '%です。' : '');
+    txt += fl <= 1 ? '1階の床は地表とほぼ同じ揺れです（上の階ほど建物の揺れが加わります）。' : 'この階（' + fl + '階）の床の最大加速度は地表の' + amp.toFixed(1) + '倍です。';
+    /* 周期の長い建物は加速度が小さくても大きくゆっくり揺れる */
+    if (lv && fl > 1 && b.T >= 1.6 && mo.relPk >= 1) txt += '周期が長いので、ゆっくり大きく揺れます（地面に対する床の最大のずれ ' + Math.round(mo.relPk) + 'cm）。';
+    return { lv, tag, txt, Tb: b.T, Tg, sp };
+  }
+  let resoKey = '';
+  function drawReso(force) {
+    const box = $('resoBox');
+    if (!box) return;
+    const r = resoInfo();
+    box.hidden = !r;
+    if (!r) {
+      resoKey = '';
+      return;
+    }
+    if (r.wait) {
+      const tg = $('resoTag');
+      tg.textContent = '計算中';
+      tg.className = 'rtag r0';
+      $('resoTxt').textContent = '';
+      $('resoCv').getContext('2d').clearRect(0, 0, 1e4, 1e4);
+      resoKey = '';
+      return;
+    }
+    const cv = $('resoCv'),
+      rc = cv.getBoundingClientRect(),
+      key = [bldKey, floorNo, Math.round(rc.width), Math.round(rc.height), RM.motion.n, RM.motion.pga].join(',');
+    if (!force && key === resoKey) return;
+    const tg = $('resoTag');
+    tg.textContent = r.tag;
+    tg.className = 'rtag r' + Math.max(1, r.lv);
+    $('resoTxt').textContent = r.txt;
+    if (rc.width < 10 || rc.height < 10) {
+      resoKey = '';
+      return;
+    }
+    resoKey = key;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (cv.width !== Math.round(rc.width * dpr) || cv.height !== Math.round(rc.height * dpr)) {
+      cv.width = Math.round(rc.width * dpr);
+      cv.height = Math.round(rc.height * dpr);
+    }
+    const c = cv.getContext('2d'),
+      W2 = rc.width,
+      H2 = rc.height,
+      L = 4,
+      top = 14,
+      bot = H2 - 14,
+      sv = r.sp.sv,
+      pk = Math.max(1e-6, sv[r.sp.jp]);
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, W2, H2);
+    const xOf = T => L + (Math.log10(T / 0.1) / 2) * (W2 - 2 * L),
+      yOf = v => bot - (v / pk) * (bot - top);
+    c.font = '10px "BIZ UDPGothic",sans-serif';
+    c.fillStyle = '#8a99b1';
+    c.strokeStyle = 'rgba(138,153,177,.3)';
+    c.lineWidth = 1;
+    [0.1, 0.3, 1, 3, 10].forEach((T, i, a) => {
+      const x = Math.round(xOf(T)) + 0.5;
+      c.beginPath();
+      c.moveTo(x, top);
+      c.lineTo(x, bot);
+      c.stroke();
+      const s = T + (i === a.length - 1 ? '秒' : '');
+      c.textAlign = i === 0 ? 'left' : i === a.length - 1 ? 'right' : 'center';
+      c.fillText(s, x, H2 - 3);
+    });
+    c.textAlign = 'left';
+    /* 地面の揺れの周期ごとの強さ */
+    c.beginPath();
+    c.moveTo(xOf(RESO_T[0]), bot);
+    RESO_T.forEach((T, j) => c.lineTo(xOf(T), yOf(sv[j])));
+    c.lineTo(xOf(RESO_T[RESO_T.length - 1]), bot);
+    c.closePath();
+    c.fillStyle = 'rgba(110,200,255,.18)';
+    c.fill();
+    c.beginPath();
+    RESO_T.forEach((T, j) => (j ? c.lineTo(xOf(T), yOf(sv[j])) : c.moveTo(xOf(T), yOf(sv[j]))));
+    c.strokeStyle = 'rgba(110,200,255,.95)';
+    c.lineWidth = 1.5;
+    c.stroke();
+    /* 最も強い周期（点）と建物の固有周期（黄の線） */
+    c.fillStyle = 'rgba(110,200,255,1)';
+    c.beginPath();
+    c.arc(xOf(r.Tg), yOf(pk), 3, 0, Math.PI * 2);
+    c.fill();
+    const xb = Math.round(xOf(r.Tb)) + 0.5;
+    c.strokeStyle = '#ffd800';
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.moveTo(xb, top - 2);
+    c.lineTo(xb, bot);
+    c.stroke();
+    c.fillStyle = '#ffd800';
+    const lb = '建物 ' + resoFmt(r.Tb) + '秒';
+    c.textAlign = xb > W2 - 60 ? 'right' : 'left';
+    c.fillText(lb, xb + (xb > W2 - 60 ? -4 : 4), top - 3);
+    c.textAlign = 'left';
+    c.fillStyle = '#8a99b1';
+    /* 見出しは建物の線と重ならない側に */
+    if (xb < W2 / 2) {
+      c.textAlign = 'right';
+      c.fillText('地面の揺れの周期ごとの強さ', W2 - L, top - 3);
+      c.textAlign = 'left';
+    } else c.fillText('地面の揺れの周期ごとの強さ', L, top - 3);
+  }
+  if ($('resoCv')) new ResizeObserver(() => drawReso(true)).observe($('resoCv'));
 
   /* UI */
   function setTapMode(m) {
@@ -24203,6 +24748,85 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
     o.appendChild(row);
   }
   $('cSeedRs').onclick = () => rsDo('cSeed', () => (cfg.seed = CFG0.seed), true);
+
+  /* Version 264（2a）：詳細設定の項目ごとの解説。普段は出さず、「?」を押したときだけ1〜2行出す（もう一度押すと閉じる） */
+  const HELP = {
+    cPreset: '「既定の設定」は、気象庁の運用や実際の観測に近づけた値です。どれかの項目を変えると「カスタム」になります。',
+    cSig: '同じ距離・同じ地盤でも、実際の震度は場所ごとにばらつきます。「標準」は過去の観測（震度±0.45程度）に合わせた大きさです。',
+    cMis: 'ほぼ同時に起きた別々の地震を、緊急地震速報が1つの地震と判断して、震源や規模を誤る現象です。気象庁は2023年に震源の決め方を改良し、今はまれです。',
+    cStyle: '「NHK風」はテレビの緊急地震速報に近い見た目です。「詳細」は予報も含めた第○報、地域ごとの予測震度、Mの推移などを出します。',
+    cMag: '気象庁マグニチュード（M）は速報に使う値、モーメントマグニチュード（Mw）は断層の大きさとずれから求める値で、巨大地震でも頭打ちになりません。',
+    cRt: '「これまでの最大震度」は各地の最大の揺れを残して塗ります。「いま揺れている強さ」はその時点の揺れで塗り、揺れが通り過ぎる様子が見えます。',
+    cTsu: '津波警報・注意報と津波情報を発表するかどうかです。',
+    cDip: '断層面の傾きです。傾いた断層の上側（上盤）は揺れが強くなりやすく、津波を起こす海底の動き方も変わります。「ランダム」は地震の種類に合った範囲から選びます（過去の地震・想定はその地震の値）。',
+    cRup: '断層が割れていく向きです。破壊が進んでいく先では揺れが強くなります（指向性）。',
+    cBias: '全体の揺れの強さを震度で上げ下げします。',
+    cArc: '深い地震で、震源の真上より太平洋側の遠い所が強く揺れる現象です。沈み込むプレートの中を揺れが弱まらずに伝わるために起こります。',
+    cSeed: '揺れのばらつきと、自分で置いた地震のランダムな断層（傾き・破壊の向き・すべりのムラ）の組み合わせを変えます。',
+    cNets: '緊急地震速報に使う地震計の種類です。S-net・DONET・N-net は海底の観測網で、沖合の地震を早く捉えます。既定は気象庁の運用に合わせています（K-NET は使いません）。',
+    cDelay: '観測点がP波を捉えてから、第1報を出すまでの解析にかかる時間です。',
+    cDlySea: '沖合の地震は、観測点の配置などから第1報が陸の地震より遅れる傾向があります（実際の発表状況から）。',
+    cGrow: '推定Mが実際の大きさに近づく速さです。断層が割れ続けている間は、推定Mは小さめに出ます。',
+    cErr: '第1報の震源の位置が、実際からどれくらいずれるかの大きさです。',
+    cPlum: '震源を決めずに、近くの観測点で実際に観測された揺れから予測する方法です。巨大地震や同時に起きた地震での予測の取りこぼしを減らします。',
+    cWarn: '緊急地震速報（警報）を出す条件です。気象庁は最大予測震度5弱以上です。',
+    cLpw: '長周期地震動階級3以上が予測される場合も警報を出すかどうかです（気象庁は2023年2月から）。',
+    cArea: '警報の対象にする地域の範囲です。気象庁は予測震度4以上の地域です。',
+    cDeep: '深さ150kmより深い地震は、震源とMからの予測の精度が低いため、その予測を警報の判断に使いません（気象庁と同じ）。',
+    cFake: '地震が起きていないのに速報が出て、あとから取り消される流れを試します。',
+    cZoom: '緊急地震速報（警報）が出たとき、震源と対象地域へ地図を自動で寄せるかどうかです。',
+    cWave: 'P波（初めの小さな揺れ）とS波（あとから来る大きな揺れ）の広がりを円で示します。',
+    cWaveKeep: 'P波・S波の円を、揺れが及ぶ範囲を超えたら消すか、表示し続けるかです。',
+    cExtra: 'シミュレーションの終わりを、指定した時間だけ遅らせます。'
+  };
+  {
+    let qbN = 0;
+    for (const id in HELP) {
+      const el = $(id);
+      if (!el) continue;
+      const tip = document.createElement('p'),
+        b = document.createElement('button');
+      tip.className = 'qtip';
+      tip.id = 'qtip' + ++qbN;
+      tip.hidden = true;
+      tip.textContent = HELP[id];
+      b.type = 'button';
+      b.className = 'qb';
+      b.textContent = '?';
+      b.setAttribute('aria-expanded', 'false');
+      b.setAttribute('aria-controls', tip.id);
+      b.onclick = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        tip.hidden = !tip.hidden;
+        b.setAttribute('aria-expanded', !tip.hidden);
+      };
+      if (id === 'cPreset') {
+        const lb = el.closest('.preset');
+        b.setAttribute('aria-label', '全体設定の説明');
+        lb.after(b);
+        $('p-adv').querySelector('.advtop').after(tip);
+        tip.style.margin = '8px 0 0';
+        continue;
+      }
+      const o = el.closest('.opt'),
+        ctl = o && o.querySelector('.ctl');
+      if (ctl) {
+        const first = ctl.firstElementChild,
+          w = document.createElement('span');
+        b.setAttribute('aria-label', first.textContent.trim() + 'の説明');
+        w.className = 'lb';
+        first.before(w);
+        w.append(first, b);
+        ctl.after(tip);
+      } else if (el.closest('.btns')) {
+        /* ボタンだけの行（ばらつきの分布を変える・誤報と取消報を試す） */
+        b.setAttribute('aria-label', el.textContent.trim() + 'の説明');
+        el.after(b);
+        el.closest('.btns').after(tip);
+      }
+    }
+  }
   /* Version 245：グループ（よく使う設定・揺れの計算・緊急地震速報・表示）ごとに「既定の設定／カスタム」を選べる。
      「既定の設定」を選ぶと、そのグループの変えた項目だけを既定値に戻す（上の「全体設定」は全部を一括で） */
   document.querySelectorAll('#p-adv details.grp').forEach(g => {
@@ -24245,6 +24869,376 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   /* ---------- 設定のシェア（URLの#に設定を埋め込む） ----------
      artifactのリンクとページの間で受け渡せるのは英数字とハイフンだけの #名前 のため、
      設定をJSON→（対応ブラウザでは圧縮）→62進数の英数字にして「#eq-…」に入れる */
+  /* ===== Version 262：おすすめの体験（2b） =====
+     起動直後（シェアのURLで開いたときは除く）、放送画面の下に1タップで始められる体験を3つ出す。「地震発生」・体験のボタン・✕で消える。
+     設定（詳細設定）は変えない。地点・建物・階・開くタブだけ体験に合わせる */
+  const QK = [
+    { t: '首都直下 M7.3', s: '東京の木造2階で、家具や食器がどう動くか', pre: '首都直下', site: [139.7, 35.69], bld: 'wood', fl: 2, tab: 'room' },
+    { t: 'ほぼ同時に2つの地震', s: '緊急地震速報が2つの地震を1つと誤ることも', scen: 'ほぼ同時', tab: 'log' },
+    { t: '南海トラフ M9.1', s: '大阪の超高層40階で、長くゆっくり続く揺れ', pre: '南海トラフ', site: [135.5, 34.69], bld: 'tall', fl: 40, tab: 'room' }
+  ];
+  function qkHide() {
+    $('qk').hidden = true;
+  }
+  function qkRun(c) {
+    if (sim && sim.running) return;
+    const box = $(c.pre ? 'presets' : 'scen'),
+      b = [...box.children].find(x => x.textContent.startsWith(c.pre || c.scen));
+    if (!b) return;
+    qkHide();
+    hintOff(true);
+    if (sim) reset();
+    /* プリセットは選んでいる地震だけを置き換えるので、先に地震を1つにする（複数の地震が残らないように） */
+    if (c.pre) {
+      P = EQS[selQ] || EQS[0];
+      P.dt = 0;
+      EQS.length = 0;
+      EQS.push(P);
+      selQ = 0;
+      renderQList();
+    }
+    b.click();
+    if (c.site) {
+      SITE.lon = c.site[0];
+      SITE.lat = c.site[1];
+    }
+    if (c.bld && BLD[c.bld]) {
+      bldKey = c.bld;
+      bldI.value = bldKey;
+      floorNo = Math.min(c.fl || 1, BLD[bldKey].N);
+      syncFloor();
+    }
+    siteChanged();
+    const k = c.tab;
+    if (k && curTab !== k && !(splitOn() && tab2 === k) && !(k === 'room' && pipOn)) setTab(k);
+    $('go').click();
+  }
+  QK.forEach(c => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = '<b></b><small></small>';
+    b.querySelector('b').textContent = c.t;
+    b.querySelector('small').textContent = c.s;
+    b.onclick = () => qkRun(c);
+    $('qkG').appendChild(b);
+  });
+  $('qkX').onclick = qkHide;
+  try {
+    $('qk').hidden = location.hash.length > 1;
+  } catch (_) {
+    $('qk').hidden = false;
+  }
+
+  /* ===== Version 262：室内の被害のまとめ・対策なし／ありの比較（3a） =====
+     揺れが収まり、物が止まったら（RM.active が false。動き続けるときは20秒で打ち切る）数える。
+     ・倒れた：家具の上向きの軸が60度より傾いた（R[4] < 0.5）。大きく動いた：床の上で10cm以上ずれた。落ちた：小物（花瓶など）が15cm以上下がった
+     ・棚の中の物：it.out（棚から落ちた）、it.broken（割れた）。固定具：突っ張り棒・ベルトが外れた／切れた、耐震ジェルがはがれた
+     結果は「対策なし／あり」ごとに1つずつ残す。揺れ（RM.motion）・建物・階が変わったら消す。
+     「同じ揺れでもう一度」は、地図のシミュレーションをやり直さず、同じ揺れの波形で部屋だけを最初のP波の2秒前から再生する（RM.mode 'replay'。Version 263：速度ボタンの倍率で） */
+  const DMG = { mo: null, sig: '', res: [null, null], pend: false, t1: 0, st: '' };
+  const DMG_BIG = { shelf: 1, cup: 1, fridge: 1 },
+    DMG_SMALL = { vase: 1, glass: 1, phone: 1 };
+  const dmgName = o => o.f.name || (/^c\d$/.test(o.f.key) ? 'いす' : o.f.key);
+  function dmgHome() {
+    const R = RM.R3;
+    if (!R) return;
+    for (const o of R.list) if (o.b) o._h = [o.b.p[0], o.b.p[1], o.b.p[2]];
+  }
+  function dmgCount() {
+    const R = RM.R3,
+      r = { tip: [], move: [], drop: [], out: [], brk: [], fix: null, big: false, tv: false, maxA: Math.round(RM.maxA) };
+    const add = (a, n) => {
+      const x = a.find(v => v[0] === n);
+      if (x) x[1]++;
+      else a.push([n, 1]);
+    };
+    for (const o of R.list) {
+      const nm = dmgName(o);
+      if (o.items) {
+        let n = 0,
+          nb = 0;
+        for (const it of o.items) {
+          if (it.out) n++;
+          if (it.broken) nb++;
+        }
+        if (n) r.out.push([nm + 'の中の物', n]);
+        if (nb) add(r.brk, nm + 'の中の物');
+        if (nb > 1) r.brk.find(v => v[0] === nm + 'の中の物')[1] = nb;
+      }
+      if (o.broken) {
+        add(r.brk, nm);
+        if (DMG_SMALL[o.f.key]) add(r.drop, nm);
+        continue;
+      }
+      const b = o.b,
+        h = o._h;
+      if (!b || !h) continue;
+      const up = b.R[4],
+        dx = Math.hypot(b.p[0] - h[0], b.p[2] - h[2]),
+        dy = h[1] - b.p[1];
+      if (DMG_SMALL[o.f.key]) {
+        if (dy > 0.15) add(r.drop, nm);
+        else if (up < 0.5) add(r.tip, nm);
+        continue;
+      }
+      if (up < 0.5) {
+        add(r.tip, nm);
+        if (DMG_BIG[o.f.key]) r.big = true;
+        if (o.f.key === 'tv') r.tv = true;
+      } else if (o.f.key === 'tv' && dy > 0.15) {
+        add(r.drop, nm);
+        r.tv = true;
+      } else if (dx >= 0.1) add(r.move, nm);
+    }
+    const FX = R.fix;
+    if (fixOn && FX) {
+      r.fix = [];
+      const rd = FX.rods.filter(x => !x.on).length,
+        bt = FX.belts.filter(x => !x.on).length;
+      if (FX.rods.length) r.fix.push(['突っ張り棒', rd, FX.rods.length, '外れた']);
+      if (FX.belts.length) r.fix.push(['冷蔵庫のベルト', bt, FX.belts.length, '切れた']);
+      if (FX.tv) r.fix.push(['テレビの耐震ジェル', FX.gelOn ? 0 : 1, 1, 'はがれた']);
+    }
+    const nOut = r.out.reduce((a, v) => a + v[1], 0) + r.drop.reduce((a, v) => a + v[1], 0),
+      nBrk = r.brk.reduce((a, v) => a + v[1], 0);
+    r.lvl = r.big || r.tv ? 3 : r.tip.length || r.move.length || nOut || nBrk ? 2 : 1;
+    r.nOut = nOut;
+    r.nBrk = nBrk;
+    return r;
+  }
+  const dmgSig = () => bldKey + '|' + floorNo;
+  function dmgBegin() {
+    DMG.pend = true;
+    DMG.t1 = 0;
+    DMG.st = 'play';
+    dmgRender();
+  }
+  function dmgClear() {
+    DMG.mo = null;
+    DMG.res = [null, null];
+    DMG.pend = false;
+    dmgRender();
+  }
+  function dmgTick() {
+    if (!DMG.pend) return;
+    const mo = RM.motion,
+      stt = RM.playing ? (RM.visible ? 'play' : 'hid') : RM.catchUp || (RM.active && !RM.visible) ? 'hid' : 'wait';
+    if (stt !== DMG.st) {
+      DMG.st = stt;
+      dmgRender();
+    }
+    if (RM.playing || RM.catchUp || !mo) return;
+    /* 途中で止めた（リセットなど）ときは数えない */
+    if (!(RM.lastT >= mo.tEnd - 0.01)) {
+      DMG.pend = false;
+      dmgRender();
+      return;
+    }
+    if (RM.active) {
+      if (!RM.visible) return;
+      const now = performance.now();
+      if (!DMG.t1) DMG.t1 = now;
+      if (now - DMG.t1 < 20000) return;
+    }
+    DMG.pend = false;
+    const sig = dmgSig();
+    if (DMG.mo !== mo || DMG.sig !== sig) {
+      DMG.mo = mo;
+      DMG.sig = sig;
+      DMG.res = [null, null];
+    }
+    DMG.res[fixOn ? 1 : 0] = dmgCount();
+    dmgRender();
+  }
+  const DMG_LV = ['', '小さい', '注意', '危険'];
+  const escH = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const dmgList = a => (a.length ? a.map(v => escH(v[0]) + (v[1] > 1 ? ' ' + v[1] + '個' : '')).join('、') : '<span class="mut">なし</span>');
+  function dmgCells(r) {
+    if (!r) return ['<span class="mut">まだありません</span>', '', '', '', '', '', ''];
+    const msg = [];
+    if (r.big) msg.push('大きな家具が倒れた（下敷きのおそれ）');
+    if (r.tv) msg.push('テレビが倒れた・落ちた');
+    if (r.nBrk) msg.push('割れた物の破片でけがのおそれ');
+    return [
+      '<span class="lv lv' + r.lvl + '">' + DMG_LV[r.lvl] + '</span>' + (msg.length ? '<br>' + msg.join('<br>') : ''),
+      dmgList(r.tip),
+      dmgList(r.move),
+      r.out.length || r.drop.length ? r.out.map(v => escH(v[0]) + ' ' + v[1] + '個').concat(r.drop.map(v => escH(v[0]) + (v[1] > 1 ? ' ' + v[1] + '個' : ''))).join('、') : '<span class="mut">なし</span>',
+      dmgList(r.brk),
+      r.fix ? r.fix.map(v => escH(v[0]) + '：' + (v[1] ? v[3] + (v[2] > 1 ? ' ' + v[1] + '/' + v[2] + '本' : '') : '無事')).join('<br>') : '<span class="mut">（固定していない）</span>',
+      r.maxA + ' gal'
+    ];
+  }
+  /* まとめの表（レポートでも使う） */
+  function dmgTable(cur) {
+    const [a, b] = DMG.res;
+    if (!a && !b) return '';
+    const both = a && b,
+      ca = dmgCells(a),
+      cb = dmgCells(b),
+      rows = ['危険度', '倒れた家具・物', '大きく動いた家具（10cm以上）', '落ちた物', '割れた物', '固定具', '床の最大加速度'];
+    const one = a ? 0 : 1;
+    let h = '<table class="dmgT"><thead><tr><th></th>';
+    if (both) h += '<th>対策なし</th><th>対策あり</th>';
+    else h += '<th>' + (one ? '対策あり' : '対策なし') + '</th>';
+    h += '</tr></thead><tbody>';
+    rows.forEach((n, i) => {
+      if (i === 5 && !(b && b.fix)) return;
+      h += '<tr><th>' + n + '</th>';
+      if (both) h += '<td' + (cur && !fixOn ? ' class="cur"' : '') + '>' + ca[i] + '</td><td' + (cur && fixOn ? ' class="cur"' : '') + '>' + cb[i] + '</td>';
+      else h += '<td>' + (one ? cb : ca)[i] + '</td>';
+      h += '</tr>';
+    });
+    return h + '</tbody></table>';
+  }
+  function dmgRender() {
+    const box = $('dmgBox');
+    if (!box) return;
+    const has = DMG.res[0] || DMG.res[1];
+    box.hidden = !has && !DMG.pend;
+    if (box.hidden) return;
+    const st = DMG.pend
+      ? '<p class="dst">' +
+        (DMG.st === 'hid'
+          ? '室内の3D表示が画面に見えている間だけ計算します。見える位置に戻すと続きを計算します。'
+          : DMG.st === 'wait'
+          ? '物が止まるのを待っています…'
+          : '揺れの最中です。揺れが収まって物が止まったら数えます。') +
+        '</p>'
+      : '';
+    $('dmgBody').innerHTML = st + dmgTable(true);
+    const rb = $('dmgRe');
+    rb.hidden = DMG.pend || !has || !RM.motion || DMG.mo !== RM.motion;
+    rb.textContent = '対策を「' + (fixOn ? 'なし' : 'あり') + '」にして同じ揺れでもう一度';
+    rb.disabled = RM.playing || DMG.sig !== dmgSig();
+  }
+  function roomReplay() {
+    const mo = RM.motion;
+    if (!mo || RM.playing || !RM.R3 || DMG.mo !== mo) return;
+    fixOn = !fixOn;
+    $('fix').value = fixOn ? '1' : '0';
+    RM.catchUp = false;
+    resetRoom();
+    const tP = Math.min(...(mo.arr && mo.arr.length ? mo.arr.map(a => a.tP) : [mo.tP || 0]));
+    RM.mode = 'replay';
+    RM.playing = true;
+    lockRun();
+    RM.t = RM.lastT = Math.max(0, tP - 2);
+    RM.need = RM.shDirty = true;
+    $('hudPhase').textContent = '同じ揺れで部屋だけ再生中（転倒防止対策：' + (fixOn ? 'あり' : 'なし') + '・速度ボタンの倍率で再生）';
+    dmgBegin();
+    /* 室内の3D表示が画面から外れていると計算が止まるので、見える位置まで動かす（小窓のときは地図の上にあるのでそのまま） */
+    if (!pipOn)
+      try {
+        $('room3d').scrollIntoView({ block: 'nearest' });
+      } catch (_) {}
+  }
+  $('dmgRe').onclick = roomReplay;
+  /* 建物・階・対策を変えたら、ボタンの文字と押せるかを直す（onchange の後に呼ばれる） */
+  bldI.addEventListener('change', dmgRender);
+  flI.addEventListener('input', dmgRender);
+  $('fix').addEventListener('change', dmgRender);
+
+  /* ===== Version 262：レポート（5b） =====
+     「レポート」で、条件・地図の画像・発表履歴・津波・各地域の震度・長周期・室内の被害・シェアのURLを1つの紙面にまとめ、印刷・PDF保存する。
+     印刷のときは紙面だけを出す（@media print の body.repOn）。発表履歴などは画面の表示を写して使う（畳んだ項目は開き、ボタンは隠す） */
+  function repSel(id) {
+    const e = $(id);
+    return e && e.selectedIndex >= 0 ? e.options[e.selectedIndex].textContent : '';
+  }
+  function repClone(id) {
+    const e = $(id);
+    if (!e || !e.textContent.trim() || (e.children.length === 1 && e.firstElementChild.classList.contains('empty'))) return '';
+    const c = e.cloneNode(true);
+    c.removeAttribute('id');
+    c.querySelectorAll('[id]').forEach(x => x.removeAttribute('id'));
+    c.querySelectorAll('details').forEach(d => (d.open = true));
+    c.querySelectorAll('[hidden]').forEach(x => x.removeAttribute('hidden'));
+    c.classList.add('rcl');
+    return c.outerHTML;
+  }
+  async function repOpen() {
+    const P0 = $('repPaper'),
+      now = new Date(),
+      p2 = n => String(n).padStart(2, '0');
+    const dt = now.getFullYear() + '/' + p2(now.getMonth() + 1) + '/' + p2(now.getDate()) + ' ' + p2(now.getHours()) + ':' + p2(now.getMinutes());
+    const tyN = { crustal: '内陸（地殻内）', inter: '海溝型（プレート境界）', intra: 'スラブ内（プレート内）' };
+    const st = !sim ? '地震発生前（この震源での想定）' : sim.running ? '実行中（' + $('stime').textContent + '）' : '終了';
+    let h = '<h1>地震・津波シミュレーター　レポート</h1><div class="rwarn">シミュレーション（模擬情報）です。実際の地震・津波情報ではありません。</div><p class="rsub">作成：' + dt + '　状態：' + escH(st) + '</p>';
+    h += '<h2>地震</h2><table class="rt"><tr><th></th><th>発生</th><th>震央</th><th>位置</th><th>深さ</th><th>規模</th><th>種類</th></tr>';
+    EQS.forEach((q, k) => {
+      h += '<tr><td>' + (EQS.length > 1 ? QNUM[k] : '') + '</td><td>' + (q.dt ? fmtDt(q.dt) : '最初') + '</td><td>' + escH(epiName(q.lon, q.lat)) + '</td><td>' + escH(fmtLL(q.lon, q.lat)) + '</td><td>' + q.depth + 'km</td><td>M' + q.M.toFixed(1) + (q.mw ? '（Mw' + (+q.mw).toFixed(1) + '）' : '') + '</td><td>' + escH(tyN[q.type] || q.type) + '</td></tr>';
+    });
+    h += '</table>';
+    h += '<h2>主な設定</h2><table class="rt"><tr><th>全体設定</th><td>' + escH(repSel('cPreset')) + '</td><th>揺れのばらつき</th><td>' + escH(repSel('cSig')) + '</td></tr><tr><th>2つの地震の誤認</th><td>' + escH(repSel('cMis')) + '</td><th>放送スタイル</th><td>' + escH(repSel('cStyle')) + '</td></tr><tr><th>マグニチュードの表記</th><td>' + escH(repSel('cMag')) + '</td><th>津波情報</th><td>' + escH(repSel('cTsu')) + '</td></tr></table>';
+    let img = '';
+    try {
+      img = $('cv').toDataURL('image/jpeg', 0.85);
+    } catch (_) {}
+    if (img && img.length > 100) {
+      const tsuV = sim && sim.ivView === 'tsu';
+      h += '<h2>地図</h2><img class="rmap" alt="地図" src="' + img + '"><p class="rcap">作成した時点の地図（' + (tsuV ? '津波の表示' : sim ? '震度の塗り' : '想定震度') + '）。文字の帯・凡例は入りません。</p>';
+    }
+    const secs = [
+      ['発表履歴（緊急地震速報・震度・長周期など）', 'log'],
+      ['津波情報', 'tsuRes'],
+      ['津波の観測', 'tsuObsRes'],
+      ['各地域の震度（推計）', 'res'],
+      ['長周期地震動階級（推計）', 'lpRes']
+    ];
+    if (!sim) secs.unshift(['この震源での予想', 'pre']);
+    for (const [n, id] of secs) {
+      const c = repClone(id);
+      if (c) h += '<h2>' + n + '</h2>' + c;
+    }
+    h += '<h2>室内の揺れ</h2><table class="rt"><tr><th>地点</th><td>' + escH($('siteName').textContent + ' ' + $('siteLL').textContent) + '</td><th>建物・階</th><td>' + escH(BLD[bldKey].name + '　' + floorNo + '階') + '</td></tr><tr><th>転倒防止対策</th><td>' + (fixOn ? 'あり' : 'なし') + '</td><th>この地点の震度</th><td>' + escH($('siteI').textContent) + '</td></tr></table>';
+    const rs = resoInfo(true);
+    if (rs) h += '<p class="rcap" style="margin-top:6px">建物の共振：' + escH(rs.tag + '。' + rs.txt) + '</p>';
+    const dt2 = dmgTable(false);
+    h += dt2 ? '<p class="rsub" style="margin-top:6px">室内の被害のまとめ（同じ揺れでも物の動きは毎回少し変わります）</p>' + dt2 : '<p class="rcap">室内の被害のまとめはまだありません（室内の揺れタブで揺れが収まると数えます）。</p>';
+    let url = '';
+    try {
+      url = SHARE_BASE + '#' + (await encodeShare());
+    } catch (_) {}
+    if (url) h += '<h2>この設定のURL</h2><p class="rurl">' + escH(url) + '</p>';
+    /* Version 264：出典（5d） */
+    h += '<p class="rcap">出典：表層地盤の増幅率は防災科学技術研究所 J-SHIS、震央地名の境界は 0Quake/JMA_Region（出典：気象庁）、周りの陸は Natural Earth ほか（一覧は画面下の「出典・クレジット」）。</p>';
+    P0.innerHTML = h;
+    /* 埋め込み（Claude のプレビューなど）では印刷が止められていることが多いので、ボタンを出さず案内だけにする */
+    let emb = false;
+    try {
+      emb = window.top !== window.self && !/\.github\.io$/.test(location.hostname);
+    } catch (_) {
+      emb = true;
+    }
+    $('repPrint').hidden = emb;
+    $('repNote').textContent = emb ? 'この画面では印刷できません。公開版（GitHub Pages）で開くと、印刷・PDF保存ができます。' : 'PDFにするときは、印刷の画面で送信先を「PDFに保存」にします。';
+    $('rep').hidden = false;
+    document.documentElement.classList.add('repOn');
+    document.body.classList.add('repOn');
+    $('rep').scrollTop = 0;
+    $('repClose').focus();
+  }
+  function repClose() {
+    $('rep').hidden = true;
+    document.documentElement.classList.remove('repOn');
+    document.body.classList.remove('repOn');
+    $('repPaper').innerHTML = '';
+    (matchMedia('(max-width: 999px)').matches ? $('repBtn2') : $('repBtn')).focus();
+  }
+  $('repBtn').onclick = () => {
+    repOpen().catch(() => {});
+  };
+  $('repClose').onclick = repClose;
+  $('repBtn2').onclick = $('repBtn').onclick;
+  $('repPrint').onclick = () => {
+    try {
+      window.print();
+    } catch (_) {}
+  };
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && !$('rep').hidden) repClose();
+  });
   const SHARE_BASE = /^https?:$/.test(location.protocol) ? location.origin + location.pathname : 'https://ryiot443311.github.io/earthquake_and_tsunami-simulator/';
   const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
   const optVals = id => Array.from($(id).options).map(o => o.value);
@@ -24510,6 +25504,44 @@ const TSTN=[["釧路",144.377,42.98,0],["根室市花咲",145.568,43.275,0],["�
   new MutationObserver(() => {
     if (fillOn && $('p-room').hidden) setFill(false);
   }).observe($('p-room'), { attributes: true, attributeFilter: ['hidden'] });
+
+  /* Version 264（5d）：出典・クレジット */
+  {
+    let credFrom = null;
+    const credSet = on => {
+      $('cred').hidden = !on;
+      if (on) {
+        credFrom = document.activeElement;
+        $('credX').focus();
+      } else if (credFrom && credFrom.focus) credFrom.focus();
+    };
+    $('credBtn').onclick = $('credBtn2').onclick = () => credSet(true);
+    $('credX').onclick = () => credSet(false);
+    $('cred').addEventListener('click', e => e.target === $('cred') && credSet(false));
+    $('cred').addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        credSet(false);
+      }
+    });
+  }
+  /* Version 264（3c）：スマホ・タブレット（999px以下）の室内タブの表示。既定は「地図と室内」（案3）。「地図のみ」「室内のみ」に切り替えられる（保存しない）。
+     「室内のみ」では地図を隠す（速報は室内の上の帯 #roomEew で出る）。小窓・「室内を大きく表示」は外す */
+  function setRv(v) {
+    if (v === 'room' && pipOn) $('pip').onclick();
+    if (v && fillOn) setFill(false);
+    document.body.classList.toggle('rvMap', v === 'map');
+    document.body.classList.toggle('rvRoom', v === 'room');
+    document.querySelectorAll('#rvSw button').forEach(b => b.setAttribute('aria-pressed', b.dataset.rv === v));
+    dirty = true;
+    requestAnimationFrame(() => {
+      updFill();
+      syncHdr();
+    });
+    /* 切替の行が操作バーのすぐ下に来るように（タブを押したときと同じ） */
+    scrollToPane();
+  }
+  document.querySelectorAll('#rvSw button').forEach(b => (b.onclick = () => setRv(b.dataset.rv)));
 
   /* ---------- boot ---------- */
   document.body.dataset.tab = curTab;
