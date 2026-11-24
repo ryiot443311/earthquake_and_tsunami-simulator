@@ -1,6 +1,6 @@
 # クレジット・出典
 
-`index.html` に同梱しているデータとライブラリの出典です。
+このリポジトリ（`index.html`・`data/`・`lib/`）に同梱しているデータとライブラリの出典です。
 
 ## データ
 
@@ -33,4 +33,4 @@
 
 ## ライブラリ
 
-- **three.js r128**（OrbitControls を含む、必要な部品だけを束ねて同梱）: MIT License, Copyright © 2010-2021 three.js authors. https://github.com/mrdoob/three.js
+- **three.js r128**（OrbitControls を含む、必要な部品だけを束ねて `lib/three.r128.min.js` に同梱）: MIT License, Copyright © 2010-2021 three.js authors. https://github.com/mrdoob/three.js
