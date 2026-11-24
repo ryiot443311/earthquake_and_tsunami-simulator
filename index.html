@@ -2743,6 +2743,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
         <div class="sec">
           <h2>震源と規模</h2>
           <p class="note" id="runLock" hidden>地震発生中は震源・規模などを変更できません。「リセット」または終了後に変更できます。</p>
+          <p class="note" id="obsCut" role="status" hidden>震源・規模・深さを変えたため、実際の観測震度への補正を外しました。</p>
           <div class="epi" id="epi"></div>
           <div class="ctl"><label for="m">マグニチュード</label><input id="m" type="range" min="2" max="10" step="0.1" value="7.3"><output id="mo"></output></div>
           <div class="ctl"><label for="d">深さ</label><input id="d" type="range" min="0" max="700" step="5" value="30"><output id="do"></output></div>
@@ -5872,6 +5873,11 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     const o = q && q.obs && OBSQ.get(q.obs);
     return o && o.lon === q.lon && o.lat === q.lat && o.M === q.M && o.depth === q.depth ? o : null;
   }
+  /* Version 271：直近の地震を読み込んだ後に震源・M・深さを変えて補正が外れたら、震源と規模の欄に知らせる（元の値に戻せば補正も戻る） */
+  function obsCutNote() {
+    const n = document.getElementById('obsCut');
+    if (n) n.hidden = !(P && P.obs && OBSQ.has(P.obs) && !obsOf(P));
+  }
   /* 補正値（震度の単位）。格子の外は0 */
   function obsAdj(q, lon, lat) {
     const g = obsG.get(q);
@@ -6774,6 +6780,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   };
   let previewTimer = 0;
   function preview() {
+    obsCutNote();
     if (sim) return;
     clearTimeout(previewTimer);
     previewTimer = setTimeout(() => {
@@ -7161,7 +7168,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
   /* Version 268：出典の「確認中」の行を消す（CREDITS.md に合わせる） */
-  const APP_VERSION = 270;
+  const APP_VERSION = 271;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -12959,6 +12966,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
         'beforeend',
         '<p class="note">巨大地震のため、予想される津波の高さを「巨大」「高い」で発表しています。地震の規模が確定する約15分後に数値に更新します。</p>'
       );
+    /* Version 271：地図の津波の波（wvBuild）は警報・予報（tsuDb）とは別の表示用の計算なので、値のずれで誤解しないよう注記 */
+    R.insertAdjacentHTML('beforeend', '<p class="note tsuWvN">地図上の津波の波の広がりは、到達の様子の目安（近似の描画）です。各地の予想の高さ・到達時刻は、この一覧の値をご覧ください。</p>');
     const head = !prev
       ? TSU_NAME[top]
       : upd === true
@@ -24285,7 +24294,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   }
 
   /* ---------- 建物の共振（Version 265。室内タブの長文の説明は GitHub の docs/simulation.md へ移した） ----------
-     地表の揺れ（水平2成分）の速度応答スペクトル（減衰5%、周期0.1〜10秒）を求め、建物の1次固有周期と比べる。
+     地表の揺れ（水平2成分）の速度応答スペクトル（減衰5%、周期0.1〜10秒）を求め（Version 271 から隣の3点でならす）、建物の1次固有周期と比べる。
      Sv(建物の周期) が一番強い周期の値に近いほど共振しやすい。波形ごとに1回だけ計算して mo.sp に置く */
   const RESO_T = Array.from({ length: 41 }, (_, i) => 0.1 * Math.pow(100, i / 40));
   const RESO_Z = 0.05,
@@ -24334,9 +24343,19 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       sv[j] = mx * w; /* 擬似速度応答（cm/s） */
       if (jobLate()) yield;
     }
+    /* Version 271：合成波形のスペクトルの細かな凸凹で最も強い周期が飛ばないよう、周期の対数で隣の3点を 0.25・0.5・0.25 でならす
+       （両端は2点で重みを合わせ直す）。判定・図・レポートはならした値。ならす前は raw */
+    const ss = new Float32Array(sv.length);
+    for (let j = 0; j < sv.length; j++) {
+      let t = 0.5 * sv[j],
+        w = 0.5;
+      if (j > 0) (t += 0.25 * sv[j - 1]), (w += 0.25);
+      if (j < sv.length - 1) (t += 0.25 * sv[j + 1]), (w += 0.25);
+      ss[j] = t / w;
+    }
     let jp = 0;
-    for (let j = 1; j < sv.length; j++) if (sv[j] > sv[jp]) jp = j;
-    return { sv, jp };
+    for (let j = 1; j < ss.length; j++) if (ss[j] > ss[jp]) jp = j;
+    return { sv: ss, raw: sv, jp };
   }
   /* now：すぐ要る（レポート）なら最後まで計算する。そうでなければジョブに出して、まだなら null */
   function resoSpec(mo, now) {
@@ -24685,6 +24704,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     $('cNets').appendChild(b);
   });
   function syncCfgUI() {
+    obsCutNote();
     /* Version 244：既定の選択肢の文字は地震ごと（過去の地震・想定はその地震の値、自分で置いた地震はランダムで決まった値） */
     {
       const RN = { bi: '両側へ', fw: '一方向（断層の向きへ）', bw: '一方向（逆向きへ）' },
