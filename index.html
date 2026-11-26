@@ -2316,6 +2316,15 @@ details.grp .grpb h2 { margin-top: 4px; }
   user-select: none;
   -webkit-user-select: none;
 }
+/* ===== Version 273：上部の「⋯」メニュー ===== */
+.hmenu { position: relative; margin-left: auto; flex: none; }
+header.top .hmbtn { min-width: 40px; padding-left: 10px; padding-right: 10px; font-size: 1.05rem; font-weight: 900; line-height: 1; letter-spacing: 0.05em; }
+.hmbtn[aria-expanded="true"] { border-color: var(--warn); }
+.hmlist { position: absolute; right: 0; top: calc(100% + 6px); z-index: 70; display: grid; gap: 4px; min-width: 13em; padding: 6px; background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55); }
+.hmlist[hidden] { display: none; }
+header.top .hmlist .sharebtn { display: block; width: 100%; margin: 0; text-align: left; border-radius: 6px; min-height: 40px; padding: 8px 12px; font-size: 0.88rem; white-space: nowrap; }
+header.top .hmlist .splitbtn { display: none; }
+@media (min-width: 1000px) { header.top .hmlist .splitbtn { display: block; } }
 /* ===== Version 119：「過去の地震・想定から選ぶ」に1つの地震とシナリオをまとめ、「複数の地震」の下へ ===== */
 details.grp + .sec { border-top: 1px solid var(--line); padding-top: 14px; }
 .sublab { font-size: 0.82rem; font-weight: 700; color: var(--fg); display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 2px; }
@@ -2484,7 +2493,7 @@ html, body { overflow-x: hidden; overflow-x: clip; }
   .qk .qg small { font-size: 0.7rem; }
 }
 .stage .bar button.mxo { display: none; }
-@media (max-width: 999px) { #repBtn { display: none; } .stage > .tv + .bar.more button.mxo { display: inline-flex; } }
+@media (max-width: 999px) { .stage > .tv + .bar.more button.mxo { display: inline-flex; } }
 /* Version 264：出典・クレジット（5d）、詳細設定の「?」の解説（2a）、スマホの室内タブの表示の切替（3c） */
 footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; min-height: 0; }
 .cred { position: fixed; inset: 0; z-index: 1001; display: flex; align-items: center; justify-content: center; padding: 12px; background: rgba(0, 0, 0, 0.6); }
@@ -2644,9 +2653,13 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   <header class="top">
     <h1>地震・津波シミュレーター</h1>
     <span class="status" id="status" data-s="idle" role="status"><i></i><span id="statusTxt">待機中・想定震度を表示</span></span>
+    <!-- Version 273：上部のボタン（シェア・レポート・2段表示）を「⋯」のメニュー1つにまとめる -->
+    <span class="hmenu" id="hmenu"><button class="sharebtn hmbtn" id="hmBtn" type="button" aria-expanded="false" aria-controls="hmList" aria-label="メニュー（シェア・レポートなど）" title="シェア・レポートなど">⋯</button>
+    <span class="hmlist" id="hmList" hidden>
+    <button class="sharebtn" id="shareBtn" type="button">設定をシェア</button>
+    <button class="sharebtn" id="repBtn" type="button" title="条件と結果を1枚にまとめて印刷・PDF保存">レポート（印刷・PDF）</button>
     <button class="sharebtn splitbtn" id="splitBtn" type="button" aria-pressed="false" title="右のパネルを上下2段に分けて2つのタブを同時に表示">2段表示：オフ</button>
-    <button class="sharebtn" id="repBtn" type="button" title="条件と結果を1枚にまとめて印刷・PDF保存">レポート</button>
-    <button class="sharebtn" id="shareBtn" type="button"><span class="sl">設定を</span>シェア</button>
+    </span></span>
   </header>
   <div class="sharebox" id="shareBox" hidden>
     <div class="shead"><span id="shareTitle">この設定のURL</span><button type="button" id="shareClose" aria-label="閉じる">✕</button></div>
@@ -2718,7 +2731,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
           <button id="Lname" aria-pressed="true">地名</button>
         </div>
       </div>
-      <div class="bar seekrow" id="seekrow">
+      <!-- Version 273：地震発生の前は押せない時刻バーを隠す（syncSeek が表示を切り替える） -->
+      <div class="bar seekrow" id="seekrow" hidden>
         <button id="skB60" class="skst" data-sk="-60" aria-label="1分戻る" disabled>−1分</button>
         <button id="skB10" class="skst" data-sk="-10" aria-label="10秒戻る" disabled>−10秒</button>
         <span class="skw" id="skw"><input id="seek" type="range" min="0" max="2000" step="1" value="0" aria-label="シミュレーションの時刻（戻す・先へ進める）" disabled><span class="skmk" id="skMk" aria-hidden="true"></span></span>
@@ -2740,22 +2754,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       </div>
 
       <div class="pane" role="tabpanel" id="p-src" aria-labelledby="tab-src">
-        <div class="sec">
-          <h2>震源と規模</h2>
-          <p class="note" id="runLock" hidden>地震発生中は震源・規模などを変更できません。「リセット」または終了後に変更できます。</p>
-          <p class="note" id="obsCut" role="status" hidden>震源・規模・深さを変えたため、実際の観測震度への補正を外しました。</p>
-          <div class="epi" id="epi"></div>
-          <div class="ctl"><label for="m">マグニチュード</label><input id="m" type="range" min="2" max="10" step="0.1" value="7.3"><output id="mo"></output></div>
-          <div class="ctl"><label for="d">深さ</label><input id="d" type="range" min="0" max="700" step="5" value="30"><output id="do"></output></div>
-          <div class="ctl"><label for="s">断層の向き</label><input id="s" type="range" min="0" max="359" step="1" value="45"><output id="so"></output></div>
-          <div class="ctl"><label for="ty">地震のタイプ</label><select id="ty"><option value="crustal">内陸（地殻内）</option><option value="inter">海溝型（プレート境界）</option><option value="intra">スラブ内（プレート内）</option></select></div>
-        </div>
-        <details class="grp multi" id="multiGrp"><summary>複数の地震（連続・同時発生）<small id="multiSum">1つ</small></summary><div class="grpb">
-          <div class="qlist" id="qlist" role="group" aria-label="地震の一覧"></div>
-          <div class="qbtns"><button id="qAdd">＋ 地震を追加</button><button id="qDel">選んだ地震を削除</button></div>
-          <div class="ctl"><label for="qdt">発生のずれ</label><input id="qdt" type="range" min="0" max="4200" step="1" value="0"><output id="qdto"></output></div>
-          <p class="note">一覧で選んだ地震を上で編集します。最大8つ。</p>
-        </div></details>
+        <!-- Version 273：「過去の地震・想定から選ぶ」を一番上に。「複数の地震」は下で閉じておく（複数の地震があるときは自動で開く） -->
         <details class="grp past" id="pastSec"><summary>過去の地震・想定から選ぶ<small id="pastSum"></small></summary><div class="grpb">
           <div class="seg pastTabs" role="tablist" aria-label="過去の地震・想定の種類"><button type="button" role="tab" id="ptPre" aria-controls="ppPre" aria-selected="true">プリセット・シナリオ</button><button type="button" role="tab" id="ptRec" aria-controls="ppRec" aria-selected="false">直近の震度3以上</button></div>
           <div role="tabpanel" id="ppPre" aria-labelledby="ptPre">
@@ -2771,6 +2770,22 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
             <div class="qlist recl" id="recl"></div>
             <p class="note">タップでその地震だけに置き換えます。</p>
           </div>
+        </div></details>
+        <div class="sec">
+          <h2>震源と規模</h2>
+          <p class="note" id="runLock" hidden>地震発生中は震源・規模などを変更できません。「リセット」または終了後に変更できます。</p>
+          <p class="note" id="obsCut" role="status" hidden>震源・規模・深さを変えたため、実際の観測震度への補正を外しました。</p>
+          <div class="epi" id="epi"></div>
+          <div class="ctl"><label for="m">マグニチュード</label><input id="m" type="range" min="2" max="10" step="0.1" value="7.3"><output id="mo"></output></div>
+          <div class="ctl"><label for="d">深さ</label><input id="d" type="range" min="0" max="700" step="5" value="30"><output id="do"></output></div>
+          <div class="ctl"><label for="s">断層の向き</label><input id="s" type="range" min="0" max="359" step="1" value="45"><output id="so"></output></div>
+          <div class="ctl"><label for="ty">地震のタイプ</label><select id="ty"><option value="crustal">内陸（地殻内）</option><option value="inter">海溝型（プレート境界）</option><option value="intra">スラブ内（プレート内）</option></select></div>
+        </div>
+        <details class="grp multi" id="multiGrp"><summary>複数の地震（連続・同時発生）<small id="multiSum">1つ</small></summary><div class="grpb">
+          <div class="qlist" id="qlist" role="group" aria-label="地震の一覧"></div>
+          <div class="qbtns"><button id="qAdd">＋ 地震を追加</button><button id="qDel">選んだ地震を削除</button></div>
+          <div class="ctl"><label for="qdt">発生のずれ</label><input id="qdt" type="range" min="0" max="4200" step="1" value="0"><output id="qdto"></output></div>
+          <p class="note">一覧で選んだ地震を上で編集します。最大8つ。</p>
         </div></details>
         <div class="sec">
           <h2>この震源での予想</h2>
@@ -7191,7 +7206,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
   /* Version 268：出典の「確認中」の行を消す（CREDITS.md に合わせる） */
-  const APP_VERSION = 272;
+  const APP_VERSION = 273;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -7218,7 +7233,10 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   renderRec();
   /* [v248] 公開版の一覧は軽いデータだけ：震源に関する情報（Destination）の震源と、震度速報（ScalePrompt）の最大震度を発生時刻で結ぶ。
      各地の震度（DetailScale）と USGS の発震機構は、その地震を押したときに recFetch で取る */
-  const REC_LIVE = /\.github\.io$/.test(location.hostname) && !!window.fetch;
+  /* Version 273：公開版（github.io）以外（Claude のアーティファクトなど）でも最新の一覧の取得を試す。
+     以前は公開版でしか取らず、アーティファクトでは埋め込みの一覧（recAt の時点）のままだった。取れなければ埋め込みの一覧を静かに使う */
+  const REC_PUB = /\.github\.io$/.test(location.hostname);
+  const REC_LIVE = !!window.fetch;
   const P2PQ = 'https://api.p2pquake.net/v2/jma/quake?order=-1&';
   const recJson = (u, sg) => fetch(u, sg ? { signal: sg } : undefined).then(r => (r.ok ? r.json() : Promise.reject()));
   /* [v250] 一覧の取得は「過去の地震・想定から選ぶ」を開いたとき（開くたびではなく、取れるまで）。
@@ -7304,6 +7322,11 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
           recOpen.clear();
           recAt = '保存データ（' + recAtTx(new Date(sv.at)) + ' 取得）';
           renderRec();
+        }
+        if (!REC_PUB && !recSaved) {
+          /* 公開版以外では、通信が許されていないこともあるので、注意ではなく案内として出す */
+          recMsgSet('この画面では最新の一覧を取得できなかったため、' + recAt + 'の一覧を表示しています。最新の一覧は GitHub の公開版で見られます。');
+          return;
         }
         recMsgSet(
           '最新の一覧を取得できませんでした（通信の状態を確認してください）。' +
@@ -15801,6 +15824,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     if (el.disabled === ok) {
       el.disabled = !ok;
       for (const b of document.querySelectorAll('#seekrow .skst')) b.disabled = !ok;
+      $('seekrow').hidden = !ok;
     }
     {
       const nx = ok && sim.running ? nextQuakeT() : null,
@@ -25442,9 +25466,38 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     document.documentElement.classList.remove('repOn');
     document.body.classList.remove('repOn');
     $('repPaper').innerHTML = '';
-    (matchMedia('(max-width: 999px)').matches ? $('repBtn2') : $('repBtn')).focus();
+    (repFrom && repFrom.offsetParent ? repFrom : $('hmBtn')).focus();
   }
-  $('repBtn').onclick = () => {
+  /* Version 273：上部の「⋯」メニュー。項目を押す・外を押す・Escで閉じる */
+  function hmOpen(on, focusBtn) {
+    $('hmList').hidden = !on;
+    $('hmBtn').setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (on) ($('hmList').querySelector('button:not(.splitbtn)') || $('hmList').firstElementChild).focus({ preventScroll: true });
+    else if (focusBtn) $('hmBtn').focus({ preventScroll: true });
+  }
+  $('hmBtn').onclick = () => hmOpen($('hmList').hidden);
+  $('hmList').addEventListener('click', e => {
+    if (!e.target.closest('button')) return;
+    const inMenu = $('hmList').contains(document.activeElement);
+    hmOpen(false, inMenu);
+  });
+  $('hmList').addEventListener('keydown', e => {
+    const bs = [...$('hmList').querySelectorAll('button')].filter(b => b.offsetParent),
+      i = bs.indexOf(document.activeElement);
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      hmOpen(false, true);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (bs.length) bs[(i + (e.key === 'ArrowDown' ? 1 : bs.length - 1)) % bs.length].focus();
+    }
+  });
+  document.addEventListener('pointerdown', e => {
+    if (!$('hmList').hidden && !e.target.closest('#hmenu')) hmOpen(false);
+  });
+  let repFrom = null;
+  $('repBtn').onclick = e => {
+    repFrom = e && e.currentTarget;
     repOpen().catch(() => {});
   };
   $('repClose').onclick = repClose;
