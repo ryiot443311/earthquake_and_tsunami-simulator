@@ -4625,6 +4625,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       let w = labW.get(wk);
       if (w == null) {
         w = ctx.measureText(txt).width;
+        /* Version 274：拡大縮小のたびに文字の大きさが連続して変わるので、際限なく増えないよう上限で捨てる */
+        if (labW.size > 4000) labW.clear();
         labW.set(wk, w);
       }
       const hw = w / 2 + 2,
@@ -6086,7 +6088,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   let cellsKey = '';
   function computeCells() {
     if (!NC) return;
-    const ck = NC + '|' + JSON.stringify(EQS) + '|' + JSON.stringify(cfg);
+    /* Version 274：震度の計算が使う設定（地盤の非線形・ばらつき・その分布・補正・異常震域）だけをキーにする。以前は表示の設定などを変えても「地震発生」で計算し直していた */
+    const ck = NC + '|' + JSON.stringify(EQS) + '|' + JSON.stringify([cfg.nl, cfg.sigma, cfg.seed, cfg.bias, cfg.arc]);
     if (ck === cellsKey && cellI && cellLp && cellEv.length === EQS.length && EQS.every(q => !obsOf(q) || obsG.has(q))) return;
     cellsKey = ck;
     cellI = new Float32Array(NC).fill(-9);
@@ -6787,6 +6790,11 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       M: Math.max(2, +(P.M - 0.8).toFixed(1)),
       dt: Math.min(DTMAX, Math.max(...EQS.map(e => e.dt || 0)) + RATE_T)
     });
+    /* Version 274：最後の地震が時間のずれの上限にあると、同じ時刻に5つ以上できて、ずれのスライダーが動かせなくなっていた */
+    if (!rateOK([...EQS, q])) {
+      $('qdto').textContent = fmtDt(P.dt || 0) + '（30秒間に地震は4つまで）';
+      return;
+    }
     EQS.push(q);
     selQ = EQS.length - 1;
     P = q;
@@ -6838,6 +6846,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   }
   mI.oninput = () => {
     if (sim && sim.running) return syncUI();
+    /* Version 274：終わった地震（結果を表示中）を書き換えず、新しい予想にする（以前は地図の断層だけが変わり、震度の分布は古いままだった） */
+    if (sim) reset();
     P.M = +mI.value;
     /* Version 237：規模を変えたら、実際の地震の断層の長さ・破壊の向きの指定は外す */
     P.len = P.fwr = null;
@@ -6847,18 +6857,24 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   };
   dI.oninput = () => {
     if (sim && sim.running) return syncUI();
+    /* Version 274：終わった地震（結果を表示中）を書き換えず、新しい予想にする（以前は地図の断層だけが変わり、震度の分布は古いままだった） */
+    if (sim) reset();
     P.depth = +dI.value;
     unPre(P);
     preview();
   };
   sI.oninput = () => {
     if (sim && sim.running) return syncUI();
+    /* Version 274：終わった地震（結果を表示中）を書き換えず、新しい予想にする（以前は地図の断層だけが変わり、震度の分布は古いままだった） */
+    if (sim) reset();
     P.strike = +sI.value;
     unPre(P);
     preview();
   };
   tyI.onchange = () => {
     if (sim && sim.running) return syncUI();
+    /* Version 274：終わった地震（結果を表示中）を書き換えず、新しい予想にする（以前は地図の断層だけが変わり、震度の分布は古いままだった） */
+    if (sim) reset();
     P.type = tyI.value;
     unPre(P);
     preview();
@@ -7181,6 +7197,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
           recAbort = ac;
           await recFetch(r, ac && ac.signal);
           if (tk !== recTok) return;
+          /* Version 274：15秒で取れなかったときは取得をやめる（次に押したときにもう一度取る。以前は裏で取り続け、取れても端末に残らなかった） */
+          if (!r.got && ac) ac.abort();
           recAbort = null;
           r.tried = true;
           if (r.got) {
@@ -7206,7 +7224,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
   /* Version 268：出典の「確認中」の行を消す（CREDITS.md に合わせる） */
-  const APP_VERSION = 273;
+  const APP_VERSION = 274;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -7363,7 +7381,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
      最長15秒待つ。取れなかった分は補正なし（次に押したときにもう一度取る） */
   function recFetch(r, sg) {
     const ymd = r.t.slice(0, 10).replace(/\//g, '');
-    const det = recJson(P2PQ + 'limit=100&quake_type=DetailScale&min_scale=10&since_date=' + ymd + '&until_date=' + ymd, sg)
+    const det = recJson(P2PQ + 'limit=100&quake_type=DetailScale&min_scale=20&since_date=' + ymd + '&until_date=' + ymd, sg)
       .then(js => {
         let best = null;
         for (const it of js || []) {
@@ -7382,7 +7400,9 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       })
       .catch(() => {});
     const to = new Promise(ok => setTimeout(ok, 15000));
-    return Promise.race([Promise.all([det, r.mtTried ? null : recMT(r, sg)]), to]);
+    /* Version 274：取得中に同じ地震をもう一度押したとき、やめた方の発震機構の取得を「取得済み」とみなさない（以前は発震機構が取れないまま端末に残った） */
+    const mtNeed = !r.mtTried || !!(r.mtSg && r.mtSg.aborted);
+    return Promise.race([Promise.all([det, mtNeed ? recMT(r, sg) : null]), to]);
   }
   /* 公開版：USGS のモーメントテンソル解（あれば）を取得して断層の向き・傾斜に使う（Version 186）。
      発生時刻（日本時間）の前後3分・震央から200km以内で、Mが近い地震 */
@@ -7390,6 +7410,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     const m = r.t.match(/^(\d{4})\/(\d\d)\/(\d\d) (\d\d):(\d\d)$/);
     if (!m || !window.fetch) return Promise.resolve();
     r.mtTried = true;
+    r.mtSg = sg;
     const t0 = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 9, +m[5]),
       iso = x => new Date(x).toISOString().slice(0, 19);
     const u =
@@ -7413,7 +7434,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       })
       .catch(() => {
         /* やめたときは、次に押したときにもう一度取る */
-        if (sg && sg.aborted) r.mtTried = false;
+        if (sg && sg.aborted && r.mtSg === sg) r.mtTried = false;
       });
   }
   function setLayer(key, on) {
@@ -9449,8 +9470,18 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     }
   }
   var alarmEnd = 0;
+  /* Version 274：代わりの電子音（alarm）も止められるよう、鳴らす予定の音を覚えておく */
+  let alarmOsc = [];
   function stopSound(k) {
     if (!k) alarmEnd = 0;
+    if (!k || k === 'eew') {
+      for (const o of alarmOsc)
+        try {
+          o.stop();
+        } catch (e) {}
+      alarmOsc = [];
+      alarmEnd = 0;
+    }
     const keys = k ? [k] : Object.keys(SNDP);
     for (const q of keys) {
       const n = SNDP[q];
@@ -9585,6 +9616,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     if (ac.currentTime < alarmEnd) return;
     const t0 = ac.currentTime + 0.05;
     alarmEnd = t0 + rep * 0.9;
+    alarmOsc = alarmOsc.filter(o => o.st + 0.17 > ac.currentTime);
     for (let r = 0; r < rep; r++)
       [
         [880, 0],
@@ -9604,6 +9636,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
         o.connect(g).connect(ac.destination);
         o.start(st);
         o.stop(st + 0.17);
+        o.st = st;
+        alarmOsc.push(o);
       });
   }
 
@@ -11767,7 +11801,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       A[ai] = k;
       if (k > mx) mx = k;
     });
-    if (mx < 1 || imx < 0.5) return;
+    /* Version 274：発表しないときも結果欄を描き直す（以前は「約10分後に発表します」が残った） */
+    if (mx < 1 || imx < 0.5) return renderRes();
     e.lpArea = A;
     e.lpMx = mx;
     /* 記録には階級2以上の地域名と、階級1の地域の数（全地域は操作卓の「長周期地震動階級」に出す） */
@@ -12329,6 +12364,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
           );
           /* Version 231：調査開始のテロップを出しているので、結果（発表しない）もテロップで知らせる */
           tickSet('注意情報', 'end', '【北海道・三陸沖後発地震注意情報】' + nmB + 'の地震のモーメントマグニチュードはMw' + n.Mw.toFixed(1) + 'で、発表基準（Mw7.0以上）を満たさなかったため、北海道・三陸沖後発地震注意情報は発表しません。');
+          notifyLog();
           continue;
         }
         const T = NT_TXT[n.kind === 'hoku' ? 'hoku' : n.res],
@@ -12588,6 +12624,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       const rq = rng(e.tsSeed + 900 + n);
       /* 遠地地震は、Mの更新から予報の見直しまで0.5〜10分（5分±5分） */
       e.tsuQ.push({ t: t + 30 + 570 * rq(), M: r.M });
+      /* Version 274：続報の間隔より見直しの遅れが長いと、後の続報の見直しが先に来る。先頭しか見ないので、時刻の順に並べ直す */
+      e.tsuQ.sort((a, b) => a.t - b.t);
     }
     const dM = Math.round((r.M - e.q.M) * 10) / 10,
       dD = Math.round(depN - (e.q.depth || 0));
@@ -19132,6 +19170,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       ly = 0.0006,
       lz = z;
     if (tb) {
+      /* Version 274：机の見た目の位置を、いまの剛体の位置に合わせてから机の上の位置に直す */
+      applyPose(tb);
       R.room.updateMatrixWorld(true);
       const v = tb.root.worldToLocal(R.room.localToWorld(new THREE.Vector3(x, 0, z)));
       lx = v.x;
@@ -19606,6 +19646,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       if (!r.drop) continue;
       r.drop = false;
       const b = r.o.b;
+      /* Version 274：家具の見た目の位置（描画のときだけ更新）を、いまの剛体の位置に合わせてから棒の位置を取る */
+      applyPose(r.o);
       r.o.root.updateMatrixWorld(true);
       const pos = R.room.worldToLocal(r.g.getWorldPosition(new THREE.Vector3())),
         q = r.g.getWorldQuaternion(new THREE.Quaternion()).premultiply(R.room.getWorldQuaternion(new THREE.Quaternion()).invert());
@@ -22112,6 +22154,15 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       pudGloss: mat(0x000000, { transparent: true, blending: 2, roughness: 0.02, metalness: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
       host
     };
+    /* Version 274：家具・部屋の模様は RM.R3 より前に作るため、異方性フィルタ（斜めから見たときのぼやけを減らす）がかかっていなかった */
+    {
+      const an = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+      for (const k in TEXC)
+        if (TEXC[k].anisotropy < an) {
+          TEXC[k].anisotropy = an;
+          TEXC[k].needsUpdate = true;
+        }
+    }
     RM.frame = frameG;
     /* 映り込み（Version 137）：部屋を描いた全方位の画像を、ガラス・水・金属の材質にだけ付ける（他の材質は計算を増やさない） */
     const env = envTex();
@@ -24497,7 +24548,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     if (lv && fl > 1 && b.T >= 1.6 && mo.relPk >= 1) txt += '周期が長いので、ゆっくり大きく揺れます（地面に対する床の最大のずれ ' + Math.round(mo.relPk) + 'cm）。';
     return { lv, tag, txt, Tb: b.T, Tg, sp };
   }
-  let resoKey = '';
+  let resoKey = '',
+    resoRect = null;
   function drawReso(force) {
     const box = $('resoBox');
     if (!box) return;
@@ -24516,8 +24568,9 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       resoKey = '';
       return;
     }
+    /* Version 274：大きさは ResizeObserver が変わったときだけ測り直す（以前は再生中に毎フレーム測っていて、レイアウトの計算が毎回起きていた） */
     const cv = $('resoCv'),
-      rc = cv.getBoundingClientRect(),
+      rc = resoRect || (resoRect = cv.getBoundingClientRect()),
       key = [bldKey, floorNo, Math.round(rc.width), Math.round(rc.height), RM.motion.n, RM.motion.pga].join(',');
     if (!force && key === resoKey) return;
     const tg = $('resoTag');
@@ -24526,6 +24579,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     $('resoTxt').textContent = r.txt;
     if (rc.width < 10 || rc.height < 10) {
       resoKey = '';
+      resoRect = null;
       return;
     }
     resoKey = key;
@@ -24599,7 +24653,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       c.textAlign = 'left';
     } else c.fillText('地面の揺れの周期ごとの強さ', L, top - 3);
   }
-  if ($('resoCv')) new ResizeObserver(() => drawReso(true)).observe($('resoCv'));
+  if ($('resoCv')) new ResizeObserver(() => ((resoRect = null), drawReso(true))).observe($('resoCv'));
 
   /* UI */
   function setTapMode(m) {
@@ -24891,8 +24945,9 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       dirty = true;
     };
   }
-  onCfg('cDip', 'onchange', v => (P.dipU = v === '' ? null : +v), true);
-  onCfg('cRup', 'onchange', v => (P.rupU = v || null), true);
+  /* Version 274：終わった地震（結果を表示中）の断層を書き換えないよう、先にリセットする */
+  onCfg('cDip', 'onchange', v => (sim && reset(), (P.dipU = v === '' ? null : +v)), true);
+  onCfg('cRup', 'onchange', v => (sim && reset(), (P.rupU = v || null)), true);
   onCfg('cSig', 'onchange', v => (cfg.sigma = +v), true);
   onCfg('cBias', 'oninput', v => (cfg.bias = +v), true);
   onCfg('cDelay', 'oninput', v => (cfg.delay = +v));
@@ -25585,6 +25640,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     return 'eq-j' + b62enc(raw);
   }
   async function decodeShare(h) {
+    /* Version 274：極端に長いURL（壊れた・いたずらの）で読み込みが固まらないよう、長さに上限を設ける（普通の共有は数百文字） */
+    if (h.length > 20000) throw new Error('形式');
     const m = /^eq-([zj])([0-9A-Za-z]+)$/.exec(h);
     if (!m) throw new Error('形式');
     let bytes = b62dec(m[2]);
@@ -25616,16 +25673,16 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       return {
         pre: pre ? 1 : 0,
         dipU: f && dips.includes(+f[1]) ? +f[1] : null,
-        rupU: f ? rup[f[2]] || null : null,
+        rupU: f ? (Number.isInteger(f[2]) && rup[f[2]]) || null : null,
         /* Version 221：遠地地震（地図をタップして置ける海外の震源）も共有できるよう、範囲を海の格子より広くとる（以前は格子の端に寄せられて別の場所になった） */
         lon: clampN(a[0], 60, 260, 139.85, 2),
         lat: clampN(a[1], -70, 85, 35.68, 2),
         depth: Math.round(clampN(a[2], 0, 700, 30)),
         M: clampN(a[3], 2, 10, 7.3, 1),
         strike: Math.round(clampN(a[4], 0, 359, 45)),
-        type: ty[a[5]] || 'crustal',
+        type: (Number.isInteger(a[5]) && ty[a[5]]) || 'crustal',
         dip: pre && dips.includes(dip) ? dip : null,
-        rup: pre ? rup[a[7]] || 'bi' : null,
+        rup: pre ? (Number.isInteger(a[7]) && rup[a[7]]) || 'bi' : null,
         dt: Math.round(clampN(a[8], 0, DTMAX, 0)),
         /* Version 237：断層の長さ・震源の前の割合 */
         len: pre && Array.isArray(a[10]) && +a[10][0] > 0 ? Math.round(clampN(a[10][0], 1, 1500, 100)) : null,
@@ -25673,7 +25730,8 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       SITE.lon = clampN(o.s[0], SG.lon0, LON1, SITE.lon, 3);
       SITE.lat = clampN(o.s[1], SG.lat0, LAT1, SITE.lat, 3);
     }
-    if (BLD[o.b]) bldKey = o.b;
+    /* Version 274：BLD 自身の名前だけを受け付ける（"constructor" などを渡されると階が NaN になっていた） */
+    if (typeof o.b === 'string' && Object.prototype.hasOwnProperty.call(BLD, o.b)) bldKey = o.b;
     bldI.value = bldKey;
     floorNo = Math.round(clampN(o.f, 1, BLD[bldKey].N, 1));
     fixOn = o.x === 1;
