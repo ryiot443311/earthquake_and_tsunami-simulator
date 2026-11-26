@@ -5733,7 +5733,30 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   function cellBasin() {
     if (cellBs) return cellBs;
     cellBs = new Float32Array(NC); /* Version 217：堆積平野の増幅（常用対数 basinLog） */
-    for (let i = 0; i < NC; i++) cellBs[i] = basinLog(cellLon[i], cellLat[i]);
+    /* Version 272：同じ結果のまま速くした（最初の「地震発生」で約10万の格子×52か所を全部調べていた）。
+       格子の行（緯度）ごとに、その緯度に掛かる平野・盆地だけを先に選んでおき、basinLog と同じ判定・同じ式で最大を取る */
+    const rowQ = new Map();
+    for (let i = 0; i < NC; i++) {
+      const lon = cellLon[i],
+        lat = cellLat[i];
+      let L = rowQ.get(lat);
+      if (!L) {
+        L = BASIN.filter(q => !(Math.abs(lat - q.lat) > 2.5 * Math.max(q.rx, q.ry)));
+        rowQ.set(lat, L);
+      }
+      let b = 0;
+      for (const q of L) {
+        const x = lon - q.lon,
+          y = lat - q.lat;
+        if (Math.abs(x) > 2.5 * Math.max(q.rx, q.ry) || Math.abs(y) > 2.5 * Math.max(q.rx, q.ry)) continue;
+        const u = (x * q.c + y * q.s) / q.rx,
+          v = (-x * q.s + y * q.c) / q.ry,
+          e = u * u + v * v,
+          a = q.L * Math.exp(-0.7 * e * e);
+        if (a > b) b = a;
+      }
+      cellBs[i] = b * LPK.bs;
+    }
     return cellBs;
   }
   function cellNoise() {
@@ -7168,7 +7191,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
      画面の上にお知らせを出す。更新のたびに APP_VERSION（ここ）と version.json の数値を同じ値に上げる。
      公開版（github.io）は常に最新なので確認しない。取得できない（オフライン・CSP）ときは何も出さない。 */
   /* Version 268：出典の「確認中」の行を消す（CREDITS.md に合わせる） */
-  const APP_VERSION = 271;
+  const APP_VERSION = 272;
   const VERSION_URL = 'https://raw.githubusercontent.com/ryiot443311/earthquake_and_tsunami-simulator/main/version.json';
   if (window.fetch && !/\.github\.io$/.test(location.hostname))
     fetch(VERSION_URL, { cache: 'no-store' })
@@ -8446,18 +8469,22 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     return Object.assign({}, q, { aspT: 1 });
   }
   function computeTsunami(P, qual) {
-    return jobDrain(computeTsunamiG(P, qual));
+    return jobDrain(computeTsunamiG(P, qual, true));
   }
-  function* computeTsunamiG(P, qual) {
+  /* needGeo：結果の経路の配列（geo）が要るか。要るのは実際の津波（e.tsunami。地図の波の広がりを描く）だけで、
+     予報（データベースの候補）と「この震源での予想」は高さ・到達時刻だけを使う */
+  function* computeTsunamiG(P, qual, needGeo) {
     P = P || EQS[0];
     if (!COAST.length) return null;
     const k = [P.lon, P.lat, P.M, P.depth, P.strike, P.type, dipOf(P), rupOf(P), !!qual, slipKey(P)].join();
     let r = tsuMemo.get(k);
-    /* Version 238：古い結果は経路の配列（geo、約2.7MB）を手放した軽い複製で持つ。経路がまだ残っていれば付け直し、無ければ計算し直す */
+    /* Version 238：古い結果は経路の配列（geo、約2.7MB）を手放した軽い複製で持つ。経路がまだ残っていれば付け直し、無ければ計算し直す。
+       Version 272：経路の配列が要らない呼び出し（予報の候補）は、軽い複製をそのまま使う（以前は計算し直していて、M8超の数値への更新や
+       Mの見直しのたびに、候補1つあたり M9 で約0.3秒（スマホでは1秒前後）を同じ値の再計算に使っていた） */
     if (r && r.slim) {
       const g = tsuGeo.get(r.gk);
       if (g) r = Object.assign({}, r, { geo: g, slim: false });
-      else r = null;
+      else if (needGeo) r = null;
     }
     if (!r) {
       r = yield* computeTsunami0G(P, qual);
@@ -8948,10 +8975,13 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       /* 到達時間：海岸で0.2m以上になる波が、最初に届く時間 */
       let bestR = Dp,
         bestQ = fsrc;
+      /* Version 272：今の bestR より確実に遠い波源は、平方根を取らずに飛ばす（2乗の距離で比べる。わずかな余裕を持たせ、近いものは従来どおりの式で判定するので結果は同じ） */
       for (const q of S.arrs) {
         const dx = (c.lon - q[0]) * kx,
           dy = (c.lat - q[1]) * 110.57,
-          r = Math.max(2, Math.sqrt(dx * dx + dy * dy)) * detour;
+          d2 = dx * dx + dy * dy;
+        if (d2 * detour * detour >= bestR * bestR * (1 + 1e-9)) continue;
+        const r = Math.max(2, Math.sqrt(d2)) * detour;
         /* Version 237：沈降の所（引き波）は海岸から TSU_NEG_R km 以内だけ（遠くの海岸には隆起の所からの押し波が先に目立って届く。
            2011年は相馬で引き波が先、釧路は押し） */
         if (r < bestR && (q[2] > 0 || r <= TSU_NEG_R) && Math.abs(q[2]) * Math.sqrt(S.a / (S.a + r)) >= 0.15) {
@@ -10100,7 +10130,7 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
   /* 「地震発生」後に分けて計算する津波（Version 200）：実際の津波と、予報（データベース）で津波が予想されるか。
      結果の当てはめ（tsuStartApply）は start で同時に計算していた場合と同じ値になるようにする（シミュレーションの長さは大きい方を取るだけなので、順番によらない） */
   function* tsuStartG(e, P) {
-    const T = yield* computeTsunamiG(P, e.tsQual);
+    const T = yield* computeTsunamiG(P, e.tsQual, true);
     const db = yield* tsuDbG(e, e.tsQual ? tsuQualM(e, e.q.M) : e.q.M, e.tsQual);
     return [T, db];
   }
@@ -14105,19 +14135,51 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
       CA.push(Math.cos((k * 2 * Math.PI) / NA));
       SA.push(Math.sin((k * 2 * Math.PI) / NA));
     }
+    /* Version 272：同じ結果のまま速くした（以前は約 4.6 秒／Node、スマホでは 10 秒を超えることがあった）。
+       ① 陸の格子の数の累積和で、半径の四角の中に陸が1つも無い格子（外洋）は調べずに 0 にする（光線の点はすべてその四角の中なので結果は同じ）。
+       ② c・r は整数なので Math.round(c + x) ＝ c + Math.round(x)。光線の点のずれ（列・行）を行ごとに先に作っておく */
+    const LS = new Int32Array((w + 1) * (h + 1));
+    for (let r = 0; r < h; r++) {
+      let run = 0;
+      for (let c = 0; c < w; c++) {
+        if (!sea[r * w + c]) run++;
+        LS[(r + 1) * (w + 1) + c + 1] = LS[r * (w + 1) + c + 1] + run;
+      }
+    }
+    const landIn = (c0, r0, c1, r1) => {
+      c0 = Math.max(0, c0);
+      r0 = Math.max(0, r0);
+      c1 = Math.min(w - 1, c1);
+      r1 = Math.min(h - 1, r1);
+      if (c0 > c1 || r0 > r1) return 0;
+      return LS[(r1 + 1) * (w + 1) + c1 + 1] - LS[r0 * (w + 1) + c1 + 1] - LS[(r1 + 1) * (w + 1) + c0] + LS[r0 * (w + 1) + c0];
+    };
     for (let r = 0; r < h; r++) {
       if ((r & 7) === 7 && jobLate()) yield;
       const dx = rowDx(r),
         ns = Math.max(2, Math.ceil(rad / Math.min(dx, dy)));
+      const OC = new Int32Array(NA * ns),
+        OR = new Int32Array(NA * ns);
+      let mC = 0,
+        mR = 0;
+      for (let k = 0; k < NA; k++)
+        for (let q = 1; q <= ns; q++) {
+          const dd = (q * rad) / ns,
+            i = k * ns + q - 1;
+          OC[i] = Math.round((dd * CA[k]) / dx);
+          OR[i] = Math.round((dd * SA[k]) / dy);
+          mC = Math.max(mC, Math.abs(OC[i]));
+          mR = Math.max(mR, Math.abs(OR[i]));
+        }
       for (let c = 0; c < w; c++) {
         const n = r * w + c;
         if (!sea[n]) continue;
+        if (!landIn(c - mC, r - mR, c + mC, r + mR)) continue;
         let hit = 0;
         for (let k = 0; k < NA; k++)
-          for (let q = 1; q <= ns; q++) {
-            const dd = (q * rad) / ns,
-              C = Math.round(c + (dd * CA[k]) / dx),
-              R = Math.round(r + (dd * SA[k]) / dy);
+          for (let q = 0; q < ns; q++) {
+            const C = c + OC[k * ns + q],
+              R = r + OR[k * ns + q];
             if (C < 0 || R < 0 || C >= w || R >= h) break;
             if (!sea[R * w + C]) {
               hit++;
@@ -15194,9 +15256,18 @@ footer.method .note .credlnk { margin-left: 0.6em; padding: 0 0.3em; border: 0; 
     });
     return { co, off, end };
   }
+  /* Version 272：同じ分の文字列は使い回す（津波観測の一覧で観測点ごと・更新ごとに日付を作っていた）。時・分は分の区切りで決まるので結果は同じ */
+  const hmMemo = new Map();
   function hmStr(t) {
-    const d = new Date(sim.startClock + t * 1000);
-    return d.getHours() + '時' + String(d.getMinutes()).padStart(2, '0') + '分';
+    const mn = Math.floor((sim.startClock + t * 1000) / 60000);
+    let s = hmMemo.get(mn);
+    if (s === undefined) {
+      const d = new Date(mn * 60000);
+      s = d.getHours() + '時' + String(d.getMinutes()).padStart(2, '0') + '分';
+      if (hmMemo.size > 4000) hmMemo.clear();
+      hmMemo.set(mn, s);
+    }
+    return s;
   }
   const fmtH = v => (Math.round(v * 10) / 10).toFixed(1) + 'm';
   /* 観測値の色：3m以上・1m以上・0.2m以上・それ未満。観測中・欠測は灰色 */
